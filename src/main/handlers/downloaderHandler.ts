@@ -3,10 +3,10 @@ import { app, ipcMain } from "electron";
 import { filenamifyPath } from "filenamify";
 import { createWriteStream } from "fs";
 import fs from "fs/promises";
-import hitomi from "node-hitomi";
 import path from "path";
 import { pathToFileURL } from "url";
 import { console } from "../main.js";
+import { hitomiService } from "../services/hitomi/hitomiService.js";
 import { formatDownloadFolderName } from "../utils/index.js";
 import { store as configStore } from "./configHandler.js";
 import { scanFile } from "./directoryHandler.js";
@@ -19,59 +19,8 @@ export const handleSearchGalleries = async ({
   page: number;
 }) => {
   try {
-    const terms = query.searchQuery
-      .toLowerCase()
-      .split(" ")
-      .filter((term) => term.length > 0);
-
-    let galleryId: number | null = null;
-
-    for (const term of terms) {
-      if (term.startsWith("id:")) {
-        const id = parseInt(term.substring(3).trim());
-        if (!isNaN(id)) {
-          galleryId = id;
-        }
-      }
-    }
-
-    // 작품 ID가 있으면 해당 ID만 반환 (페이지네이션 무시)
-    if (galleryId !== null) {
-      return {
-        success: true,
-        data: [galleryId],
-        hasNextPage: false,
-      };
-    }
-
-    const trimmedQuery = query.searchQuery.trim();
-    let ids: number[];
-
-    if (trimmedQuery) {
-      const title: string[] = [];
-      const tags: string[] = [];
-      trimmedQuery.split(" ").forEach((text) => {
-        if (text.includes(":")) {
-          tags.push(text);
-        } else {
-          title.push(text);
-        }
-      });
-      ids = await hitomi.getGalleryIds({
-        title: title.length > 0 ? title.join(" ") : undefined,
-        tags:
-          tags.length > 0 ? hitomi.getParsedTags(tags.join(" ")) : undefined,
-      });
-    } else {
-      ids = await hitomi.getGalleryIds();
-    }
-
-    const limit = 30;
-    const offset = (page - 1) * limit + (query.offset || 0);
-    const pageData = ids.slice(offset, offset + limit);
-    const hasNextPage = ids.length > offset + limit;
-
-    return { success: true, data: pageData, hasNextPage };
+    const result = await hitomiService.searchGalleries({ query, page });
+    return { success: true, ...result };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     console.error("Error searching galleries:", error);
@@ -81,21 +30,8 @@ export const handleSearchGalleries = async ({
 
 export const handleGetGalleryDetails = async (galleryId: number) => {
   try {
-    const gallery = await hitomi.getGallery(galleryId);
-
-    // 썸네일 URL 생성 로직 추가
-    const thumbnailUrl = hitomi.ImageUriResolver.getImageUri(
-      gallery.files[0],
-      "webp",
-      { isThumbnail: true },
-    );
-    return {
-      success: true,
-      data: {
-        ...gallery,
-        thumbnailUrl: `https://${thumbnailUrl}`,
-      },
-    };
+    const gallery = await hitomiService.getGalleryDetails(galleryId);
+    return { success: true, data: gallery };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     console.error(`Error getting gallery details for ID ${galleryId}:`, error);
@@ -105,15 +41,7 @@ export const handleGetGalleryDetails = async (galleryId: number) => {
 
 export const handleGetGalleryImageUrls = async (galleryId: number) => {
   try {
-    const gallery = await hitomi.getGallery(galleryId);
-    if (!gallery) {
-      throw new Error(`Gallery with ID ${galleryId} not found.`);
-    }
-    const previewUrls = gallery.files.map((file) => {
-      const fileExt = file.hasWebp ? "webp" : "avif";
-      const imageUrl = hitomi.ImageUriResolver.getImageUri(file, fileExt); // 원본 이미지 URL
-      return `https://${imageUrl}`;
-    });
+    const previewUrls = await hitomiService.getGalleryImageUrls(galleryId);
     return { success: true, data: previewUrls };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -143,10 +71,7 @@ export const handleDownloadGallery = async (
       status: "starting",
     });
 
-    const gallery = await hitomi.getGallery(galleryId);
-    if (!gallery) {
-      throw new Error(`Gallery with ID ${galleryId} not thrown.`);
-    }
+    const gallery = await hitomiService.getGallery(galleryId);
 
     const downloadPattern = configStore.get(
       "downloadPattern",
@@ -205,8 +130,7 @@ export const handleDownloadGallery = async (
 
       const file = gallery.files[i];
       const fileExt = file.hasWebp ? "webp" : "avif";
-      const imageUrl = hitomi.ImageUriResolver.getImageUri(file, fileExt);
-      const fullImageUrl = `https://${imageUrl}`;
+      const fullImageUrl = hitomiService.resolveImageUrl(file);
       const fileName = `${String(file.index + 1).padStart(6, "0")}.${fileExt}`;
       const filePath = path.join(galleryDownloadPath, fileName);
 
@@ -473,10 +397,8 @@ export const handleDownloadTempThumbnail = async ({
  * 다운로더 관련 IPC 통신 핸들러를 등록합니다.
  */
 export async function registerDownloaderHandlers() {
-  await hitomi.ImageUriResolver.synchronize();
-  setInterval(async () => {
-    await hitomi.ImageUriResolver.synchronize();
-  }, 30000);
+  await hitomiService.synchronizeImageResolver();
+  hitomiService.startImageResolverSynchronization();
 
   // 작품 검색 핸들러
   ipcMain.handle("search-galleries", (_event, params) =>

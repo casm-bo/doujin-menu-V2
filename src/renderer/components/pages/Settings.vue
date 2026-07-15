@@ -14,6 +14,7 @@ import DownloaderTab from "../feature/settings/tabs/DownloaderTab.vue";
 import DataSecurityTab from "../feature/settings/tabs/DataSecurityTab.vue";
 import AboutTab from "../feature/settings/tabs/AboutTab.vue";
 import KeybindingSettings from "../feature/settings/KeybindingSettings.vue";
+import CompanionTab from "../feature/settings/tabs/CompanionTab.vue";
 
 const route = useRoute();
 
@@ -24,6 +25,7 @@ const VALID_TABS = [
   "library",
   "viewer",
   "downloader",
+  "companion",
   "keybindings",
   "data-security",
   "about",
@@ -99,6 +101,10 @@ onMounted(() => {
                 <Icon icon="solar:download-square-linear" class="h-5 w-5" />
                 다운로더
               </TabsTrigger>
+              <TabsTrigger value="companion" class="justify-start px-3 py-2">
+                <Icon icon="solar:smartphone-2-linear" class="h-5 w-5" />
+                모바일 연동
+              </TabsTrigger>
               <TabsTrigger
                 value="data-security"
                 class="justify-start px-3 py-2"
@@ -137,6 +143,10 @@ onMounted(() => {
 
           <TabsContent value="downloader" class="mt-0">
             <DownloaderTab />
+          </TabsContent>
+
+          <TabsContent value="companion" class="mt-0">
+            <CompanionTab />
           </TabsContent>
 
           <TabsContent value="data-security" class="mt-0">

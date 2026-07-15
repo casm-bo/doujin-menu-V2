@@ -1,6 +1,11 @@
 // IPC 통신을 위한 타입 정의
 import type { Gallery } from "node-hitomi";
 import type { Config } from "../main/handlers/configHandler.js";
+import type {
+  CompanionDeviceInfo,
+  CompanionPairingCode,
+  CompanionServerStatus,
+} from "./companion.js";
 
 export interface FilterParams {
   searchQuery?: string;
@@ -456,6 +461,40 @@ export interface IpcChannels {
   "open-book-with-external-viewer": {
     request: { bookId: number };
     response: { success: boolean; error?: string };
+  };
+
+  // Companion server handlers
+  "get-companion-status": {
+    request: void;
+    response: CompanionServerStatus;
+  };
+  "start-companion-server": {
+    request: void;
+    response: {
+      success: boolean;
+      data?: CompanionServerStatus;
+      error?: string;
+    };
+  };
+  "stop-companion-server": {
+    request: void;
+    response: { success: boolean; error?: string };
+  };
+  "create-companion-pairing-code": {
+    request: void;
+    response: {
+      success: boolean;
+      data?: CompanionPairingCode;
+      error?: string;
+    };
+  };
+  "get-companion-devices": {
+    request: void;
+    response: CompanionDeviceInfo[];
+  };
+  "revoke-companion-device": {
+    request: string;
+    response: { success: boolean };
   };
 
   // Directory handlers

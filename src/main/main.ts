@@ -44,6 +44,7 @@ import {
   registerThumbnailHandlers,
 } from "./handlers/thumbnailHandler.js";
 import { registerWindowHandlers } from "./handlers/windowHandler.js";
+import { registerCompanionHandlers } from "./handlers/companionHandler.js";
 import { registerUpdaterHandlers } from "./updater.js";
 import { naturalSort } from "./utils/index.js";
 
@@ -240,6 +241,7 @@ app.whenReady().then(async () => {
   registerDuplicatesHandlers();
   registerThumbnailHandlers();
   registerWindowHandlers(mainWindow, createViewerWindow, viewerWindows);
+  await registerCompanionHandlers();
 
   // 다운로드 큐 초기화 (미완료 다운로드 복구)
   await initializeDownloadQueue();
