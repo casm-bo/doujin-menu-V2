@@ -92,8 +92,8 @@ onMounted(refresh);
       <CardHeader>
         <CardTitle>모바일 연동</CardTitle>
         <CardDescription>
-          같은 로컬 네트워크의 Android 앱에서 히토미 검색과 다운로드를 사용할 수
-          있습니다.
+          같은 로컬 네트워크의 Android 앱에서 데스크톱 라이브러리 열람, 히토미
+          검색과 다운로드를 사용할 수 있습니다.
         </CardDescription>
       </CardHeader>
       <CardContent class="space-y-6">

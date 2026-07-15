@@ -5,8 +5,19 @@ import { hitomiService } from "../services/hitomi/hitomiService.js";
 import {
   CompanionServer,
   type CompanionDeviceStore,
+  type CompanionDownloadService,
 } from "../services/companion/companionServer.js";
+import { DesktopLibraryService } from "../services/companion/companionLibraryService.js";
 import { store } from "./configHandler.js";
+import {
+  handleAddToDownloadQueue,
+  handleClearCompletedDownloads,
+  handleGetDownloadQueue,
+  handlePauseDownload,
+  handleRemoveFromDownloadQueue,
+  handleResumeDownload,
+  handleRetryDownload,
+} from "./downloadQueueHandler.js";
 
 const companionDeviceStore = new Store<{ devices: CompanionDevice[] }>({
   name: "companion-devices",
@@ -18,7 +29,39 @@ const deviceStore: CompanionDeviceStore = {
   setDevices: (devices) => companionDeviceStore.set("devices", devices),
 };
 
-export const companionServer = new CompanionServer(hitomiService, deviceStore);
+const downloadService: CompanionDownloadService = {
+  getQueue: handleGetDownloadQueue,
+  add: async (galleryId) => {
+    const downloadPath = store.get("downloadPath", "").trim();
+    if (!downloadPath) {
+      return {
+        success: false,
+        error: "데스크톱 앱에서 다운로드 폴더를 먼저 설정해주세요.",
+      };
+    }
+
+    const gallery = await hitomiService.getGalleryDetails(galleryId);
+    return handleAddToDownloadQueue({
+      galleryId,
+      galleryTitle: gallery.title.display,
+      galleryArtist: gallery.artists?.[0],
+      thumbnailUrl: gallery.thumbnailUrl,
+      downloadPath,
+    });
+  },
+  remove: handleRemoveFromDownloadQueue,
+  pause: handlePauseDownload,
+  resume: handleResumeDownload,
+  retry: handleRetryDownload,
+  clearCompleted: handleClearCompletedDownloads,
+};
+
+export const companionServer = new CompanionServer(
+  hitomiService,
+  deviceStore,
+  downloadService,
+  new DesktopLibraryService(() => store.get("libraryFolders", [])),
+);
 
 export async function startCompanionServer() {
   try {

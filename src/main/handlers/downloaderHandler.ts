@@ -130,7 +130,6 @@ export const handleDownloadGallery = async (
 
       const file = gallery.files[i];
       const fileExt = file.hasWebp ? "webp" : "avif";
-      const fullImageUrl = hitomiService.resolveImageUrl(file);
       const fileName = `${String(file.index + 1).padStart(6, "0")}.${fileExt}`;
       const filePath = path.join(galleryDownloadPath, fileName);
 
@@ -172,7 +171,9 @@ export const handleDownloadGallery = async (
       let success = false;
       let attempt = 0;
 
-      while (!success) {
+      let lastFailure = "알 수 없는 오류";
+
+      while (!success && attempt < MAX_DOWNLOAD_ATTEMPTS) {
         // 재시도 루프 내에서도 취소 확인
         if (shouldCancel && shouldCancel()) {
           return {
@@ -182,8 +183,12 @@ export const handleDownloadGallery = async (
           };
         }
         attempt++;
+
+        // 이미지 서버 구성이 갱신될 수 있으므로 매 시도마다 URL을 다시 계산합니다.
+        const fullImageUrl = hitomiService.resolveImageUrl(file);
+        let res: Response;
         try {
-          const res = await fetch(fullImageUrl, {
+          res = await fetch(fullImageUrl, {
             headers: {
               accept:
                 "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
@@ -201,30 +206,56 @@ export const handleDownloadGallery = async (
               Referer: `https://hitomi.la/reader/${gallery.id}.html`,
               "Referrer-Policy": "no-referrer-when-downgrade",
               "User-Agent":
-                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_9_3) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/35.0.1916.47 Safari/537.36",
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36",
             },
           });
-
-          if (res.ok) {
-            const arrayBuffer = await res.arrayBuffer();
-            await fs.writeFile(filePath, Buffer.from(arrayBuffer));
-            success = true;
-            break; // 다운로드 성공, 재시도 루프 탈출
-          } else {
-            console.warn(
-              `[Downloader] 파일 다운로드 실패. 재시도 (${attempt}회): ${fileName} - ${res.statusText}`,
-            );
-            // 재시도 전 잠시 대기 (점진적 증가)
-            await new Promise<void>((resolve) => setTimeout(resolve, 1000));
-          }
         } catch (error) {
+          lastFailure = error instanceof Error ? error.message : String(error);
+          if (attempt >= MAX_DOWNLOAD_ATTEMPTS) break;
+          const delayMs = getRetryDelayMs(undefined, attempt);
           console.warn(
-            `[Downloader] 파일 다운로드 중 오류 발생. 재시도 (${attempt}회): ${fileName}`,
+            `[Downloader] 파일 다운로드 중 오류 발생 (${attempt}/${MAX_DOWNLOAD_ATTEMPTS}): ${fileName}. ${formatRetryDelay(delayMs)} 후 재시도합니다.`,
             error,
           );
-          await new Promise<void>((resolve) => setTimeout(resolve, 1000));
+          await wait(delayMs);
+          continue;
         }
+
+        if (res.ok) {
+          const arrayBuffer = await res.arrayBuffer();
+          await fs.writeFile(filePath, Buffer.from(arrayBuffer));
+          success = true;
+          break;
+        }
+
+        lastFailure = `HTTP ${res.status} ${res.statusText}`.trim();
+        await res.body?.cancel();
+        if (!isRetryableDownloadStatus(res.status)) {
+          throw new Error(`${fileName} 다운로드 실패: ${lastFailure}`);
+        }
+        if (attempt >= MAX_DOWNLOAD_ATTEMPTS) break;
+
+        if (res.status === 503 && attempt % 2 === 0) {
+          await hitomiService.synchronizeImageResolver().catch((error) => {
+            console.warn("[Downloader] 이미지 서버 정보 갱신 실패:", error);
+          });
+        }
+
+        const delayMs = getRetryDelayMs(res, attempt);
+        console.warn(
+          `[Downloader] 일시적인 이미지 서버 오류 (${attempt}/${MAX_DOWNLOAD_ATTEMPTS}): ${fileName} - ${lastFailure}. ${formatRetryDelay(delayMs)} 후 재시도합니다.`,
+        );
+        await wait(delayMs);
       }
+
+      if (!success) {
+        throw new Error(
+          `${fileName} 다운로드를 ${MAX_DOWNLOAD_ATTEMPTS}회 시도했지만 실패했습니다: ${lastFailure}`,
+        );
+      }
+
+      // 연속 요청으로 이미지 CDN의 일시 제한에 걸리지 않도록 간격을 둡니다.
+      await wait(INTER_FILE_DELAY_MS);
 
       const progress = Math.round(((i + 1) / totalFiles) * 100);
       webContents.send("download-progress", {
@@ -342,6 +373,46 @@ export const handleDownloadGallery = async (
     return { success: false, error: message };
   }
 };
+
+function isRetryableDownloadStatus(status: number): boolean {
+  return status === 408 || status === 429 || status >= 500;
+}
+
+function getRetryDelayMs(response: Response | undefined, attempt: number): number {
+  const retryAfter = response?.headers.get("retry-after");
+  if (retryAfter) {
+    const seconds = Number(retryAfter);
+    if (Number.isFinite(seconds) && seconds >= 0) {
+      return Math.min(seconds * 1000, MAX_RETRY_DELAY_MS);
+    }
+
+    const retryAt = Date.parse(retryAfter);
+    if (Number.isFinite(retryAt)) {
+      return Math.min(
+        Math.max(retryAt - Date.now(), MIN_RETRY_DELAY_MS),
+        MAX_RETRY_DELAY_MS,
+      );
+    }
+  }
+
+  return Math.min(
+    MIN_RETRY_DELAY_MS * 2 ** Math.max(attempt - 1, 0),
+    MAX_RETRY_DELAY_MS,
+  );
+}
+
+function formatRetryDelay(delayMs: number): string {
+  return `${Math.max(1, Math.ceil(delayMs / 1000))}초`;
+}
+
+function wait(delayMs: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, delayMs));
+}
+
+const MAX_DOWNLOAD_ATTEMPTS = 8;
+const MIN_RETRY_DELAY_MS = 1_000;
+const MAX_RETRY_DELAY_MS = 30_000;
+const INTER_FILE_DELAY_MS = 200;
 
 export const handleDownloadTempThumbnail = async ({
   url,

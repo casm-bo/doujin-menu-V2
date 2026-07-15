@@ -3,13 +3,18 @@ import type { CompanionDevice } from "../../../src/types/companion";
 import {
   CompanionServer,
   type CompanionDeviceStore,
+  type CompanionDownloadService,
+  type CompanionLibraryService,
 } from "../../../src/main/services/companion/companionServer";
+import { Readable } from "stream";
 
 describe("CompanionServer", () => {
   let devices: CompanionDevice[];
   let deviceStore: CompanionDeviceStore;
   let server: CompanionServer;
   let baseUrl: string;
+  let downloadService: CompanionDownloadService;
+  let libraryService: CompanionLibraryService;
   const hitomiService = {
     searchGalleries: vi.fn(),
     getGalleryDetails: vi.fn(),
@@ -25,7 +30,27 @@ describe("CompanionServer", () => {
       },
     };
     vi.clearAllMocks();
-    server = new CompanionServer(hitomiService, deviceStore);
+    downloadService = {
+      getQueue: vi.fn().mockResolvedValue({ success: true, data: [] }),
+      add: vi.fn(),
+      remove: vi.fn(),
+      pause: vi.fn(),
+      resume: vi.fn(),
+      retry: vi.fn(),
+      clearCompleted: vi.fn(),
+    };
+    libraryService = {
+      listBooks: vi.fn().mockResolvedValue([]),
+      getPageCount: vi.fn(),
+      getCover: vi.fn(),
+      getPage: vi.fn(),
+    };
+    server = new CompanionServer(
+      hitomiService,
+      deviceStore,
+      downloadService,
+      libraryService,
+    );
     const status = await server.start(0);
     baseUrl = `http://127.0.0.1:${status.port}`;
   });
@@ -133,4 +158,139 @@ describe("CompanionServer", () => {
 
     expect(response.status).toBe(401);
   });
+
+  it("allows an authenticated device to list and add downloads", async () => {
+    const token = await pairTestDevice();
+    const headers = {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    };
+    const item = {
+      id: 7,
+      gallery_id: 123,
+      gallery_title: "Sample",
+      download_path: "C:\\Downloads",
+      status: "pending" as const,
+      progress: 0,
+      total_files: 0,
+      downloaded_files: 0,
+      download_speed: 0,
+      added_at: new Date().toISOString(),
+      priority: 0,
+    };
+    vi.mocked(downloadService.getQueue).mockResolvedValue({
+      success: true,
+      data: [item],
+    });
+    vi.mocked(downloadService.add).mockResolvedValue({
+      success: true,
+      data: item,
+    });
+
+    const listResponse = await fetch(`${baseUrl}/v1/downloads`, { headers });
+    const addResponse = await fetch(`${baseUrl}/v1/downloads`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ galleryId: 123 }),
+    });
+
+    expect(listResponse.status).toBe(200);
+    expect((await listResponse.json()).data).toEqual([item]);
+    expect(addResponse.status).toBe(201);
+    expect(downloadService.add).toHaveBeenCalledWith(123);
+  });
+
+  it("forwards download queue control actions", async () => {
+    const token = await pairTestDevice();
+    const headers = { Authorization: `Bearer ${token}` };
+    vi.mocked(downloadService.pause).mockResolvedValue({ success: true });
+    vi.mocked(downloadService.clearCompleted).mockResolvedValue({
+      success: true,
+    });
+
+    const pauseResponse = await fetch(`${baseUrl}/v1/downloads/7/pause`, {
+      method: "POST",
+      headers,
+    });
+    const clearResponse = await fetch(`${baseUrl}/v1/downloads/completed`, {
+      method: "DELETE",
+      headers,
+    });
+
+    expect(pauseResponse.status).toBe(200);
+    expect(clearResponse.status).toBe(200);
+    expect(downloadService.pause).toHaveBeenCalledWith(7);
+    expect(downloadService.clearCompleted).toHaveBeenCalledOnce();
+  });
+
+  it("lists desktop library books using the Android API contract", async () => {
+    const token = await pairTestDevice();
+    const book = {
+      id: 42,
+      title: "Desktop Gallery",
+      path: "C:\\Library\\Gallery",
+      libraryPath: "C:\\Library",
+      pageCount: 2,
+      modifiedAt: 1234,
+      artists: [{ name: "Artist" }],
+      groups: [],
+      series: [],
+      characters: [],
+      tags: [],
+      coverUrl: "/v1/library/books/42/cover",
+    };
+    vi.mocked(libraryService.listBooks).mockResolvedValue([book]);
+
+    const response = await fetch(`${baseUrl}/v1/library/books`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+
+    expect(response.status).toBe(200);
+    expect((await response.json()).data).toEqual([book]);
+  });
+
+  it("returns page URLs and streams authenticated library images", async () => {
+    const token = await pairTestDevice();
+    const headers = { Authorization: `Bearer ${token}` };
+    vi.mocked(libraryService.getPageCount).mockResolvedValue(2);
+    vi.mocked(libraryService.getPage).mockResolvedValue({
+      stream: Readable.from(Buffer.from("image-data")),
+      contentType: "image/jpeg",
+      contentLength: 10,
+    });
+
+    const pagesResponse = await fetch(`${baseUrl}/v1/library/books/42/pages`, {
+      headers,
+    });
+    const imageResponse = await fetch(
+      `${baseUrl}/v1/library/books/42/pages/1`,
+      { headers },
+    );
+
+    expect((await pagesResponse.json()).data).toEqual([
+      "/v1/library/books/42/pages/0",
+      "/v1/library/books/42/pages/1",
+    ]);
+    expect(imageResponse.headers.get("content-type")).toBe("image/jpeg");
+    expect(await imageResponse.text()).toBe("image-data");
+    expect(libraryService.getPage).toHaveBeenCalledWith(42, 1);
+  });
+
+  it("requires authentication for desktop library covers", async () => {
+    const response = await fetch(`${baseUrl}/v1/library/books/42/cover`);
+
+    expect(response.status).toBe(401);
+    expect(libraryService.getCover).not.toHaveBeenCalled();
+  });
+
+  async function pairTestDevice(): Promise<string> {
+    const pairing = server.createPairingCode();
+    const response = await fetch(`${baseUrl}/v1/pair`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ code: pairing.code, deviceName: "Phone" }),
+    });
+    const body = (await response.json()) as { data: { token: string } };
+    return body.data.token;
+  }
 });

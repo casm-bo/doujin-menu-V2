@@ -2,6 +2,7 @@ import { createHash, randomBytes, randomInt, randomUUID } from "crypto";
 import { createServer, type IncomingMessage, type ServerResponse } from "http";
 import { networkInterfaces } from "os";
 import type { AddressInfo } from "net";
+import type { Readable } from "stream";
 import type {
   CompanionDevice,
   CompanionDeviceInfo,
@@ -12,6 +13,7 @@ import type {
   SearchGalleriesParams,
   SearchGalleriesResult,
 } from "../hitomi/hitomiService.js";
+import type { DownloadQueueItem } from "../../../types/ipc.js";
 
 const DEFAULT_PORT = 47831;
 const MAX_REQUEST_BODY_BYTES = 64 * 1024;
@@ -23,6 +25,56 @@ interface CompanionHitomiService {
   ): Promise<SearchGalleriesResult>;
   getGalleryDetails(galleryId: number): Promise<unknown>;
   getGalleryImageUrls(galleryId: number): Promise<string[]>;
+}
+
+export interface CompanionOperationResult<T = undefined> {
+  success: boolean;
+  data?: T;
+  error?: string;
+}
+
+export interface CompanionDownloadService {
+  getQueue(): Promise<CompanionOperationResult<DownloadQueueItem[]>>;
+  add(galleryId: number): Promise<CompanionOperationResult<DownloadQueueItem>>;
+  remove(queueId: number): Promise<CompanionOperationResult>;
+  pause(queueId: number): Promise<CompanionOperationResult>;
+  resume(queueId: number): Promise<CompanionOperationResult>;
+  retry(queueId: number): Promise<CompanionOperationResult>;
+  clearCompleted(): Promise<CompanionOperationResult>;
+}
+
+export interface CompanionLibraryBook {
+  id: number;
+  title: string;
+  path: string;
+  libraryPath: string;
+  pageCount: number;
+  modifiedAt: number;
+  hitomiId?: string | null;
+  type?: string | null;
+  language?: string | null;
+  artists: { name: string }[];
+  groups: { name: string }[];
+  series: { name: string }[];
+  characters: { name: string }[];
+  tags: { name: string }[];
+  coverUrl: string;
+}
+
+export interface CompanionLibraryImage {
+  stream: Readable;
+  contentType: string;
+  contentLength?: number;
+}
+
+export interface CompanionLibraryService {
+  listBooks(): Promise<CompanionLibraryBook[]>;
+  getPageCount(bookId: number): Promise<number | null>;
+  getCover(bookId: number): Promise<CompanionLibraryImage | null>;
+  getPage(
+    bookId: number,
+    pageIndex: number,
+  ): Promise<CompanionLibraryImage | null>;
 }
 
 export interface CompanionDeviceStore {
@@ -43,6 +95,8 @@ export class CompanionServer {
   constructor(
     private readonly hitomiService: CompanionHitomiService,
     private readonly deviceStore: CompanionDeviceStore,
+    private readonly downloadService?: CompanionDownloadService,
+    private readonly libraryService?: CompanionLibraryService,
   ) {}
 
   async start(port = DEFAULT_PORT): Promise<CompanionServerStatus> {
@@ -169,6 +223,20 @@ export class CompanionServer {
       return;
     }
 
+    if (
+      this.downloadService &&
+      (await this.handleDownloadRequest(request, response, pathname))
+    ) {
+      return;
+    }
+
+    if (
+      this.libraryService &&
+      (await this.handleLibraryRequest(request, response, pathname))
+    ) {
+      return;
+    }
+
     if (request.method === "POST" && pathname === "/v1/hitomi/search") {
       const body = await this.readJsonBody(request);
       const searchQuery = body.searchQuery;
@@ -214,6 +282,124 @@ export class CompanionServer {
     }
 
     this.sendJson(response, 404, { success: false, error: "Not found" });
+  }
+
+  private async handleLibraryRequest(
+    request: IncomingMessage,
+    response: ServerResponse,
+    pathname: string,
+  ): Promise<boolean> {
+    const service = this.libraryService;
+    if (!service || request.method !== "GET") return false;
+
+    if (pathname === "/v1/library/books") {
+      this.sendJson(response, 200, {
+        success: true,
+        data: await service.listBooks(),
+      });
+      return true;
+    }
+
+    const bookMatch = pathname.match(
+      /^\/v1\/library\/books\/(\d+)\/(cover|pages)(?:\/(\d+))?$/,
+    );
+    if (!bookMatch) return false;
+
+    const bookId = Number.parseInt(bookMatch[1], 10);
+    const resource = bookMatch[2];
+    const pageIndexText = bookMatch[3];
+
+    if (resource === "pages" && pageIndexText === undefined) {
+      const pageCount = await service.getPageCount(bookId);
+      if (pageCount === null) {
+        this.sendJson(response, 404, {
+          success: false,
+          error: "Book not found",
+        });
+        return true;
+      }
+      this.sendJson(response, 200, {
+        success: true,
+        data: Array.from(
+          { length: pageCount },
+          (_, index) => `/v1/library/books/${bookId}/pages/${index}`,
+        ),
+      });
+      return true;
+    }
+
+    const image =
+      resource === "cover"
+        ? await service.getCover(bookId)
+        : await service.getPage(
+            bookId,
+            Number.parseInt(pageIndexText as string, 10),
+          );
+    if (!image) {
+      this.sendJson(response, 404, {
+        success: false,
+        error: resource === "cover" ? "Cover not found" : "Page not found",
+      });
+      return true;
+    }
+
+    this.sendImage(response, image);
+    return true;
+  }
+
+  private async handleDownloadRequest(
+    request: IncomingMessage,
+    response: ServerResponse,
+    pathname: string,
+  ): Promise<boolean> {
+    const service = this.downloadService;
+    if (!service) return false;
+
+    if (request.method === "GET" && pathname === "/v1/downloads") {
+      this.sendOperationResult(response, await service.getQueue());
+      return true;
+    }
+
+    if (request.method === "POST" && pathname === "/v1/downloads") {
+      const body = await this.readJsonBody(request);
+      const galleryId = body.galleryId;
+      if (!isPositiveInteger(galleryId)) {
+        this.sendJson(response, 400, {
+          success: false,
+          error: "galleryId must be a positive integer",
+        });
+        return true;
+      }
+      this.sendOperationResult(response, await service.add(galleryId), 201);
+      return true;
+    }
+
+    if (request.method === "DELETE" && pathname === "/v1/downloads/completed") {
+      this.sendOperationResult(response, await service.clearCompleted());
+      return true;
+    }
+
+    const itemMatch = pathname.match(
+      /^\/v1\/downloads\/(\d+)(?:\/(pause|resume|retry))?$/,
+    );
+    if (!itemMatch) return false;
+
+    const queueId = Number.parseInt(itemMatch[1], 10);
+    const action = itemMatch[2];
+    if (request.method === "DELETE" && !action) {
+      this.sendOperationResult(response, await service.remove(queueId));
+      return true;
+    }
+    if (request.method !== "POST" || !action) return false;
+
+    const result =
+      action === "pause"
+        ? await service.pause(queueId)
+        : action === "resume"
+          ? await service.resume(queueId)
+          : await service.retry(queueId);
+    this.sendOperationResult(response, result);
+    return true;
   }
 
   private async handlePair(
@@ -306,6 +492,43 @@ export class CompanionServer {
     response.end(JSON.stringify(body));
   }
 
+  private sendOperationResult<T>(
+    response: ServerResponse,
+    result: CompanionOperationResult<T>,
+    successStatus = 200,
+  ): void {
+    if (!result.success) {
+      this.sendJson(response, 409, {
+        success: false,
+        error: result.error || "Download operation failed",
+      });
+      return;
+    }
+    this.sendJson(response, successStatus, {
+      success: true,
+      data: result.data ?? {},
+    });
+  }
+
+  private sendImage(
+    response: ServerResponse,
+    image: CompanionLibraryImage,
+  ): void {
+    response.writeHead(200, {
+      "Content-Type": image.contentType,
+      ...(image.contentLength === undefined
+        ? {}
+        : { "Content-Length": image.contentLength }),
+      "Cache-Control": "private, max-age=300",
+      "X-Content-Type-Options": "nosniff",
+    });
+    image.stream.on("error", (error) => {
+      console.error("[Companion] Image stream failed:", error);
+      response.destroy(error);
+    });
+    image.stream.pipe(response);
+  }
+
   private clearExpiredPairingCode(): void {
     if (this.pairingState && this.pairingState.expiresAt <= Date.now()) {
       this.pairingState = null;
@@ -315,6 +538,10 @@ export class CompanionServer {
 
 function hashToken(token: string): string {
   return createHash("sha256").update(token).digest("hex");
+}
+
+function isPositiveInteger(value: unknown): value is number {
+  return typeof value === "number" && Number.isInteger(value) && value > 0;
 }
 
 function toDeviceInfo(device: CompanionDevice): CompanionDeviceInfo {
