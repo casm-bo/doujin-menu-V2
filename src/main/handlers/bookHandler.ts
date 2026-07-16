@@ -6,6 +6,7 @@ import type { FilterParams } from "../../types/ipc.js";
 import db from "../db/index.js";
 import { console } from "../main.js";
 import { naturalSort } from "../utils/index.js";
+import { DesktopCompanionSyncService } from "../services/companion/companionSyncService.js";
 import { store as configStore } from "./configHandler.js";
 
 export interface ExcludeTerms {
@@ -615,10 +616,15 @@ export const handleUpdateBookCurrentPage = async ({
   currentPage: number;
 }) => {
   try {
-    await db("Book")
-      .where("id", bookId)
-      .update({ current_page: currentPage, last_read_at: db.fn.now() });
-    return { success: true };
+    const result = await new DesktopCompanionSyncService(db).applyDesktopChange(
+      bookId,
+      {
+        currentPage,
+      },
+    );
+    return result.status === "not_found"
+      ? { success: false, error: "Book not found" }
+      : { success: true };
   } catch (error) {
     console.error("Failed to update current page:", error);
     return { success: false, error };
@@ -1039,8 +1045,15 @@ export const handleToggleBookFavorite = async ({
   isFavorite: boolean;
 }) => {
   try {
-    await db("Book").where("id", bookId).update({ is_favorite: isFavorite });
-    return { success: true, is_favorite: isFavorite };
+    const result = await new DesktopCompanionSyncService(db).applyDesktopChange(
+      bookId,
+      {
+        isFavorite,
+      },
+    );
+    return result.status === "not_found"
+      ? { success: false, error: "Book not found" }
+      : { success: true, is_favorite: isFavorite };
   } catch (error) {
     console.error(`Failed to toggle favorite for book ${bookId}:`, error);
     return { success: false, error };
@@ -1070,8 +1083,15 @@ export const handleAddBookHistory = async (bookId: number) => {
     if (!bookId) {
       return { success: false, error: "Book ID is required." };
     }
-    await db("BookHistory").insert({ book_id: bookId });
-    return { success: true };
+    const result = await new DesktopCompanionSyncService(db).applyDesktopChange(
+      bookId,
+      {
+        addHistory: true,
+      },
+    );
+    return result.status === "not_found"
+      ? { success: false, error: "Book not found" }
+      : { success: true };
   } catch (error) {
     console.error(`Failed to add book history for book ${bookId}:`, error);
     return { success: false, error };

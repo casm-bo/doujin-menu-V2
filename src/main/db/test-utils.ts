@@ -64,6 +64,7 @@ export async function createTestDb(): Promise<Knex> {
 /** 모든 테이블의 데이터를 삭제 (외래키 순서 고려) */
 export async function truncateAll(db: Knex): Promise<void> {
   const tables = [
+    "CompanionSyncChange",
     "BookHistory",
     "BookCharacter",
     "BookGroup",

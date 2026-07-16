@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">동인메뉴</string>
+    <string name="sync_title">동인메뉴 내부 동기화</string>
+    <string name="sync_description">데스크톱 설정에서 Companion 서버를 켜고 표시된 내부 IP와 페어링 코드를 입력하세요.</string>
+    <string name="address_hint">예: 192.168.0.10:47831</string>
+    <string name="pairing_code_hint">6자리 페어링 코드</string>
+    <string name="pair_and_sync">페어링 및 초기 동기화</string>
+    <string name="sync_now">지금 동기화</string>
+    <string name="paired">페어링됨</string>
+    <string name="pairing_required">페어링 필요</string>
+    <string name="pairing_in_progress">페어링 중…</string>
+    <string name="pairing_complete">페어링 및 초기 동기화 완료</string>
+    <string name="sync_in_progress">동기화 중…</string>
+    <string name="sync_complete">동기화 완료</string>
+    <string name="operation_failed">작업에 실패했습니다.</string>
+    <string name="cached_book_count">로컬 캐시: %1$d권</string>
+</resources>

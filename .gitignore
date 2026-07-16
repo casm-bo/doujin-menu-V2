@@ -2,6 +2,9 @@ node_modules
 dist
 build
 coverage
+android/.gradle/
+android/local.properties
+android/app/schemas/
 
 dev.sqlite3
 dev.sqlite3-shm

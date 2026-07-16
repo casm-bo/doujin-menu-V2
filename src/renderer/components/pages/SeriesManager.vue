@@ -314,12 +314,9 @@ const handleRunDetection = () => {
 };
 
 // 자동 감지 확정 실행
-const handleConfirmDetection = (options: {
-  minConfidence: number;
-  minBooks: number;
-}) => {
+const handleConfirmDetection = () => {
   showDetectionDialog.value = false;
-  detectionMutation.mutate(options);
+  detectionMutation.mutate({});
 };
 
 // 시리즈 클릭 → 상세 다이얼로그

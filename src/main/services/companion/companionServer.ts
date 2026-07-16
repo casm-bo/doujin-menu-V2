@@ -8,6 +8,7 @@ import type {
   CompanionDeviceInfo,
   CompanionPairingCode,
   CompanionServerStatus,
+  CompanionSyncMutation,
 } from "../../../types/companion.js";
 import type {
   SearchGalleriesParams,
@@ -18,6 +19,9 @@ import type { DownloadQueueItem } from "../../../types/ipc.js";
 const DEFAULT_PORT = 47831;
 const MAX_REQUEST_BODY_BYTES = 64 * 1024;
 const PAIRING_CODE_TTL_MS = 5 * 60 * 1000;
+const PAIRING_ATTEMPT_WINDOW_MS = 60 * 1000;
+const MAX_PAIRING_ATTEMPTS_PER_WINDOW = 5;
+const MAX_SYNC_MUTATIONS_PER_REQUEST = 100;
 
 interface CompanionHitomiService {
   searchGalleries(
@@ -34,7 +38,7 @@ export interface CompanionOperationResult<T = undefined> {
 }
 
 export interface CompanionDownloadService {
-  getPath(): Promise<CompanionOperationResult<{ path: string | null }>>;
+  getPath(): Promise<CompanionOperationResult<{ configured: boolean }>>;
   getQueue(): Promise<CompanionOperationResult<DownloadQueueItem[]>>;
   add(galleryId: number): Promise<CompanionOperationResult<DownloadQueueItem>>;
   remove(queueId: number): Promise<CompanionOperationResult>;
@@ -46,11 +50,15 @@ export interface CompanionDownloadService {
 
 export interface CompanionLibraryBook {
   id: number;
+  syncId: string;
   title: string;
-  path: string;
-  libraryPath: string;
   pageCount: number;
   modifiedAt: number;
+  currentPage: number;
+  isFavorite: boolean;
+  lastReadAt: string | null;
+  stateVersion: number;
+  stateUpdatedAt: string | null;
   hitomiId?: string | null;
   type?: string | null;
   language?: string | null;
@@ -83,21 +91,37 @@ export interface CompanionDeviceStore {
   setDevices(devices: CompanionDevice[]): void;
 }
 
+export interface CompanionSyncService {
+  bootstrap(): Promise<unknown>;
+  getChanges(afterCursor: number, limit?: number): Promise<unknown>;
+  applyMutations(
+    deviceId: string,
+    mutations: CompanionSyncMutation[],
+  ): Promise<unknown>;
+}
+
 interface PairingState {
   code: string;
   expiresAt: number;
+}
+
+interface PairingAttemptState {
+  attempts: number;
+  windowStartedAt: number;
 }
 
 export class CompanionServer {
   private server: ReturnType<typeof createServer> | null = null;
   private port = DEFAULT_PORT;
   private pairingState: PairingState | null = null;
+  private readonly pairingAttempts = new Map<string, PairingAttemptState>();
 
   constructor(
     private readonly hitomiService: CompanionHitomiService,
     private readonly deviceStore: CompanionDeviceStore,
     private readonly downloadService?: CompanionDownloadService,
     private readonly libraryService?: CompanionLibraryService,
+    private readonly syncService?: CompanionSyncService,
   ) {}
 
   async start(port = DEFAULT_PORT): Promise<CompanionServerStatus> {
@@ -225,6 +249,13 @@ export class CompanionServer {
     }
 
     if (
+      this.syncService &&
+      (await this.handleSyncRequest(request, response, pathname, device))
+    ) {
+      return;
+    }
+
+    if (
       this.downloadService &&
       (await this.handleDownloadRequest(request, response, pathname))
     ) {
@@ -283,6 +314,79 @@ export class CompanionServer {
     }
 
     this.sendJson(response, 404, { success: false, error: "Not found" });
+  }
+
+  private async handleSyncRequest(
+    request: IncomingMessage,
+    response: ServerResponse,
+    pathname: string,
+    device: CompanionDevice,
+  ): Promise<boolean> {
+    const service = this.syncService;
+    if (!service) return false;
+
+    if (request.method === "GET" && pathname === "/v1/sync/bootstrap") {
+      this.sendJson(response, 200, {
+        success: true,
+        data: await service.bootstrap(),
+      });
+      return true;
+    }
+
+    if (request.method === "GET" && pathname === "/v1/sync/changes") {
+      const requestUrl = new URL(request.url || "/", "http://companion.local");
+      const cursor = parseNonNegativeInteger(
+        requestUrl.searchParams.get("cursor") ?? "0",
+      );
+      const limitText = requestUrl.searchParams.get("limit");
+      const limit =
+        limitText === null ? undefined : parsePositiveInteger(limitText);
+      if (cursor === null || (limitText !== null && limit === null)) {
+        this.sendJson(response, 400, {
+          success: false,
+          error: "cursor and limit must be valid integers",
+        });
+        return true;
+      }
+      this.sendJson(response, 200, {
+        success: true,
+        data: await service.getChanges(cursor, limit ?? undefined),
+      });
+      return true;
+    }
+
+    if (request.method === "POST" && pathname === "/v1/sync/changes") {
+      const body = await this.readJsonBody(request);
+      if (!Array.isArray(body.mutations)) {
+        this.sendJson(response, 400, {
+          success: false,
+          error: "mutations must be an array",
+        });
+        return true;
+      }
+      if (body.mutations.length > MAX_SYNC_MUTATIONS_PER_REQUEST) {
+        this.sendJson(response, 400, {
+          success: false,
+          error: `A maximum of ${MAX_SYNC_MUTATIONS_PER_REQUEST} mutations is allowed`,
+        });
+        return true;
+      }
+      const mutations = body.mutations.filter(isSyncMutation);
+      if (mutations.length !== body.mutations.length) {
+        this.sendJson(response, 400, {
+          success: false,
+          error: "Invalid sync mutation",
+        });
+        return true;
+      }
+      this.sendJson(response, 200, {
+        success: true,
+        data: await service.applyMutations(device.id, mutations),
+      });
+      return true;
+    }
+
+    return false;
   }
 
   private async handleLibraryRequest(
@@ -362,7 +466,13 @@ export class CompanionServer {
     }
 
     if (request.method === "GET" && pathname === "/v1/downloads") {
-      this.sendOperationResult(response, await service.getQueue());
+      const result = await service.getQueue();
+      this.sendOperationResult(
+        response,
+        result.success
+          ? { ...result, data: result.data?.map(withoutDownloadPath) ?? [] }
+          : result,
+      );
       return true;
     }
 
@@ -376,7 +486,14 @@ export class CompanionServer {
         });
         return true;
       }
-      this.sendOperationResult(response, await service.add(galleryId), 201);
+      const result = await service.add(galleryId);
+      this.sendOperationResult(
+        response,
+        result.success && result.data
+          ? { ...result, data: withoutDownloadPath(result.data) }
+          : result,
+        201,
+      );
       return true;
     }
 
@@ -413,6 +530,14 @@ export class CompanionServer {
     response: ServerResponse,
   ): Promise<void> {
     this.clearExpiredPairingCode();
+    const remoteAddress = request.socket.remoteAddress || "unknown";
+    if (!this.canAttemptPairing(remoteAddress)) {
+      this.sendJson(response, 429, {
+        success: false,
+        error: "Too many pairing attempts. Try again shortly.",
+      });
+      return;
+    }
     const body = await this.readJsonBody(request);
     if (
       !this.pairingState ||
@@ -422,6 +547,7 @@ export class CompanionServer {
       body.deviceName.trim().length === 0 ||
       body.deviceName.length > 100
     ) {
+      this.recordFailedPairingAttempt(remoteAddress);
       this.sendJson(response, 401, {
         success: false,
         error: "Invalid or expired pairing code",
@@ -430,6 +556,7 @@ export class CompanionServer {
     }
 
     this.pairingState = null;
+    this.pairingAttempts.delete(remoteAddress);
     const token = randomBytes(32).toString("base64url");
     const now = new Date().toISOString();
     const device: CompanionDevice = {
@@ -445,6 +572,31 @@ export class CompanionServer {
       success: true,
       data: { device: toDeviceInfo(device), token },
     });
+  }
+
+  private canAttemptPairing(remoteAddress: string): boolean {
+    const attempt = this.pairingAttempts.get(remoteAddress);
+    if (!attempt) return true;
+    if (Date.now() - attempt.windowStartedAt >= PAIRING_ATTEMPT_WINDOW_MS) {
+      this.pairingAttempts.delete(remoteAddress);
+      return true;
+    }
+    return attempt.attempts < MAX_PAIRING_ATTEMPTS_PER_WINDOW;
+  }
+
+  private recordFailedPairingAttempt(remoteAddress: string): void {
+    const existing = this.pairingAttempts.get(remoteAddress);
+    if (
+      !existing ||
+      Date.now() - existing.windowStartedAt >= PAIRING_ATTEMPT_WINDOW_MS
+    ) {
+      this.pairingAttempts.set(remoteAddress, {
+        attempts: 1,
+        windowStartedAt: Date.now(),
+      });
+      return;
+    }
+    existing.attempts += 1;
   }
 
   private authenticate(request: IncomingMessage): CompanionDevice | null {
@@ -548,6 +700,91 @@ function hashToken(token: string): string {
 
 function isPositiveInteger(value: unknown): value is number {
   return typeof value === "number" && Number.isInteger(value) && value > 0;
+}
+
+function withoutDownloadPath(item: DownloadQueueItem) {
+  const { download_path: _downloadPath, ...safeItem } = item;
+  void _downloadPath;
+  return safeItem;
+}
+
+function parseNonNegativeInteger(value: string): number | null {
+  if (!/^\d+$/.test(value)) return null;
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) ? parsed : null;
+}
+
+function parsePositiveInteger(value: string): number | null {
+  const parsed = parseNonNegativeInteger(value);
+  return parsed !== null && parsed > 0 ? parsed : null;
+}
+
+function isSyncMutation(value: unknown): value is CompanionSyncMutation {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const mutation = value as Record<string, unknown>;
+  if (!isBoundedString(mutation.mutationId, 128)) return false;
+  if (!isBoundedString(mutation.bookSyncId, 128)) return false;
+  if (
+    mutation.baseVersion !== undefined &&
+    !isNonNegativeInteger(mutation.baseVersion)
+  ) {
+    return false;
+  }
+  if (
+    mutation.currentPage !== undefined &&
+    !isNonNegativeInteger(mutation.currentPage)
+  ) {
+    return false;
+  }
+  if (
+    mutation.isFavorite !== undefined &&
+    typeof mutation.isFavorite !== "boolean"
+  ) {
+    return false;
+  }
+
+  let hasChange =
+    mutation.currentPage !== undefined || mutation.isFavorite !== undefined;
+  if (mutation.historyEvent !== undefined) {
+    if (
+      !mutation.historyEvent ||
+      typeof mutation.historyEvent !== "object" ||
+      Array.isArray(mutation.historyEvent)
+    ) {
+      return false;
+    }
+    const history = mutation.historyEvent as Record<string, unknown>;
+    if (!isBoundedString(history.eventId, 128)) return false;
+    if (
+      typeof history.viewedAt !== "string" ||
+      !Number.isFinite(Date.parse(history.viewedAt))
+    ) {
+      return false;
+    }
+    if (
+      history.currentPage !== undefined &&
+      !isNonNegativeInteger(history.currentPage)
+    ) {
+      return false;
+    }
+    hasChange = true;
+  }
+  return hasChange;
+}
+
+function isBoundedString(
+  value: unknown,
+  maximumLength: number,
+): value is string {
+  return (
+    typeof value === "string" &&
+    value.length > 0 &&
+    value.length <= maximumLength
+  );
+}
+
+function isNonNegativeInteger(value: unknown): value is number {
+  return typeof value === "number" && Number.isInteger(value) && value >= 0;
 }
 
 function toDeviceInfo(device: CompanionDevice): CompanionDeviceInfo {

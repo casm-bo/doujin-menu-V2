@@ -8,6 +8,8 @@ import {
   type CompanionDownloadService,
 } from "../services/companion/companionServer.js";
 import { DesktopLibraryService } from "../services/companion/companionLibraryService.js";
+import { DesktopCompanionSyncService } from "../services/companion/companionSyncService.js";
+import db from "../db/index.js";
 import { store } from "./configHandler.js";
 import {
   handleAddToDownloadQueue,
@@ -32,7 +34,7 @@ const deviceStore: CompanionDeviceStore = {
 const downloadService: CompanionDownloadService = {
   getPath: async () => ({
     success: true,
-    data: { path: store.get("downloadPath", "").trim() || null },
+    data: { configured: Boolean(store.get("downloadPath", "").trim()) },
   }),
   getQueue: handleGetDownloadQueue,
   add: async (galleryId) => {
@@ -64,7 +66,8 @@ export const companionServer = new CompanionServer(
   hitomiService,
   deviceStore,
   downloadService,
-  new DesktopLibraryService(() => store.get("libraryFolders", [])),
+  new DesktopLibraryService(),
+  new DesktopCompanionSyncService(db),
 );
 
 export async function startCompanionServer() {

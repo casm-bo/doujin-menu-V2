@@ -23,11 +23,17 @@ const IMAGE_EXTENSIONS = new Set([
 
 interface LibraryBookRow {
   id: number;
+  sync_id: string | null;
   title: string;
   path: string;
   page_count: number | null;
   added_at: string | null;
   file_mtime: number | null;
+  current_page: number | null;
+  is_favorite: number | boolean;
+  last_read_at: string | null;
+  state_version: number | null;
+  state_updated_at: string | null;
   hitomi_id: string | null;
   type: string | null;
   language_name_english: string | null;
@@ -40,8 +46,6 @@ interface LibraryBookRow {
 }
 
 export class DesktopLibraryService implements CompanionLibraryService {
-  constructor(private readonly getLibraryFolders: () => string[]) {}
-
   async listBooks(): Promise<CompanionLibraryBook[]> {
     const books = (await db("Book")
       .select(
@@ -65,24 +69,30 @@ export class DesktopLibraryService implements CompanionLibraryService {
       .groupBy("Book.id")
       .orderBy("Book.added_at", "desc")) as LibraryBookRow[];
 
-    const libraryFolders = this.getLibraryFolders();
-    return books.map((book) => ({
-      id: book.id,
-      title: book.title,
-      path: book.path,
-      libraryPath: findLibraryPath(book.path, libraryFolders),
-      pageCount: Math.max(0, book.page_count || 0),
-      modifiedAt: getModifiedAt(book),
-      hitomiId: book.hitomi_id ?? null,
-      type: book.type ?? null,
-      language: book.language_name_local ?? book.language_name_english ?? null,
-      artists: metadataNames(book.artists),
-      groups: metadataNames(book.groups),
-      series: metadataNames(book.series),
-      characters: metadataNames(book.characters),
-      tags: metadataNames(book.tags),
-      coverUrl: `/v1/library/books/${book.id}/cover`,
-    }));
+    return books
+      .filter((book) => book.sync_id)
+      .map((book) => ({
+        id: book.id,
+        syncId: book.sync_id as string,
+        title: book.title,
+        pageCount: Math.max(0, book.page_count || 0),
+        modifiedAt: getModifiedAt(book),
+        currentPage: Math.max(0, book.current_page || 0),
+        isFavorite: Boolean(book.is_favorite),
+        lastReadAt: book.last_read_at ?? null,
+        stateVersion: Math.max(0, book.state_version || 0),
+        stateUpdatedAt: book.state_updated_at ?? null,
+        hitomiId: book.hitomi_id ?? null,
+        type: book.type ?? null,
+        language:
+          book.language_name_local ?? book.language_name_english ?? null,
+        artists: metadataNames(book.artists),
+        groups: metadataNames(book.groups),
+        series: metadataNames(book.series),
+        characters: metadataNames(book.characters),
+        tags: metadataNames(book.tags),
+        coverUrl: `/v1/library/books/${book.id}/cover`,
+      }));
   }
 
   async getPageCount(bookId: number): Promise<number | null> {
@@ -131,24 +141,6 @@ export class DesktopLibraryService implements CompanionLibraryService {
     }
     return null;
   }
-}
-
-function findLibraryPath(bookPath: string, libraryFolders: string[]): string {
-  const matches = libraryFolders.filter((folder) =>
-    isPathInside(bookPath, folder),
-  );
-  if (matches.length > 0) {
-    return matches.sort((a, b) => b.length - a.length)[0];
-  }
-  return /\.(cbz|zip)$/i.test(bookPath) ? path.dirname(bookPath) : bookPath;
-}
-
-function isPathInside(candidate: string, parent: string): boolean {
-  const relative = path.relative(path.resolve(parent), path.resolve(candidate));
-  return (
-    relative === "" ||
-    (!relative.startsWith("..") && !path.isAbsolute(relative))
-  );
 }
 
 function getModifiedAt(book: LibraryBookRow): number {

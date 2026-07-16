@@ -8,11 +8,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Icon } from "@iconify/vue";
-import { onMounted, ref, watch } from "vue";
-import { ipcRenderer } from "@/api";
 
 interface Props {
   open: boolean;
@@ -21,56 +17,11 @@ interface Props {
 const props = defineProps<Props>();
 const emit = defineEmits<{
   "update:open": [value: boolean];
-  confirm: [options: { minConfidence: number; minBooks: number }];
+  confirm: [];
 }>();
 
-// 설정값 저장
-const saveSettings = async () => {
-  const settings = {
-    minConfidence: minConfidence.value,
-    minBooks: minBooks.value,
-  };
-  await ipcRenderer.invoke("set-config", {
-    key: "seriesDetectionSettings",
-    value: settings,
-  });
-};
-
-// 감지 옵션
-const minConfidence = ref(0.7);
-const minBooks = ref(2);
-
-// config에서 설정값 불러오기
-onMounted(async () => {
-  const config = (await ipcRenderer.invoke("get-config")) as {
-    seriesDetectionSettings?: {
-      minConfidence?: number;
-      minBooks?: number;
-    };
-  };
-  if (config.seriesDetectionSettings) {
-    minConfidence.value = config.seriesDetectionSettings.minConfidence ?? 0.7;
-    minBooks.value = config.seriesDetectionSettings.minBooks ?? 2;
-  }
-});
-
-// 설정값 변경 시 자동 저장
-watch([minConfidence, minBooks], () => {
-  saveSettings();
-});
-
-// 다이얼로그 닫기
-const closeDialog = () => {
-  emit("update:open", false);
-};
-
-// 확정 실행
-const handleConfirm = () => {
-  emit("confirm", {
-    minConfidence: minConfidence.value,
-    minBooks: minBooks.value,
-  });
-};
+const closeDialog = () => emit("update:open", false);
+const handleConfirm = () => emit("confirm");
 </script>
 
 <template>
@@ -82,60 +33,41 @@ const handleConfirm = () => {
             icon="solar:magic-stick-3-bold-duotone"
             class="text-primary h-5 w-5"
           />
-          자동 시리즈 감지 설정
+          시리즈 자동 생성
         </DialogTitle>
         <DialogDescription>
-          책 제목 패턴을 분석하여 자동으로 시리즈를 감지하고 그룹화합니다.
-          <br />
-          <span class="text-xs opacity-80">
-            • 새 책 추가 시 자동으로 시리즈 감지가 실행됩니다
-            <br />
-            • 수동으로 편집한 시리즈는 자동 감지에서 제외됩니다
-            <br />
-            • 이미 시리즈에 속한 책은 재감지되지 않습니다
-          </span>
+          Android 앱과 같은 규칙으로 아직 시리즈에 포함되지 않은 갤러리만
+          검사합니다. 기존에 만든 시리즈는 변경하지 않습니다.
         </DialogDescription>
       </DialogHeader>
 
-      <div class="space-y-6 py-4">
-        <!-- 최소 신뢰도 -->
-        <div class="space-y-2">
-          <Label for="minConfidence">
-            최소 신뢰도: {{ (minConfidence * 100).toFixed(0) }}%
-          </Label>
-          <div class="flex items-center gap-4">
-            <input
-              id="minConfidence"
-              v-model.number="minConfidence"
-              type="range"
-              min="0"
-              max="1"
-              step="0.05"
-              class="flex-1"
-            />
-            <span class="text-muted-foreground w-12 text-right text-sm">
-              {{ (minConfidence * 100).toFixed(0) }}%
-            </span>
-          </div>
-          <p class="text-muted-foreground text-xs">
-            이 값 이상의 신뢰도를 가진 시리즈만 자동 생성됩니다. 높을수록
-            정확하지만 감지되는 시리즈가 줄어듭니다.
-          </p>
-        </div>
-
-        <!-- 최소 책 수 -->
-        <div class="space-y-2">
-          <Label for="minBooks">최소 책 수</Label>
-          <Input
-            id="minBooks"
-            v-model.number="minBooks"
-            type="number"
-            min="2"
-            max="10"
+      <div class="bg-muted/50 space-y-3 rounded-lg p-4 text-sm">
+        <div class="flex items-start gap-2">
+          <Icon
+            icon="solar:user-check-bold-duotone"
+            class="text-primary mt-0.5 h-4 w-4"
           />
-          <p class="text-muted-foreground text-xs">
-            시리즈로 인정하기 위한 최소 책 수입니다.
-          </p>
+          <span>두 갤러리에 공통 작가가 한 명 이상 있어야 합니다.</span>
+        </div>
+        <div class="flex items-start gap-2">
+          <Icon
+            icon="solar:text-bold-duotone"
+            class="text-primary mt-0.5 h-4 w-4"
+          />
+          <span
+            >권·화·전편·중편·후편 같은 표기를 제외한 제목이 같거나 82% 이상
+            유사해야 합니다.</span
+          >
+        </div>
+        <div class="flex items-start gap-2">
+          <Icon
+            icon="solar:shield-check-bold-duotone"
+            class="text-primary mt-0.5 h-4 w-4"
+          />
+          <span
+            >조건을 만족하는 갤러리가 2개 이상일 때만 새 시리즈를
+            만듭니다.</span
+          >
         </div>
       </div>
 
@@ -149,19 +81,3 @@ const handleConfirm = () => {
     </DialogContent>
   </Dialog>
 </template>
-
-<style scoped>
-@reference "@/assets/tailwind.css";
-
-input[type="range"] {
-  @apply bg-secondary h-2 cursor-pointer appearance-none rounded-lg;
-}
-
-input[type="range"]::-webkit-slider-thumb {
-  @apply bg-primary h-4 w-4 cursor-pointer appearance-none rounded-full;
-}
-
-input[type="range"]::-moz-range-thumb {
-  @apply bg-primary h-4 w-4 cursor-pointer rounded-full border-0;
-}
-</style>
