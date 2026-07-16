@@ -31,6 +31,10 @@ describe("CompanionServer", () => {
     };
     vi.clearAllMocks();
     downloadService = {
+      getPath: vi.fn().mockResolvedValue({
+        success: true,
+        data: { path: "C:\\Downloads" },
+      }),
       getQueue: vi.fn().mockResolvedValue({ success: true, data: [] }),
       add: vi.fn(),
       remove: vi.fn(),
@@ -198,6 +202,22 @@ describe("CompanionServer", () => {
     expect((await listResponse.json()).data).toEqual([item]);
     expect(addResponse.status).toBe(201);
     expect(downloadService.add).toHaveBeenCalledWith(123);
+  });
+
+  it("returns the desktop download path only to an authenticated device", async () => {
+    const unauthenticated = await fetch(`${baseUrl}/v1/downloads/path`);
+    expect(unauthenticated.status).toBe(401);
+
+    const token = await pairTestDevice();
+    const response = await fetch(`${baseUrl}/v1/downloads/path`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      success: true,
+      data: { path: "C:\\Downloads" },
+    });
   });
 
   it("forwards download queue control actions", async () => {

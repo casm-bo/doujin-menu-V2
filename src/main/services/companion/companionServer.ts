@@ -34,6 +34,7 @@ export interface CompanionOperationResult<T = undefined> {
 }
 
 export interface CompanionDownloadService {
+  getPath(): Promise<CompanionOperationResult<{ path: string | null }>>;
   getQueue(): Promise<CompanionOperationResult<DownloadQueueItem[]>>;
   add(galleryId: number): Promise<CompanionOperationResult<DownloadQueueItem>>;
   remove(queueId: number): Promise<CompanionOperationResult>;
@@ -354,6 +355,11 @@ export class CompanionServer {
   ): Promise<boolean> {
     const service = this.downloadService;
     if (!service) return false;
+
+    if (request.method === "GET" && pathname === "/v1/downloads/path") {
+      this.sendOperationResult(response, await service.getPath());
+      return true;
+    }
 
     if (request.method === "GET" && pathname === "/v1/downloads") {
       this.sendOperationResult(response, await service.getQueue());

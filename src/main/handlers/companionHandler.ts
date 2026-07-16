@@ -30,6 +30,10 @@ const deviceStore: CompanionDeviceStore = {
 };
 
 const downloadService: CompanionDownloadService = {
+  getPath: async () => ({
+    success: true,
+    data: { path: store.get("downloadPath", "").trim() || null },
+  }),
   getQueue: handleGetDownloadQueue,
   add: async (galleryId) => {
     const downloadPath = store.get("downloadPath", "").trim();
