@@ -199,6 +199,24 @@ describe("CompanionServer", () => {
     expect(response.status).toBe(401);
   });
 
+  it("인증된 기기의 연결 상태 확인 요청을 처리한다", async () => {
+    const token = await pairTestDevice();
+
+    const response = await fetch(`${baseUrl}/v1/connection`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      success: true,
+      data: { connected: true },
+    });
+    expect(devices[0].lastSeenAt).not.toBeNull();
+    expect(server.getDevices()[0].connectionState).toBe("connecting");
+    await new Promise((resolve) => setTimeout(resolve, 1_300));
+    expect(server.getDevices()[0].connectionState).toBe("connected");
+  });
+
   it("allows an authenticated device to list and add downloads", async () => {
     const token = await pairTestDevice();
     const headers = {

@@ -1,5 +1,8 @@
 package com.qqoro.doujinmenu.data
 
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.util.LruCache
 import androidx.room.withTransaction
 import com.qqoro.doujinmenu.data.local.BookEntity
 import com.qqoro.doujinmenu.data.local.DoujinMenuDatabase
@@ -19,10 +22,33 @@ class SyncRepository(
     private val connectionStore: SecureConnectionStore,
 ) {
     private val dao = database.syncDao()
+    private val coverCache = object : LruCache<String, Bitmap>(COVER_CACHE_BYTES) {
+        override fun sizeOf(key: String, value: Bitmap): Int = value.byteCount
+    }
 
     fun observeBooks(): Flow<List<BookEntity>> = dao.observeBooks()
 
     fun hasConnection(): Boolean = connectionStore.load() != null
+
+    suspend fun checkConnection() {
+        val connection = requireConnection()
+        client.checkConnection(connection.baseUrl, connection.token)
+    }
+
+    suspend fun loadCover(syncId: String): Bitmap? {
+        val book = dao.getBook(syncId) ?: return null
+        val cacheKey = "$syncId:${book.updatedAt.orEmpty()}"
+        coverCache.get(cacheKey)?.let { return it }
+        val connection = requireConnection()
+        val bytes = client.getLibraryImage(
+            connection.baseUrl,
+            connection.token,
+            book.coverUrl,
+        )
+        return BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.also {
+            coverCache.put(cacheKey, it)
+        }
+    }
 
     suspend fun pair(baseUrl: String, code: String, deviceName: String) {
         val normalizedUrl = PrivateLanUrl.normalize(baseUrl)
@@ -127,6 +153,7 @@ class SyncRepository(
 
     fun disconnect() {
         connectionStore.clear()
+        coverCache.evictAll()
     }
 
     private suspend fun uploadPending(baseUrl: String, token: String) {
@@ -220,6 +247,7 @@ class SyncRepository(
     )
 
     private companion object {
+        const val COVER_CACHE_BYTES = 24 * 1024 * 1024
         const val CURSOR_KEY = "change_cursor"
         val COMPLETED_MUTATION_STATUSES = setOf("applied", "duplicate", "not_found")
     }

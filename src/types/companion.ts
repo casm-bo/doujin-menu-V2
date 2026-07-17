@@ -11,6 +11,7 @@ export interface CompanionDeviceInfo {
   name: string;
   pairedAt: string;
   lastSeenAt: string | null;
+  connectionState: "connecting" | "connected" | "disconnected";
 }
 
 export interface CompanionServerStatus {

@@ -11,7 +11,7 @@ import {
 } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
 import { Icon } from "@iconify/vue";
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, onUnmounted, ref } from "vue";
 import { toast } from "vue-sonner";
 import type {
   CompanionDeviceInfo,
@@ -23,6 +23,8 @@ const status = ref<CompanionServerStatus | null>(null);
 const devices = ref<CompanionDeviceInfo[]>([]);
 const pairing = ref<CompanionPairingCode | null>(null);
 const isUpdating = ref(false);
+const isRefreshing = ref(false);
+let refreshTimer: ReturnType<typeof setInterval> | null = null;
 
 const serverAddresses = computed(() => {
   if (!status.value?.addresses.length) return [];
@@ -32,8 +34,14 @@ const serverAddresses = computed(() => {
 });
 
 async function refresh() {
-  status.value = await ipcRenderer.invoke("get-companion-status");
-  devices.value = await ipcRenderer.invoke("get-companion-devices");
+  if (isRefreshing.value) return;
+  isRefreshing.value = true;
+  try {
+    status.value = await ipcRenderer.invoke("get-companion-status");
+    devices.value = await ipcRenderer.invoke("get-companion-devices");
+  } finally {
+    isRefreshing.value = false;
+  }
 }
 
 async function toggleServer(enabled: boolean) {
@@ -83,7 +91,35 @@ function formatDate(value: string | null) {
   return new Date(value).toLocaleString();
 }
 
-onMounted(refresh);
+function connectionLabel(device: CompanionDeviceInfo) {
+  if (!status.value?.running) return "연결 끊김";
+  if (device.connectionState === "connecting") return "연결 중…";
+  if (device.connectionState === "connected") return "연결됨";
+  return "연결 끊김";
+}
+
+function connectionTextClass(device: CompanionDeviceInfo) {
+  if (device.connectionState === "connecting") return "text-amber-600";
+  if (device.connectionState === "connected") return "text-green-600";
+  return "text-muted-foreground";
+}
+
+function connectionDotClass(device: CompanionDeviceInfo) {
+  if (device.connectionState === "connecting") {
+    return "bg-amber-500 animate-pulse";
+  }
+  if (device.connectionState === "connected") return "bg-green-500";
+  return "bg-gray-400";
+}
+
+onMounted(() => {
+  void refresh();
+  refreshTimer = setInterval(() => void refresh(), 1_000);
+});
+
+onUnmounted(() => {
+  if (refreshTimer) clearInterval(refreshTimer);
+});
 </script>
 
 <template>
@@ -178,6 +214,16 @@ onMounted(refresh);
           >
             <div>
               <p class="font-medium">{{ device.name }}</p>
+              <p
+                class="mt-1 flex items-center gap-1.5 text-sm font-medium"
+                :class="connectionTextClass(device)"
+              >
+                <span
+                  class="size-2 rounded-full"
+                  :class="connectionDotClass(device)"
+                />
+                {{ connectionLabel(device) }}
+              </p>
               <p class="text-muted-foreground text-xs">
                 마지막 연결: {{ formatDate(device.lastSeenAt) }}
               </p>

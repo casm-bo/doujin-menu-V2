@@ -22,6 +22,8 @@ const PAIRING_CODE_TTL_MS = 5 * 60 * 1000;
 const PAIRING_ATTEMPT_WINDOW_MS = 60 * 1000;
 const MAX_PAIRING_ATTEMPTS_PER_WINDOW = 5;
 const MAX_SYNC_MUTATIONS_PER_REQUEST = 100;
+const DEVICE_CONNECTION_TIMEOUT_MS = 7_000;
+const DEVICE_CONNECTING_VISIBLE_MS = 1_200;
 
 interface CompanionHitomiService {
   searchGalleries(
@@ -115,6 +117,15 @@ export class CompanionServer {
   private port = DEFAULT_PORT;
   private pairingState: PairingState | null = null;
   private readonly pairingAttempts = new Map<string, PairingAttemptState>();
+  private readonly deviceActivity = new Map<string, number>();
+  private readonly deviceConnectionStates = new Map<
+    string,
+    CompanionDeviceInfo["connectionState"]
+  >();
+  private readonly connectionTimers = new Map<
+    string,
+    ReturnType<typeof setTimeout>
+  >();
 
   constructor(
     private readonly hitomiService: CompanionHitomiService,
@@ -160,6 +171,7 @@ export class CompanionServer {
 
   async stop(): Promise<void> {
     this.pairingState = null;
+    this.clearConnectionStates();
     if (!this.server) return;
 
     const server = this.server;
@@ -199,7 +211,11 @@ export class CompanionServer {
   }
 
   getDevices(): CompanionDeviceInfo[] {
-    return this.deviceStore.getDevices().map(toDeviceInfo);
+    return this.deviceStore
+      .getDevices()
+      .map((device) =>
+        toDeviceInfo(device, this.getDeviceConnectionState(device.id)),
+      );
   }
 
   revokeDevice(deviceId: string): boolean {
@@ -207,6 +223,7 @@ export class CompanionServer {
     const remaining = devices.filter((device) => device.id !== deviceId);
     if (remaining.length === devices.length) return false;
     this.deviceStore.setDevices(remaining);
+    this.clearDeviceConnectionState(deviceId);
     return true;
   }
 
@@ -244,6 +261,14 @@ export class CompanionServer {
       this.sendJson(response, 401, {
         success: false,
         error: "Authentication required",
+      });
+      return;
+    }
+
+    if (request.method === "GET" && pathname === "/v1/connection") {
+      this.sendJson(response, 200, {
+        success: true,
+        data: { connected: true, serverTime: new Date().toISOString() },
       });
       return;
     }
@@ -567,10 +592,14 @@ export class CompanionServer {
       lastSeenAt: now,
     };
     this.deviceStore.setDevices([...this.deviceStore.getDevices(), device]);
+    this.markDeviceActivity(device.id);
 
     this.sendJson(response, 201, {
       success: true,
-      data: { device: toDeviceInfo(device), token },
+      data: {
+        device: toDeviceInfo(device, this.getDeviceConnectionState(device.id)),
+        token,
+      },
     });
   }
 
@@ -610,7 +639,69 @@ export class CompanionServer {
 
     device.lastSeenAt = new Date().toISOString();
     this.deviceStore.setDevices(devices);
+    this.markDeviceActivity(device.id);
     return device;
+  }
+
+  private markDeviceActivity(deviceId: string): void {
+    const now = Date.now();
+    const previousActivity = this.deviceActivity.get(deviceId) ?? 0;
+    const previousState = this.deviceConnectionStates.get(deviceId);
+    this.deviceActivity.set(deviceId, now);
+
+    if (
+      previousState === "connected" &&
+      now - previousActivity < DEVICE_CONNECTION_TIMEOUT_MS
+    ) {
+      return;
+    }
+    if (previousState === "connecting") return;
+
+    this.deviceConnectionStates.set(deviceId, "connecting");
+    const existingTimer = this.connectionTimers.get(deviceId);
+    if (existingTimer) clearTimeout(existingTimer);
+    this.connectionTimers.set(
+      deviceId,
+      setTimeout(() => {
+        this.connectionTimers.delete(deviceId);
+        if (
+          Date.now() - (this.deviceActivity.get(deviceId) ?? 0) <
+          DEVICE_CONNECTION_TIMEOUT_MS
+        ) {
+          this.deviceConnectionStates.set(deviceId, "connected");
+        }
+      }, DEVICE_CONNECTING_VISIBLE_MS),
+    );
+  }
+
+  private getDeviceConnectionState(
+    deviceId: string,
+  ): CompanionDeviceInfo["connectionState"] {
+    const lastActivity = this.deviceActivity.get(deviceId);
+    if (
+      !this.server ||
+      !lastActivity ||
+      Date.now() - lastActivity >= DEVICE_CONNECTION_TIMEOUT_MS
+    ) {
+      this.deviceConnectionStates.set(deviceId, "disconnected");
+      return "disconnected";
+    }
+    return this.deviceConnectionStates.get(deviceId) ?? "connecting";
+  }
+
+  private clearDeviceConnectionState(deviceId: string): void {
+    const timer = this.connectionTimers.get(deviceId);
+    if (timer) clearTimeout(timer);
+    this.connectionTimers.delete(deviceId);
+    this.deviceActivity.delete(deviceId);
+    this.deviceConnectionStates.delete(deviceId);
+  }
+
+  private clearConnectionStates(): void {
+    for (const timer of this.connectionTimers.values()) clearTimeout(timer);
+    this.connectionTimers.clear();
+    this.deviceActivity.clear();
+    this.deviceConnectionStates.clear();
   }
 
   private async readJsonBody(
@@ -787,12 +878,16 @@ function isNonNegativeInteger(value: unknown): value is number {
   return typeof value === "number" && Number.isInteger(value) && value >= 0;
 }
 
-function toDeviceInfo(device: CompanionDevice): CompanionDeviceInfo {
+function toDeviceInfo(
+  device: CompanionDevice,
+  connectionState: CompanionDeviceInfo["connectionState"],
+): CompanionDeviceInfo {
   return {
     id: device.id,
     name: device.name,
     pairedAt: device.pairedAt,
     lastSeenAt: device.lastSeenAt,
+    connectionState,
   };
 }
 

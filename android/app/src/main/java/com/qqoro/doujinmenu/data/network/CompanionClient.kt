@@ -28,6 +28,13 @@ class CompanionClient(
         .readTimeout(30, TimeUnit.SECONDS)
         .build(),
 ) {
+    suspend fun checkConnection(baseUrl: String, token: String) {
+        val data = requestJson(baseUrl, "/v1/connection", token)
+        if (!data.optBoolean("connected")) {
+            throw IOException("데스크톱 연결을 확인하지 못했습니다.")
+        }
+    }
+
     suspend fun pair(
         baseUrl: String,
         code: String,
@@ -112,6 +119,33 @@ class CompanionClient(
                 )
             },
         )
+    }
+
+    suspend fun getLibraryImage(
+        baseUrl: String,
+        token: String,
+        path: String,
+    ): ByteArray = withContext(Dispatchers.IO) {
+        require(path.startsWith("/v1/library/books/")) { "올바르지 않은 이미지 경로입니다." }
+        val safeBaseUrl = PrivateLanUrl.normalize(baseUrl)
+        val request = Request.Builder()
+            .url(safeBaseUrl + path)
+            .header("Authorization", "Bearer $token")
+            .header("Accept", "image/*")
+            .build()
+        httpClient.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) {
+                throw IOException("표지를 불러오지 못했습니다. (${response.code})")
+            }
+            val body = response.body ?: throw IOException("빈 이미지 응답입니다.")
+            val declaredSize = body.contentLength()
+            if (declaredSize > MAX_IMAGE_BYTES) {
+                throw IOException("이미지가 너무 큽니다.")
+            }
+            body.bytes().also { bytes ->
+                if (bytes.size > MAX_IMAGE_BYTES) throw IOException("이미지가 너무 큽니다.")
+            }
+        }
     }
 
     private suspend fun requestJson(
@@ -205,6 +239,7 @@ class CompanionClient(
         List(length()) { index -> transform(getJSONObject(index)) }
 
     private companion object {
+        const val MAX_IMAGE_BYTES = 15 * 1024 * 1024
         val JSON_MEDIA_TYPE = "application/json; charset=utf-8".toMediaType()
     }
 }
