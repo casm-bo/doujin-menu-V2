@@ -2,9 +2,11 @@ import {
   app,
   BrowserWindow,
   ipcMain,
+  Menu,
   protocol,
   session,
   shell,
+  Tray,
 } from "electron";
 import log from "electron-log";
 import windowStateKeeper from "electron-window-state";
@@ -63,6 +65,47 @@ let currentUsageLogId: number | null = null;
 
 let mainWindow: BrowserWindow;
 const viewerWindows = new Set<BrowserWindow>();
+let tray: Tray | null = null;
+let isQuitting = false;
+
+app.on("before-quit", () => {
+  isQuitting = true;
+});
+
+function getAppIconPath(): string {
+  return process.env.NODE_ENV === "development"
+    ? path.join(process.cwd(), "src", "main", "static", "icon.ico")
+    : path.join(process.resourcesPath, "static", "icon.ico");
+}
+
+function showMainWindow(): void {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    createWindow();
+  }
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.show();
+  mainWindow.focus();
+}
+
+function quitApplication(): void {
+  isQuitting = true;
+  app.quit();
+}
+
+function createTray(): void {
+  if (tray && !tray.isDestroyed()) return;
+  tray = new Tray(getAppIconPath());
+  tray.setToolTip("동인메뉴판 - 백그라운드 실행 중");
+  tray.setContextMenu(
+    Menu.buildFromTemplate([
+      { label: "동인메뉴판 열기", click: showMainWindow },
+      { type: "separator" },
+      { label: "완전 종료", click: quitApplication },
+    ]),
+  );
+  tray.on("click", showMainWindow);
+  tray.on("double-click", showMainWindow);
+}
 
 // 최초 부팅 시 시리즈 감지를 1회만 실행했는지 추적 (새로고침 시 재실행 방지)
 let hasRunInitialSeriesDetection = false;
@@ -72,22 +115,20 @@ let hasRunInitialLibraryScan = false;
 
 function createViewerWindow(fromUrl: string) {
   // 첫 창 생성 시 위치를 메인 창 기준으로 오프셋
-  const mainBounds = mainWindow.getBounds();
+  const mainBounds =
+    mainWindow && !mainWindow.isDestroyed()
+      ? mainWindow.getBounds()
+      : { x: 100, y: 100 };
   const offset = 20 * (viewerWindows.size + 1);
   const x = mainBounds.x + offset;
   const y = mainBounds.y + offset;
-
-  const iconPath =
-    process.env.NODE_ENV === "development"
-      ? path.join(process.cwd(), "static", "icon.ico")
-      : path.join(process.resourcesPath, "static", "icon.ico");
 
   const viewerWindow = new BrowserWindow({
     x,
     y,
     width: 800,
     height: 1000,
-    icon: iconPath,
+    icon: getAppIconPath(),
     titleBarStyle: "hidden",
     webPreferences: {
       sandbox: false,
@@ -143,6 +184,12 @@ function createWindow() {
   });
   mainWindow.setMenu(null);
   mainWindowState.manage(mainWindow);
+
+  mainWindow.on("close", (event) => {
+    if (isQuitting) return;
+    event.preventDefault();
+    mainWindow.hide();
+  });
 
   if (process.env.NODE_ENV === "development") {
     const rendererPort = process.argv[2];
@@ -226,6 +273,7 @@ function createWindow() {
 
 app.whenReady().then(async () => {
   createWindow();
+  createTray();
 
   registerUpdaterHandlers(mainWindow);
   registerBookHandlers();
@@ -445,19 +493,12 @@ app.whenReady().then(async () => {
   });
 
   app.on("activate", function () {
-    // On macOS it's common to re-create a window in the app when the
-    // dock icon is clicked and there are no other windows open.
-    if (BrowserWindow.getAllWindows().length === 0) {
-      createWindow();
-    }
+    showMainWindow();
   });
 
   // 두 번째 인스턴스가 실행될 때 기존 창을 활성화
   app.on("second-instance", () => {
-    if (mainWindow) {
-      if (mainWindow.isMinimized()) mainWindow.restore();
-      mainWindow.focus();
-    }
+    showMainWindow();
   });
 
   ipcMain.handle("get-initial-lock-status", () => {
@@ -518,6 +559,7 @@ app.whenReady().then(async () => {
 });
 
 app.on("window-all-closed", async function () {
+  if (!isQuitting) return;
   // 앱 사용 시간 추적 종료
   if (currentUsageLogId !== null) {
     try {
@@ -550,4 +592,9 @@ app.on("window-all-closed", async function () {
   if (process.platform !== "darwin") {
     app.quit();
   }
+});
+
+app.on("will-quit", () => {
+  tray?.destroy();
+  tray = null;
 });

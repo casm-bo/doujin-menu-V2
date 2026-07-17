@@ -2,7 +2,7 @@ import { BrowserWindow, ipcMain } from "electron";
 
 // 윈도우 최소화
 export const handleMinimizeWindow = (mainWindow: BrowserWindow | null) => {
-  mainWindow?.minimize();
+  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.minimize();
 };
 
 // 윈도우 최대화 토글
@@ -31,12 +31,12 @@ export const handleIsFullscreen = (win: BrowserWindow): boolean => {
 
 // 메인 윈도우 닫기
 export const handleCloseWindow = (mainWindow: BrowserWindow | null) => {
-  mainWindow?.close();
+  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.close();
 };
 
 // 현재 윈도우 닫기
 export const handleCloseCurrentWindow = (win: BrowserWindow) => {
-  win.close();
+  if (!win.isDestroyed()) win.close();
 };
 
 // 윈도우 타이틀 설정
@@ -59,8 +59,10 @@ export function registerWindowHandlers(
   viewerWindows: Set<BrowserWindow>,
 ) {
   // 창 제어 IPC 핸들러
-  ipcMain.on("minimize-window", () => {
-    handleMinimizeWindow(mainWindow);
+  ipcMain.on("minimize-window", (event) => {
+    handleMinimizeWindow(
+      BrowserWindow.fromWebContents(event.sender) ?? mainWindow,
+    );
   });
 
   ipcMain.on("maximize-toggle-window", (event) => {
@@ -83,8 +85,8 @@ export function registerWindowHandlers(
     return win ? handleIsFullscreen(win) : false;
   });
 
-  ipcMain.on("close-window", () => {
-    handleCloseWindow(mainWindow);
+  ipcMain.on("close-window", (event) => {
+    handleCloseWindow(BrowserWindow.fromWebContents(event.sender));
   });
 
   ipcMain.on("close-current-window", (event) => {

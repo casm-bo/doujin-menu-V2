@@ -47,6 +47,7 @@ describe("CompanionServer", () => {
     };
     libraryService = {
       listBooks: vi.fn().mockResolvedValue([]),
+      deleteBook: vi.fn().mockResolvedValue({ success: true }),
       getPageCount: vi.fn(),
       getCover: vi.fn(),
       getPage: vi.fn(),
@@ -328,6 +329,18 @@ describe("CompanionServer", () => {
 
     expect(response.status).toBe(200);
     expect((await response.json()).data).toEqual([book]);
+  });
+
+  it("deletes a library book through the authenticated Android API", async () => {
+    const token = await pairTestDevice();
+
+    const response = await fetch(`${baseUrl}/v1/library/books/42`, {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${token}` },
+    });
+
+    expect(response.status).toBe(200);
+    expect(libraryService.deleteBook).toHaveBeenCalledWith(42);
   });
 
   it("returns page URLs and streams authenticated library images", async () => {

@@ -6,10 +6,12 @@ import * as yauzl from "yauzl";
 import db from "../../db/index.js";
 import { naturalSort } from "../../utils/index.js";
 import type {
+  CompanionOperationResult,
   CompanionLibraryBook,
   CompanionLibraryImage,
   CompanionLibraryService,
 } from "./companionServer.js";
+import { handleDeleteBook } from "../../handlers/bookHandler.js";
 
 const IMAGE_EXTENSIONS = new Set([
   ".jpg",
@@ -46,6 +48,10 @@ interface LibraryBookRow {
 }
 
 export class DesktopLibraryService implements CompanionLibraryService {
+  async deleteBook(bookId: number): Promise<CompanionOperationResult> {
+    return handleDeleteBook(bookId);
+  }
+
   async listBooks(): Promise<CompanionLibraryBook[]> {
     const books = (await db("Book")
       .select(

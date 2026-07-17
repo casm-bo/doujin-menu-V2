@@ -80,6 +80,7 @@ export interface CompanionLibraryImage {
 
 export interface CompanionLibraryService {
   listBooks(): Promise<CompanionLibraryBook[]>;
+  deleteBook(bookId: number): Promise<CompanionOperationResult>;
   getPageCount(bookId: number): Promise<number | null>;
   getCover(bookId: number): Promise<CompanionLibraryImage | null>;
   getPage(
@@ -420,7 +421,16 @@ export class CompanionServer {
     pathname: string,
   ): Promise<boolean> {
     const service = this.libraryService;
-    if (!service || request.method !== "GET") return false;
+    if (!service) return false;
+
+    const deleteMatch = pathname.match(/^\/v1\/library\/books\/(\d+)$/);
+    if (request.method === "DELETE" && deleteMatch) {
+      const bookId = Number.parseInt(deleteMatch[1], 10);
+      this.sendOperationResult(response, await service.deleteBook(bookId));
+      return true;
+    }
+
+    if (request.method !== "GET") return false;
 
     if (pathname === "/v1/library/books") {
       this.sendJson(response, 200, {
