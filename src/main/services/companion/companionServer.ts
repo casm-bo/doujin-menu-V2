@@ -69,7 +69,19 @@ export interface CompanionLibraryBook {
   series: { name: string }[];
   characters: { name: string }[];
   tags: { name: string }[];
+  seriesCollection: {
+    name: string | null;
+    order: number;
+    modifiedAt: number;
+  };
   coverUrl: string;
+}
+
+export interface CompanionSeriesAssignment {
+  bookSyncId: string;
+  name: string | null;
+  order: number;
+  modifiedAt: number;
 }
 
 export interface CompanionLibraryImage {
@@ -80,6 +92,9 @@ export interface CompanionLibraryImage {
 
 export interface CompanionLibraryService {
   listBooks(): Promise<CompanionLibraryBook[]>;
+  saveSeriesAssignments(
+    assignments: CompanionSeriesAssignment[],
+  ): Promise<CompanionOperationResult<{ updated: number }>>;
   deleteBook(bookId: number): Promise<CompanionOperationResult>;
   getPageCount(bookId: number): Promise<number | null>;
   getCover(bookId: number): Promise<CompanionLibraryImage | null>;
@@ -422,6 +437,37 @@ export class CompanionServer {
   ): Promise<boolean> {
     const service = this.libraryService;
     if (!service) return false;
+
+    if (request.method === "POST" && pathname === "/v1/library/series") {
+      const body = await this.readJsonBody(request);
+      if (!Array.isArray(body.assignments)) {
+        this.sendJson(response, 400, {
+          success: false,
+          error: "assignments must be an array",
+        });
+        return true;
+      }
+      if (body.assignments.length > MAX_SYNC_MUTATIONS_PER_REQUEST) {
+        this.sendJson(response, 400, {
+          success: false,
+          error: `A maximum of ${MAX_SYNC_MUTATIONS_PER_REQUEST} assignments is allowed`,
+        });
+        return true;
+      }
+      const assignments = body.assignments.filter(isSeriesAssignment);
+      if (assignments.length !== body.assignments.length) {
+        this.sendJson(response, 400, {
+          success: false,
+          error: "Invalid series assignment",
+        });
+        return true;
+      }
+      this.sendOperationResult(
+        response,
+        await service.saveSeriesAssignments(assignments),
+      );
+      return true;
+    }
 
     const deleteMatch = pathname.match(/^\/v1\/library\/books\/(\d+)$/);
     if (request.method === "DELETE" && deleteMatch) {
@@ -818,6 +864,24 @@ function parseNonNegativeInteger(value: string): number | null {
 function parsePositiveInteger(value: string): number | null {
   const parsed = parseNonNegativeInteger(value);
   return parsed !== null && parsed > 0 ? parsed : null;
+}
+
+function isSeriesAssignment(
+  value: unknown,
+): value is CompanionSeriesAssignment {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const assignment = value as Record<string, unknown>;
+  if (!isBoundedString(assignment.bookSyncId, 128)) return false;
+  if (
+    assignment.name !== null &&
+    !isBoundedString(assignment.name, 200)
+  ) {
+    return false;
+  }
+  return (
+    isNonNegativeInteger(assignment.order) &&
+    isNonNegativeInteger(assignment.modifiedAt)
+  );
 }
 
 function isSyncMutation(value: unknown): value is CompanionSyncMutation {

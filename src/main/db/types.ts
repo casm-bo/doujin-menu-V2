@@ -29,6 +29,7 @@ export interface Book {
   // 시리즈 그룹 관련 필드 (자동 시리즈 감지 기능)
   series_collection_id?: number | null;
   series_order_index?: number | null;
+  series_state_updated_at?: number | null;
   series_collection?: SeriesCollection; // 조인 시 포함될 수 있음
 }
 

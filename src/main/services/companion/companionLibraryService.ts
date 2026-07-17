@@ -10,6 +10,7 @@ import type {
   CompanionLibraryBook,
   CompanionLibraryImage,
   CompanionLibraryService,
+  CompanionSeriesAssignment,
 } from "./companionServer.js";
 import { handleDeleteBook } from "../../handlers/bookHandler.js";
 
@@ -45,9 +46,64 @@ interface LibraryBookRow {
   series: string | null;
   characters: string | null;
   tags: string | null;
+  series_collection_name: string | null;
+  series_order_index: number | null;
+  series_state_updated_at: number | null;
 }
 
 export class DesktopLibraryService implements CompanionLibraryService {
+  async saveSeriesAssignments(
+    assignments: CompanionSeriesAssignment[],
+  ): Promise<CompanionOperationResult<{ updated: number }>> {
+    const updated = await db.transaction(async (trx) => {
+      let count = 0;
+      for (const assignment of assignments) {
+        const book = await trx("Book")
+          .select("id", "series_state_updated_at")
+          .where("sync_id", assignment.bookSyncId)
+          .first();
+        if (!book) continue;
+        if (assignment.modifiedAt <= Number(book.series_state_updated_at || 0)) {
+          continue;
+        }
+
+        if (!assignment.name) {
+          await trx("Book").where("id", book.id).update({
+            series_collection_id: null,
+            series_order_index: null,
+            series_state_updated_at: assignment.modifiedAt,
+          });
+          count++;
+          continue;
+        }
+
+        let series = await trx("SeriesCollection")
+          .select("id")
+          .where("name", assignment.name)
+          .first();
+        if (!series) {
+          const [id] = await trx("SeriesCollection").insert({
+            name: assignment.name,
+            is_auto_generated: false,
+            is_manually_edited: true,
+            confidence_score: 1.0,
+            created_at: trx.fn.now(),
+            updated_at: trx.fn.now(),
+          });
+          series = { id };
+        }
+        await trx("Book").where("id", book.id).update({
+          series_collection_id: series.id,
+          series_order_index: assignment.order + 1,
+          series_state_updated_at: assignment.modifiedAt,
+        });
+        count++;
+      }
+      return count;
+    });
+    return { success: true, data: { updated } };
+  }
+
   async deleteBook(bookId: number): Promise<CompanionOperationResult> {
     return handleDeleteBook(bookId);
   }
@@ -61,6 +117,9 @@ export class DesktopLibraryService implements CompanionLibraryService {
         db.raw("GROUP_CONCAT(DISTINCT Series.name) as series"),
         db.raw("GROUP_CONCAT(DISTINCT `Group`.name) as groups"),
         db.raw("GROUP_CONCAT(DISTINCT `Character`.name) as characters"),
+        "SeriesCollection.name as series_collection_name",
+        "Book.series_order_index",
+        "Book.series_state_updated_at",
       )
       .leftJoin("BookArtist", "Book.id", "BookArtist.book_id")
       .leftJoin("Artist", "BookArtist.artist_id", "Artist.id")
@@ -72,6 +131,11 @@ export class DesktopLibraryService implements CompanionLibraryService {
       .leftJoin("Group", "BookGroup.group_id", "Group.id")
       .leftJoin("BookCharacter", "Book.id", "BookCharacter.book_id")
       .leftJoin("Character", "BookCharacter.character_id", "Character.id")
+      .leftJoin(
+        "SeriesCollection",
+        "Book.series_collection_id",
+        "SeriesCollection.id",
+      )
       .groupBy("Book.id")
       .orderBy("Book.added_at", "desc")) as LibraryBookRow[];
 
@@ -97,6 +161,11 @@ export class DesktopLibraryService implements CompanionLibraryService {
         series: metadataNames(book.series),
         characters: metadataNames(book.characters),
         tags: metadataNames(book.tags),
+        seriesCollection: {
+          name: book.series_collection_name ?? null,
+          order: Math.max(0, (book.series_order_index || 1) - 1),
+          modifiedAt: Number(book.series_state_updated_at || 0),
+        },
         coverUrl: `/v1/library/books/${book.id}/cover`,
       }));
   }

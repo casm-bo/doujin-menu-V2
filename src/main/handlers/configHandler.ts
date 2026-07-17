@@ -276,33 +276,10 @@ export const handleAddLibraryFolder = async () => {
   }
 };
 
-async function deleteBooksInFolder(folderPath: string) {
-  await db.transaction(async (trx) => {
-    const booksToDelete = await trx("Book")
-      .select("id", "path", "cover_path")
-      .where("path", "like", `${folderPath}%`);
-
-    for (const book of booksToDelete) {
-      await trx("BookArtist").where("book_id", book.id).del();
-      await trx("BookTag").where("book_id", book.id).del();
-      await trx("BookSeries").where("book_id", book.id).del();
-      await trx("BookGroup").where("book_id", book.id).del();
-      await trx("BookCharacter").where("book_id", book.id).del();
-      await trx("BookHistory").where("book_id", book.id).del();
-      await trx("Book").where("id", book.id).del();
-
-      if (book.cover_path) {
-        try {
-          await fs.unlink(book.cover_path);
-        } catch (e) {
-          console.error(
-            `[ConfigHandler] Failed to delete thumbnail file ${book.cover_path}:`,
-            e,
-          );
-        }
-      }
-    }
-  });
+async function markBooksOfflineInFolder(folderPath: string) {
+  await db("Book")
+    .where("path", "like", `${folderPath}%`)
+    .update({ is_offline: true });
 }
 
 export const handleRemoveLibraryFolder = async (folderPath: string) => {
@@ -310,7 +287,7 @@ export const handleRemoveLibraryFolder = async (folderPath: string) => {
   const newFolders = currentFolders.filter((p) => p !== folderPath);
 
   try {
-    await deleteBooksInFolder(folderPath); // 분리된 함수 호출
+    await markBooksOfflineInFolder(folderPath);
     store.set("libraryFolders", newFolders);
     return { success: true, folders: newFolders };
   } catch (error) {

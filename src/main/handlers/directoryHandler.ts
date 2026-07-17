@@ -379,6 +379,7 @@ async function processBookItem(
         hitomi_id: cleanValue(infoMetadata.hitomi_id) || null,
         type: cleanValue(infoMetadata.type) || null,
         language_name_local: cleanValue(infoMetadata.language) || null,
+        sync_id: cleanValue(infoMetadata.uuid),
       };
     }
   } else if (isFile) {
@@ -402,6 +403,7 @@ async function processBookItem(
           hitomi_id: cleanValue(infoMetadata.hitomi_id) || null,
           type: cleanValue(infoMetadata.type) || null,
           language_name_local: cleanValue(infoMetadata.language) || null,
+          sync_id: cleanValue(infoMetadata.uuid),
           // 증분 스캔 캐시 키 (다음 스캔에서 이 값이 같으면 재스캔 건너뜀)
           file_mtime: file_mtime ?? null,
           file_size: file_size ?? null,
@@ -453,14 +455,22 @@ async function processBatchInTransaction(
   const thumbnailNeeded: number[] = [];
 
   const batchPaths = batch.map((p) => p.bookData.path);
+  const batchSyncIds = batch
+    .map((p) => p.bookData.sync_id)
+    .filter((id): id is string => Boolean(id));
   const existingBooksInBatch = await trx("Book")
-    .select("id", "path", "cover_path")
-    .whereIn("path", batchPaths);
+    .select("id", "path", "cover_path", "sync_id")
+    .where((query) => {
+      query.whereIn("path", batchPaths);
+      if (batchSyncIds.length > 0) query.orWhereIn("sync_id", batchSyncIds);
+    });
 
   for (const processedBook of batch) {
     const { bookData, infoMetadata } = processedBook;
     const existingBook = existingBooksInBatch.find(
-      (b) => b.path === bookData.path,
+      (b) =>
+        b.path === bookData.path ||
+        (bookData.sync_id && b.sync_id === bookData.sync_id),
     );
 
     let bookId: number;
@@ -470,6 +480,7 @@ async function processBatchInTransaction(
         .where("id", bookId)
         .update({
           title: cleanValue(bookData.title),
+          path: bookData.path,
           page_count: bookData.page_count,
           hitomi_id: cleanValue(bookData.hitomi_id),
           type: cleanValue(bookData.type),
@@ -477,6 +488,7 @@ async function processBatchInTransaction(
           language_name_local: cleanValue(bookData.language_name_local),
           file_mtime: bookData.file_mtime ?? null,
           file_size: bookData.file_size ?? null,
+          is_offline: false,
         });
       updatedCount++;
 
@@ -496,6 +508,7 @@ async function processBatchInTransaction(
         type: cleanValue(bookData.type),
         language_name_english: cleanValue(bookData.language_name_english),
         language_name_local: cleanValue(bookData.language_name_local),
+        sync_id: cleanValue(bookData.sync_id),
         file_mtime: bookData.file_mtime ?? null,
         file_size: bookData.file_size ?? null,
       };

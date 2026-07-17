@@ -47,6 +47,10 @@ describe("CompanionServer", () => {
     };
     libraryService = {
       listBooks: vi.fn().mockResolvedValue([]),
+      saveSeriesAssignments: vi.fn().mockResolvedValue({
+        success: true,
+        data: { updated: 1 },
+      }),
       deleteBook: vi.fn().mockResolvedValue({ success: true }),
       getPageCount: vi.fn(),
       getCover: vi.fn(),
@@ -319,6 +323,11 @@ describe("CompanionServer", () => {
       series: [],
       characters: [],
       tags: [],
+      seriesCollection: {
+        name: "Desktop Series",
+        order: 1,
+        modifiedAt: 1_721_088_000_000,
+      },
       coverUrl: "/v1/library/books/42/cover",
     };
     vi.mocked(libraryService.listBooks).mockResolvedValue([book]);
@@ -329,6 +338,32 @@ describe("CompanionServer", () => {
 
     expect(response.status).toBe(200);
     expect((await response.json()).data).toEqual([book]);
+  });
+
+  it("saves Android series assignments by stable book sync id", async () => {
+    const token = await pairTestDevice();
+    const assignments = [
+      {
+        bookSyncId: "book-sync-id",
+        name: "Desktop Series",
+        order: 2,
+        modifiedAt: 1_721_088_000_000,
+      },
+    ];
+
+    const response = await fetch(`${baseUrl}/v1/library/series`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ assignments }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(libraryService.saveSeriesAssignments).toHaveBeenCalledWith(
+      assignments,
+    );
   });
 
   it("deletes a library book through the authenticated Android API", async () => {

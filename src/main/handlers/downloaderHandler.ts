@@ -4,6 +4,7 @@ import { filenamifyPath } from "filenamify";
 import { createWriteStream } from "fs";
 import fs from "fs/promises";
 import path from "path";
+import { randomUUID } from "crypto";
 import { pathToFileURL } from "url";
 import { console } from "../main.js";
 import { hitomiService } from "../services/hitomi/hitomiService.js";
@@ -286,8 +287,16 @@ export const handleDownloadGallery = async (
     // info.txt 파일 생성 (설정에 따라)
     const createInfoTxtFile = configStore.get("createInfoTxtFile", true);
     if (createInfoTxtFile) {
+      const infoFilePath = path.join(galleryDownloadPath, "info.txt");
+      const existingUuid = await fs
+        .readFile(infoFilePath, "utf-8")
+        .then((content) =>
+          content.match(/^(?:UUID|고유 UUID):\s*(\S+)/im)?.[1],
+        )
+        .catch(() => undefined);
       const infoContent = [
         `갤러리 넘버: ${gallery.id}`,
+        `\nUUID: ${existingUuid || randomUUID()}`,
         `\n제목: ${gallery.title.display}`,
         `\n작가: ${gallery.artists?.join(", ") || "N/A"}`,
         `\n그룹: ${gallery.groups?.join(", ") || "N/A"}`,
@@ -298,7 +307,6 @@ export const handleDownloadGallery = async (
         `\n언어: ${gallery.languageName?.english || "N/A"}`,
       ].join("\n");
 
-      const infoFilePath = path.join(galleryDownloadPath, "info.txt");
       await fs.writeFile(infoFilePath, infoContent);
     }
 
