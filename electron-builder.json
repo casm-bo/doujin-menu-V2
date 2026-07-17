@@ -33,11 +33,6 @@
       "from": "src/main/static",
       "to": "static",
       "filter": ["**/*"]
-    },
-    {
-      "from": "build/main/migrations",
-      "to": "migrations",
-      "filter": ["**/*"]
     }
   ]
 }

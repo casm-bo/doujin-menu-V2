@@ -290,9 +290,7 @@ export const handleDownloadGallery = async (
       const infoFilePath = path.join(galleryDownloadPath, "info.txt");
       const existingUuid = await fs
         .readFile(infoFilePath, "utf-8")
-        .then((content) =>
-          content.match(/^(?:UUID|고유 UUID):\s*(\S+)/im)?.[1],
-        )
+        .then((content) => content.match(/^(?:UUID|고유 UUID):\s*(\S+)/im)?.[1])
         .catch(() => undefined);
       const infoContent = [
         `갤러리 넘버: ${gallery.id}`,
@@ -386,7 +384,10 @@ function isRetryableDownloadStatus(status: number): boolean {
   return status === 408 || status === 429 || status >= 500;
 }
 
-function getRetryDelayMs(response: Response | undefined, attempt: number): number {
+function getRetryDelayMs(
+  response: Response | undefined,
+  attempt: number,
+): number {
   const retryAfter = response?.headers.get("retry-after");
   if (retryAfter) {
     const seconds = Number(retryAfter);

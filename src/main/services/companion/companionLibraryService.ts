@@ -3,6 +3,7 @@ import fs from "fs/promises";
 import path from "path";
 import type { Readable } from "stream";
 import * as yauzl from "yauzl";
+import type { Knex } from "knex";
 import db from "../../db/index.js";
 import { naturalSort } from "../../utils/index.js";
 import type {
@@ -52,10 +53,12 @@ interface LibraryBookRow {
 }
 
 export class DesktopLibraryService implements CompanionLibraryService {
+  constructor(private readonly database: Knex = db) {}
+
   async saveSeriesAssignments(
     assignments: CompanionSeriesAssignment[],
   ): Promise<CompanionOperationResult<{ updated: number }>> {
-    const updated = await db.transaction(async (trx) => {
+    const updated = await this.database.transaction(async (trx) => {
       let count = 0;
       for (const assignment of assignments) {
         const book = await trx("Book")
@@ -63,7 +66,9 @@ export class DesktopLibraryService implements CompanionLibraryService {
           .where("sync_id", assignment.bookSyncId)
           .first();
         if (!book) continue;
-        if (assignment.modifiedAt <= Number(book.series_state_updated_at || 0)) {
+        if (
+          assignment.modifiedAt <= Number(book.series_state_updated_at || 0)
+        ) {
           continue;
         }
 
@@ -77,13 +82,14 @@ export class DesktopLibraryService implements CompanionLibraryService {
           continue;
         }
 
+        const seriesName = assignment.name.trim();
         let series = await trx("SeriesCollection")
           .select("id")
-          .where("name", assignment.name)
+          .where("name", seriesName)
           .first();
         if (!series) {
           const [id] = await trx("SeriesCollection").insert({
-            name: assignment.name,
+            name: seriesName,
             is_auto_generated: false,
             is_manually_edited: true,
             confidence_score: 1.0,
@@ -92,11 +98,13 @@ export class DesktopLibraryService implements CompanionLibraryService {
           });
           series = { id };
         }
-        await trx("Book").where("id", book.id).update({
-          series_collection_id: series.id,
-          series_order_index: assignment.order + 1,
-          series_state_updated_at: assignment.modifiedAt,
-        });
+        await trx("Book")
+          .where("id", book.id)
+          .update({
+            series_collection_id: series.id,
+            series_order_index: assignment.order + 1,
+            series_state_updated_at: assignment.modifiedAt,
+          });
         count++;
       }
       return count;
@@ -109,14 +117,16 @@ export class DesktopLibraryService implements CompanionLibraryService {
   }
 
   async listBooks(): Promise<CompanionLibraryBook[]> {
-    const books = (await db("Book")
+    const books = (await this.database("Book")
       .select(
         "Book.*",
-        db.raw("GROUP_CONCAT(DISTINCT Artist.name) as artists"),
-        db.raw("GROUP_CONCAT(DISTINCT Tag.name) as tags"),
-        db.raw("GROUP_CONCAT(DISTINCT Series.name) as series"),
-        db.raw("GROUP_CONCAT(DISTINCT `Group`.name) as groups"),
-        db.raw("GROUP_CONCAT(DISTINCT `Character`.name) as characters"),
+        this.database.raw("GROUP_CONCAT(DISTINCT Artist.name) as artists"),
+        this.database.raw("GROUP_CONCAT(DISTINCT Tag.name) as tags"),
+        this.database.raw("GROUP_CONCAT(DISTINCT Series.name) as series"),
+        this.database.raw("GROUP_CONCAT(DISTINCT `Group`.name) as groups"),
+        this.database.raw(
+          "GROUP_CONCAT(DISTINCT `Character`.name) as characters",
+        ),
         "SeriesCollection.name as series_collection_name",
         "Book.series_order_index",
         "Book.series_state_updated_at",
@@ -171,7 +181,7 @@ export class DesktopLibraryService implements CompanionLibraryService {
   }
 
   async getPageCount(bookId: number): Promise<number | null> {
-    const book = await db("Book")
+    const book = await this.database("Book")
       .select("page_count")
       .where("id", bookId)
       .first();
@@ -179,7 +189,7 @@ export class DesktopLibraryService implements CompanionLibraryService {
   }
 
   async getCover(bookId: number): Promise<CompanionLibraryImage | null> {
-    const book = await db("Book")
+    const book = await this.database("Book")
       .select("path", "cover_path")
       .where("id", bookId)
       .first();
@@ -197,7 +207,10 @@ export class DesktopLibraryService implements CompanionLibraryService {
     pageIndex: number,
   ): Promise<CompanionLibraryImage | null> {
     if (!Number.isInteger(pageIndex) || pageIndex < 0) return null;
-    const book = await db("Book").select("path").where("id", bookId).first();
+    const book = await this.database("Book")
+      .select("path")
+      .where("id", bookId)
+      .first();
     if (!book?.path) return null;
 
     const stat = await fs.stat(book.path).catch(() => null);

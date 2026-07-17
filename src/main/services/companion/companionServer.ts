@@ -874,7 +874,8 @@ function isSeriesAssignment(
   if (!isBoundedString(assignment.bookSyncId, 128)) return false;
   if (
     assignment.name !== null &&
-    !isBoundedString(assignment.name, 200)
+    (!isBoundedString(assignment.name, 200) ||
+      assignment.name.trim().length === 0)
   ) {
     return false;
   }
@@ -949,7 +950,7 @@ function isBoundedString(
 }
 
 function isNonNegativeInteger(value: unknown): value is number {
-  return typeof value === "number" && Number.isInteger(value) && value >= 0;
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
 }
 
 function toDeviceInfo(

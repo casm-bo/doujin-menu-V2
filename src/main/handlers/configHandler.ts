@@ -5,6 +5,7 @@ import { existsSync } from "fs";
 import fs from "fs/promises";
 import path from "path";
 import db, { closeDbConnection } from "../db/index.js";
+import { filterLibraryPathRows } from "../utils/libraryPath.js";
 import { scanDirectory } from "./directoryHandler.js";
 import { handleGenerateThumbnail } from "./thumbnailHandler.js";
 
@@ -222,10 +223,11 @@ export const handleRescanAllMetadata = async () => {
     for (const folderPath of libraryFolders) {
       // 사용자 명시적 전체 재스캔 → 캐시 무시 (force)
       await scanDirectory(folderPath, { force: true });
-      const books = await db("Book")
-        .select("id")
+      const candidates = await db("Book")
+        .select("id", "path")
         .whereLike("path", `${folderPath}%`)
         .and.where("cover_path", null);
+      const books = filterLibraryPathRows(candidates, folderPath);
       await Promise.all(books.map((book) => handleGenerateThumbnail(book.id)));
     }
     return { success: true };
@@ -277,9 +279,15 @@ export const handleAddLibraryFolder = async () => {
 };
 
 async function markBooksOfflineInFolder(folderPath: string) {
-  await db("Book")
-    .where("path", "like", `${folderPath}%`)
-    .update({ is_offline: true });
+  const candidates = await db("Book")
+    .select("id", "path")
+    .where("path", "like", `${folderPath}%`);
+  const bookIds = filterLibraryPathRows(candidates, folderPath).map(
+    (book) => book.id,
+  );
+  if (bookIds.length > 0) {
+    await db("Book").whereIn("id", bookIds).update({ is_offline: true });
+  }
 }
 
 export const handleRemoveLibraryFolder = async (folderPath: string) => {
