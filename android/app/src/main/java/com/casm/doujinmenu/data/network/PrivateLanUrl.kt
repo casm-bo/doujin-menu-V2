@@ -1,4 +1,4 @@
-package com.qqoro.doujinmenu.data.network
+package com.casm.doujinmenu.data.network
 
 import java.net.URI
 

@@ -1,13 +1,13 @@
 import * as api from "@/api";
 import { ipcRenderer } from "@/api";
 import { useDownloadQueueStore } from "@/store/downloadQueueStore";
-import type { Gallery } from "node-hitomi";
+import type { HitomiGalleryDetails } from "../../types/hitomi.js";
 import { computed, onMounted, ref, toRaw, watch } from "vue";
 import { useRouter } from "vue-router";
 import { toast } from "vue-sonner";
 
 interface GalleryCardProps {
-  gallery: Gallery & { thumbnailUrl: string };
+  gallery: HitomiGalleryDetails;
   downloadStatus: { status: string; progress?: number; error?: string };
 }
 

@@ -16,10 +16,10 @@ import { useGalleryCard } from "@/composable/useGalleryCard";
 import { formatPublishDate } from "@/lib/formatDate";
 import { Icon } from "@iconify/vue";
 import { computed } from "vue";
-import type { Gallery } from "node-hitomi";
+import type { HitomiGalleryDetails } from "../../../../types/hitomi.js";
 
 interface Props {
-  gallery: Gallery & { thumbnailUrl: string };
+  gallery: HitomiGalleryDetails;
   downloadStatus?: { status: string; progress?: number; error?: string };
   selected?: boolean;
 }
@@ -30,8 +30,8 @@ const props = withDefaults(defineProps<Props>(), {
 });
 
 const emit = defineEmits<{
-  "select-gallery": [gallery: Gallery];
-  "preview-gallery": [gallery: Gallery];
+  "select-gallery": [gallery: HitomiGalleryDetails];
+  "preview-gallery": [gallery: HitomiGalleryDetails];
   "book-deleted": [galleryId: number];
 }>();
 

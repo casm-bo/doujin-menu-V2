@@ -1,4 +1,4 @@
-package com.qqoro.doujinmenu.data.security
+package com.casm.doujinmenu.data.security
 
 import android.content.Context
 import android.security.keystore.KeyGenParameterSpec

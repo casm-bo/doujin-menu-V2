@@ -4,8 +4,8 @@ import fg from "fast-glob";
 import { spawn } from "child_process";
 import { existsSync } from "fs";
 import fs from "fs/promises";
-import hitomi from "node-hitomi";
 import path from "path";
+import { hitomiService } from "../services/hitomi/hitomiService.js";
 import * as yauzl from "yauzl";
 import db from "../db/index.js";
 import { naturalSort } from "../utils/index.js";
@@ -121,16 +121,16 @@ async function handleGenerateMissingInfoFiles(
       if (match?.[1]) {
         const galleryId = parseInt(match[1], 10);
         try {
-          const gallery = await hitomi.getGallery(galleryId);
+          const gallery = await hitomiService.getGallery(galleryId);
           if (gallery) {
             const infoContent = [
               `갤러리 넘버: ${gallery.id}`,
               `제목: ${gallery.title.display}`,
-              `작가: ${gallery.artists?.join(", ") || "N/A"}`,
-              `그룹: ${gallery.groups?.join(", ") || "N/A"}`,
+              `작가: ${gallery.artists.map((tag) => tag.name).join(", ") || "N/A"}`,
+              `그룹: ${gallery.groups.map((tag) => tag.name).join(", ") || "N/A"}`,
               `타입: ${gallery.type || "N/A"}`,
-              `시리즈: ${gallery.series?.join(", ") || "N/A"}`,
-              `캐릭터: ${gallery.characters?.join(", ") || "N/A"}`,
+              `시리즈: ${gallery.series.map((tag) => tag.name).join(", ") || "N/A"}`,
+              `캐릭터: ${gallery.characters.map((tag) => tag.name).join(", ") || "N/A"}`,
               `태그: ${
                 gallery.tags
                   ?.map((t) =>
@@ -140,7 +140,7 @@ async function handleGenerateMissingInfoFiles(
                   )
                   .join(", ") || "N/A"
               }`,
-              `언어: ${gallery.languageName?.english || "N/A"}`,
+              `언어: ${gallery.language?.name || "N/A"}`,
             ].join("\n\n");
 
             await fs.writeFile(infoFilePath, infoContent);

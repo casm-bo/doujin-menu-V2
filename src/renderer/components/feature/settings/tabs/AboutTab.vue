@@ -71,11 +71,11 @@ const installUpdate = async () => {
 };
 
 const openGitHub = () => {
-  api.openExternalLink("https://github.com/qqoro/doujin-menu");
+  api.openExternalLink("https://github.com/casm-bo/doujin-menu-V2");
 };
 
 const openGitHubIssues = () => {
-  api.openExternalLink("https://github.com/qqoro/doujin-menu/issues");
+  api.openExternalLink("https://github.com/casm-bo/doujin-menu-V2/issues");
 };
 
 const toggleDevTools = () => {

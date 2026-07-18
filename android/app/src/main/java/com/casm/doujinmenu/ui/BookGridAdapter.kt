@@ -1,4 +1,4 @@
-package com.qqoro.doujinmenu.ui
+package com.casm.doujinmenu.ui
 
 import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
@@ -10,9 +10,9 @@ import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.core.graphics.drawable.toDrawable
-import com.qqoro.doujinmenu.R
-import com.qqoro.doujinmenu.data.SyncRepository
-import com.qqoro.doujinmenu.data.local.BookEntity
+import com.casm.doujinmenu.R
+import com.casm.doujinmenu.data.SyncRepository
+import com.casm.doujinmenu.data.local.BookEntity
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 

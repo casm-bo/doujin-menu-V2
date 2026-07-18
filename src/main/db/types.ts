@@ -6,6 +6,7 @@ export interface Book {
   cover_path: string | null;
   page_count: number;
   added_at: string;
+  published_date?: string | null;
   last_read_at: string | null;
   current_page: number | null;
   is_favorite: boolean;

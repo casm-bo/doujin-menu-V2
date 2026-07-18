@@ -1,15 +1,27 @@
 import { describe, expect, it } from "vitest";
 import { formatDownloadFolderName } from "../../../src/main/utils/index.js";
-import type { Gallery } from "node-hitomi";
+import type { HitomiGallery } from "../../../src/types/hitomi.js";
 
 describe("formatDownloadFolderName", () => {
   // 기본 갤러리 템플릿
-  const createGallery = (overrides: Partial<Gallery> = {}): Gallery =>
-    ({
-      id: 123,
-      title: { display: "Test Title" },
-      ...overrides,
-    }) as Gallery;
+  const createGallery = (
+    overrides: Partial<HitomiGallery> = {},
+  ): HitomiGallery => ({
+    id: 123,
+    title: { display: "Test Title", japanese: null },
+    type: "manga",
+    languageName: { english: null, local: null },
+    artists: [],
+    groups: [],
+    series: [],
+    characters: [],
+    tags: [],
+    files: [],
+    publishedDate: null,
+    translations: [],
+    relatedIds: [],
+    ...overrides,
+  });
 
   describe("기본 변수 치환", () => {
     it("artist가 있으면 artist 사용", () => {

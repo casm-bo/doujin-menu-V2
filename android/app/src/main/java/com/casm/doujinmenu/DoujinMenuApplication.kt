@@ -1,4 +1,4 @@
-package com.qqoro.doujinmenu
+package com.casm.doujinmenu
 
 import android.app.Application
 import androidx.work.Constraints
@@ -6,11 +6,11 @@ import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.NetworkType
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
-import com.qqoro.doujinmenu.data.SyncRepository
-import com.qqoro.doujinmenu.data.local.DoujinMenuDatabase
-import com.qqoro.doujinmenu.data.network.CompanionClient
-import com.qqoro.doujinmenu.data.security.SecureConnectionStore
-import com.qqoro.doujinmenu.sync.SyncWorker
+import com.casm.doujinmenu.data.SyncRepository
+import com.casm.doujinmenu.data.local.DoujinMenuDatabase
+import com.casm.doujinmenu.data.network.CompanionClient
+import com.casm.doujinmenu.data.security.SecureConnectionStore
+import com.casm.doujinmenu.sync.SyncWorker
 import java.util.concurrent.TimeUnit
 
 class DoujinMenuApplication : Application() {

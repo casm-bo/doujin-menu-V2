@@ -1,4 +1,4 @@
-package com.qqoro.doujinmenu.data.local
+package com.casm.doujinmenu.data.local
 
 import androidx.room.Dao
 import androidx.room.Insert

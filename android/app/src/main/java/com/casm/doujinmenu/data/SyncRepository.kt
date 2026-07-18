@@ -1,17 +1,17 @@
-package com.qqoro.doujinmenu.data
+package com.casm.doujinmenu.data
 
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.util.LruCache
 import androidx.room.withTransaction
-import com.qqoro.doujinmenu.data.local.BookEntity
-import com.qqoro.doujinmenu.data.local.DoujinMenuDatabase
-import com.qqoro.doujinmenu.data.local.HistoryEntity
-import com.qqoro.doujinmenu.data.local.PendingMutationEntity
-import com.qqoro.doujinmenu.data.local.SyncMetadataEntity
-import com.qqoro.doujinmenu.data.network.CompanionClient
-import com.qqoro.doujinmenu.data.network.PrivateLanUrl
-import com.qqoro.doujinmenu.data.security.SecureConnectionStore
+import com.casm.doujinmenu.data.local.BookEntity
+import com.casm.doujinmenu.data.local.DoujinMenuDatabase
+import com.casm.doujinmenu.data.local.HistoryEntity
+import com.casm.doujinmenu.data.local.PendingMutationEntity
+import com.casm.doujinmenu.data.local.SyncMetadataEntity
+import com.casm.doujinmenu.data.network.CompanionClient
+import com.casm.doujinmenu.data.network.PrivateLanUrl
+import com.casm.doujinmenu.data.security.SecureConnectionStore
 import kotlinx.coroutines.flow.Flow
 import java.time.Instant
 import java.util.UUID

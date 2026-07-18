@@ -2,14 +2,16 @@
 
 ![image](screenshots.webp)
 
-[![GitHub latest release](https://img.shields.io/github/v/release/qqoro/doujin-menu)](https://github.com/qqoro/doujin-menu/releases/latest)
-[![GitHub Downloads](https://img.shields.io/github/downloads/qqoro/doujin-menu/total)](https://github.com/qqoro/doujin-menu/releases/latest)
+[![GitHub latest release](https://img.shields.io/github/v/release/casm-bo/doujin-menu-V2)](https://github.com/casm-bo/doujin-menu-V2/releases/latest)
+[![GitHub Downloads](https://img.shields.io/github/downloads/casm-bo/doujin-menu-V2/total)](https://github.com/casm-bo/doujin-menu-V2/releases/latest)
+
+> 이 프로젝트는 [qqoro/doujin-menu](https://github.com/qqoro/doujin-menu)를 기반으로 `casm`이 개조하고 유지보수하는 포크입니다. 2026년 이후 이 포크에 추가된 변경 사항의 저작권은 `casm`에게 있습니다.
 
 **만화책 라이브러리 관리 및 뷰어 데스크톱 애플리케이션. 대용량 만화 파일 컬렉션을 효율적으로 관리하고, 사용자 친화적인 뷰잉 경험을 제공합니다.**
 
 ## 🚀 설치 방법
 
-1. [릴리즈 페이지](https://github.com/qqoro/doujin-menu/releases/latest)에서 최신 인스톨러(`yasig-menu-setup-x.x.x.exe`)또는 포터블 버전을 다운로드합니다.
+1. [릴리즈 페이지](https://github.com/casm-bo/doujin-menu-V2/releases/latest)에서 최신 인스톨러(`yasig-menu-setup-x.x.x.exe`)또는 포터블 버전을 다운로드합니다.
 2. 다운로드한 파일을 실행합니다.
 
 ## ✨ 주요 기능

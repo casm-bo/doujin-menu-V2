@@ -1,4 +1,16 @@
-import type { Gallery } from "node-hitomi";
+import type { Gallery as NativeHitomiGallery } from "node-hitomi";
+import type { HitomiGallery as SerializableHitomiGallery } from "../../types/hitomi.js";
+
+type GalleryMetadata = string | { name: string };
+
+function metadataNames(
+  values: readonly GalleryMetadata[] | undefined,
+): string[] {
+  return (
+    values?.map((value) => (typeof value === "string" ? value : value.name)) ??
+    []
+  );
+}
 
 export function naturalSort(a: string, b: string): number {
   const re = /(\d+)|(\D+)/g;
@@ -35,18 +47,27 @@ export function naturalSort(a: string, b: string): number {
  * @returns 생성된 폴더명 (Windows 호환)
  */
 export function formatDownloadFolderName(
-  gallery: Gallery,
+  gallery: NativeHitomiGallery | SerializableHitomiGallery,
   pattern: string,
 ): string {
+  const artists = metadataNames(gallery.artists);
+  const groups = metadataNames(gallery.groups);
+  const series = metadataNames(gallery.series);
+  const characters = metadataNames(gallery.characters);
+  const language =
+    "languageName" in gallery
+      ? gallery.languageName.english
+      : gallery.language?.name;
+
   // 기본 변수 값들
   const variables: Record<string, string> = {
-    artist: gallery.artists?.[0] || "N/A",
-    groups: gallery.groups?.join(", ") || "N/A",
+    artist: artists[0] || "N/A",
+    groups: groups.join(", ") || "N/A",
     title: gallery.title.display || `ID_${gallery.id}`,
     id: String(gallery.id),
-    language: gallery.languageName?.english || "N/A",
-    series: gallery.series?.[0] || "N/A",
-    character: gallery.characters?.[0] || "N/A",
+    language: language || "N/A",
+    series: series[0] || "N/A",
+    character: characters[0] || "N/A",
     type: gallery.type || "N/A",
   };
 

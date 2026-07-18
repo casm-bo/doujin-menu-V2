@@ -1,5 +1,5 @@
 // IPC 통신을 위한 타입 정의
-import type { Gallery } from "node-hitomi";
+import type { HitomiGalleryDetails } from "./hitomi.js";
 import type { Config } from "../main/handlers/configHandler.js";
 import type {
   CompanionDeviceInfo,
@@ -550,7 +550,7 @@ export interface IpcChannels {
     request: number; // galleryId
     response: {
       success: boolean;
-      data?: Gallery & { thumbnailUrl: string };
+      data?: HitomiGalleryDetails;
       error?: string;
     };
   };

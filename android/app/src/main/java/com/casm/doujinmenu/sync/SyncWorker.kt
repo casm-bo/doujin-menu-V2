@@ -1,9 +1,9 @@
-package com.qqoro.doujinmenu.sync
+package com.casm.doujinmenu.sync
 
 import android.content.Context
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
-import com.qqoro.doujinmenu.DoujinMenuApplication
+import com.casm.doujinmenu.DoujinMenuApplication
 import java.io.IOException
 
 class SyncWorker(

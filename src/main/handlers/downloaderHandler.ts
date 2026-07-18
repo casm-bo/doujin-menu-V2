@@ -131,7 +131,7 @@ export const handleDownloadGallery = async (
 
       const file = gallery.files[i];
       const fileExt = file.hasWebp ? "webp" : "avif";
-      const fileName = `${String(file.index + 1).padStart(6, "0")}.${fileExt}`;
+      const fileName = `${String(i + 1).padStart(6, "0")}.${fileExt}`;
       const filePath = path.join(galleryDownloadPath, fileName);
 
       // 파일이 이미 존재하면 건너뛰기 (이어받기)
@@ -186,7 +186,7 @@ export const handleDownloadGallery = async (
         attempt++;
 
         // 이미지 서버 구성이 갱신될 수 있으므로 매 시도마다 URL을 다시 계산합니다.
-        const fullImageUrl = hitomiService.resolveImageUrl(file);
+        const fullImageUrl = await hitomiService.resolveImageUrl(file);
         let res: Response;
         try {
           res = await fetch(fullImageUrl, {
@@ -235,12 +235,6 @@ export const handleDownloadGallery = async (
           throw new Error(`${fileName} 다운로드 실패: ${lastFailure}`);
         }
         if (attempt >= MAX_DOWNLOAD_ATTEMPTS) break;
-
-        if (res.status === 503 && attempt % 2 === 0) {
-          await hitomiService.synchronizeImageResolver().catch((error) => {
-            console.warn("[Downloader] 이미지 서버 정보 갱신 실패:", error);
-          });
-        }
 
         const delayMs = getRetryDelayMs(res, attempt);
         console.warn(
@@ -296,13 +290,13 @@ export const handleDownloadGallery = async (
         `갤러리 넘버: ${gallery.id}`,
         `\nUUID: ${existingUuid || randomUUID()}`,
         `\n제목: ${gallery.title.display}`,
-        `\n작가: ${gallery.artists?.join(", ") || "N/A"}`,
-        `\n그룹: ${gallery.groups?.join(", ") || "N/A"}`,
+        `\n작가: ${gallery.artists.map((tag) => tag.name).join(", ") || "N/A"}`,
+        `\n그룹: ${gallery.groups.map((tag) => tag.name).join(", ") || "N/A"}`,
         `\n타입: ${gallery.type || "N/A"}`,
-        `\n시리즈: ${gallery.series?.join(", ") || "N/A"}`,
-        `\n캐릭터: ${gallery.characters?.join(", ") || "N/A"}`,
+        `\n시리즈: ${gallery.series.map((tag) => tag.name).join(", ") || "N/A"}`,
+        `\n캐릭터: ${gallery.characters.map((tag) => tag.name).join(", ") || "N/A"}`,
         `\n태그: ${gallery.tags?.map((t) => (t.type === "male" || t.type === "female" ? `${t.type}:${t.name}` : t.name)).join(", ") || "N/A"}`,
-        `\n언어: ${gallery.languageName?.english || "N/A"}`,
+        `\n언어: ${gallery.language?.name || "N/A"}`,
       ].join("\n");
 
       await fs.writeFile(infoFilePath, infoContent);
@@ -477,9 +471,6 @@ export const handleDownloadTempThumbnail = async ({
  * 다운로더 관련 IPC 통신 핸들러를 등록합니다.
  */
 export async function registerDownloaderHandlers() {
-  await hitomiService.synchronizeImageResolver();
-  hitomiService.startImageResolverSynchronization();
-
   // 작품 검색 핸들러
   ipcMain.handle("search-galleries", (_event, params) =>
     handleSearchGalleries(params),

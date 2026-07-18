@@ -1,7 +1,6 @@
 import { BrowserWindow, ipcMain } from "electron";
 import { filenamifyPath } from "filenamify";
 import fs from "fs/promises";
-import hitomi from "node-hitomi";
 import path from "path";
 import type {
   DownloadQueueItem,
@@ -10,6 +9,7 @@ import type {
 import db from "../db/index.js";
 import { console } from "../main.js";
 import { formatDownloadFolderName } from "../utils/index.js";
+import { hitomiService } from "../services/hitomi/hitomiService.js";
 import { store as configStore } from "./configHandler.js";
 import { handleDownloadGallery } from "./downloaderHandler.js";
 
@@ -120,7 +120,7 @@ export const handleRemoveFromDownloadQueue = async (queueId: number) => {
     if (shouldDeleteFiles && item.download_path) {
       try {
         // 갤러리 정보 가져오기
-        const gallery = await hitomi.getGallery(item.gallery_id);
+        const gallery = await hitomiService.getGallery(item.gallery_id);
         if (gallery) {
           const downloadPattern = configStore.get(
             "downloadPattern",

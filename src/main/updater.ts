@@ -94,7 +94,7 @@ function isPortable(): boolean {
 }
 
 async function getLatestGitHubRelease(): Promise<GitHubReleaseResponse | null> {
-  const url = `https://api.github.com/repos/qqoro/doujin-menu/releases/latest`;
+  const url = `https://api.github.com/repos/casm-bo/doujin-menu-V2/releases/latest`;
   try {
     const response = await fetch(url);
     if (!response.ok) {
@@ -152,7 +152,7 @@ export function registerUpdaterHandlers(mainWindow: BrowserWindow) {
     });
     // 포터블 버전의 경우, 업데이트 실패 시 GitHub 릴리즈 페이지를 열어 수동 다운로드 유도
     if (isPortable()) {
-      shell.openExternal("https://github.com/qqoro/doujin-menu/releases");
+      shell.openExternal("https://github.com/casm-bo/doujin-menu-V2/releases");
     }
   });
 
@@ -171,7 +171,7 @@ export function registerUpdaterHandlers(mainWindow: BrowserWindow) {
 
         if (semver.gt(latestVersion, currentVersion)) {
           const githubReleasesUrl =
-            "https://github.com/qqoro/doujin-menu/releases";
+            "https://github.com/casm-bo/doujin-menu-V2/releases";
           mainWindow.webContents.send("update-status", {
             status: "update-available-portable",
             info: { version: latestVersion },
@@ -218,7 +218,7 @@ export function registerUpdaterHandlers(mainWindow: BrowserWindow) {
       log.warn(
         "Download update is not supported for portable version. Please download manually from GitHub releases.",
       );
-      shell.openExternal("https://github.com/qqoro/doujin-menu/releases");
+      shell.openExternal("https://github.com/casm-bo/doujin-menu-V2/releases");
       return {
         success: false,
         error: "Portable version requires manual download.",
@@ -242,7 +242,7 @@ export function registerUpdaterHandlers(mainWindow: BrowserWindow) {
       log.warn(
         "Install update is not supported for portable version. Please replace the executable manually.",
       );
-      shell.openExternal("https://github.com/qqoro/doujin-menu/releases");
+      shell.openExternal("https://github.com/casm-bo/doujin-menu-V2/releases");
       return {
         success: false,
         error: "Portable version requires manual installation.",
