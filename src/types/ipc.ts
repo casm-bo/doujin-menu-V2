@@ -168,7 +168,7 @@ export interface DuplicateBookInfo {
 // 중복 그룹 (hitomi_id 또는 제목 일치)
 export interface DuplicateGroup {
   key: string;
-  matchType: "hitomi_id" | "title";
+  matchType: "uuid" | "hitomi_id" | "title";
   books: DuplicateBookInfo[];
 }
 
@@ -467,6 +467,20 @@ export interface IpcChannels {
   "get-companion-status": {
     request: void;
     response: CompanionServerStatus;
+  };
+  "get-companion-sync-status": {
+    request: void;
+    response: {
+      state: "idle" | "syncing" | "success" | "error";
+      lastSyncedAt: string | null;
+      bookCount: number;
+      cursor: number;
+      error: string | null;
+    };
+  };
+  "run-companion-sync": {
+    request: void;
+    response: { success: boolean; error?: string };
   };
   "start-companion-server": {
     request: void;

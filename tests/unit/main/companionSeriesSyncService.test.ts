@@ -94,6 +94,7 @@ describe("DesktopLibraryService series synchronization", () => {
     });
     const assigned = await db("Book").where("id", book.id).first();
     expect(Number(assigned.series_state_updated_at)).toBeGreaterThan(1);
+    expect(Number(assigned.state_version)).toBe(1);
 
     await db("Book").where("id", book.id).update({
       series_state_updated_at: 1,
@@ -103,5 +104,26 @@ describe("DesktopLibraryService series synchronization", () => {
       .update({ name: "Renamed Desktop Series" });
     const renamed = await db("Book").where("id", book.id).first();
     expect(Number(renamed.series_state_updated_at)).toBeGreaterThan(1);
+    expect(Number(renamed.state_version)).toBe(2);
+  });
+
+  it("returns an item-level conflict for a stale base version", async () => {
+    const book = await seedBook(db, { state_version: 2 });
+    const result = await service.saveSeriesAssignments([
+      {
+        mutationId: "series-conflict",
+        bookSyncId: book.sync_id as string,
+        name: "Stale series",
+        order: 0,
+        baseVersion: 1,
+      },
+    ]);
+
+    expect(result.data?.updated).toBe(0);
+    expect(result.data?.results[0]).toMatchObject({
+      mutationId: "series-conflict",
+      status: "conflict",
+      version: 2,
+    });
   });
 });

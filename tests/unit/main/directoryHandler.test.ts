@@ -107,7 +107,7 @@ afterEach(async () => {
 });
 
 describe("directoryHandler", () => {
-  it("reassigns duplicate metadata UUIDs after the first book", () => {
+  it("keeps the same UUID on duplicate physical copies", () => {
     const books = [
       { bookData: { sync_id: "SHARED-UUID" } },
       { bookData: { sync_id: "shared-uuid" } },
@@ -116,7 +116,7 @@ describe("directoryHandler", () => {
     deduplicateBookSyncIds(books, new Set());
 
     expect(books[0].bookData.sync_id).toBe("shared-uuid");
-    expect(books[1].bookData.sync_id).toBeNull();
+    expect(books[1].bookData.sync_id).toBe("shared-uuid");
   });
 
   it("persists a generated UUID without discarding existing metadata", async () => {

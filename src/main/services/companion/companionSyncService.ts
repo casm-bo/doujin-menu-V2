@@ -18,6 +18,11 @@ interface SyncBookRow {
   page_count: number | null;
   current_page: number | null;
   is_favorite: number | boolean;
+  is_read: number | boolean;
+  is_hidden: number | boolean;
+  custom_title: string | null;
+  series_collection_id: number | null;
+  series_favorite: number | boolean | null;
   last_read_at: string | null;
   state_version: number | null;
   state_updated_at: string | null;
@@ -36,6 +41,7 @@ interface SyncChangeRow {
   history_event_id: string | null;
   history_viewed_at: string | null;
   history_current_page: number | null;
+  state_payload: string | null;
 }
 
 export interface CompanionSyncBootstrap {
@@ -74,6 +80,13 @@ export class DesktopCompanionSyncService {
         "page_count",
         "current_page",
         "is_favorite",
+        "is_read",
+        "is_hidden",
+        "custom_title",
+        "series_collection_id",
+        this.database.raw(
+          "coalesce((select is_favorite from SeriesCollection where id = Book.series_collection_id), 0) as series_favorite",
+        ),
         "last_read_at",
         "state_version",
         "state_updated_at",
@@ -198,6 +211,13 @@ export class DesktopCompanionSyncService {
           "page_count",
           "current_page",
           "is_favorite",
+          "is_read",
+          "is_hidden",
+          "custom_title",
+          "series_collection_id",
+          trx.raw(
+            "coalesce((select is_favorite from SeriesCollection where id = Book.series_collection_id), 0) as series_favorite",
+          ),
           "last_read_at",
           "state_version",
           "state_updated_at",
@@ -218,7 +238,14 @@ export class DesktopCompanionSyncService {
         "sync_id",
         "page_count",
         "current_page",
-        "is_favorite",
+          "is_favorite",
+          "is_read",
+          "is_hidden",
+          "custom_title",
+          "series_collection_id",
+          trx.raw(
+            "coalesce((select is_favorite from SeriesCollection where id = Book.series_collection_id), 0) as series_favorite",
+          ),
         "last_read_at",
         "state_version",
         "state_updated_at",
@@ -253,6 +280,24 @@ export class DesktopCompanionSyncService {
       update.is_favorite = mutation.isFavorite;
       changedFields.push("isFavorite");
     }
+    if (mutation.isRead !== undefined) {
+      update.is_read = mutation.isRead;
+      changedFields.push("isRead");
+    }
+    if (mutation.isHidden !== undefined) {
+      update.is_hidden = mutation.isHidden;
+      changedFields.push("isHidden");
+    }
+    if (mutation.customTitle !== undefined) {
+      update.custom_title = mutation.customTitle?.trim() || null;
+      changedFields.push("customTitle");
+    }
+    if (mutation.seriesFavorite !== undefined && book.series_collection_id) {
+      await trx("SeriesCollection")
+        .where("id", book.series_collection_id)
+        .update({ is_favorite: mutation.seriesFavorite, updated_at: now });
+      changedFields.push("seriesFavorite");
+    }
 
     let historyEvent: CompanionSyncHistoryEvent | undefined;
     if (mutation.historyEvent) {
@@ -285,6 +330,10 @@ export class DesktopCompanionSyncService {
     }
 
     await trx("Book").where("id", book.id).update(update);
+    await trx("Book")
+      .where("sync_id", book.sync_id)
+      .whereNot("id", book.id)
+      .update(update);
     const updatedBook = (await trx("Book")
       .select(
         "id",
@@ -292,6 +341,13 @@ export class DesktopCompanionSyncService {
         "page_count",
         "current_page",
         "is_favorite",
+        "is_read",
+        "is_hidden",
+        "custom_title",
+        "series_collection_id",
+        trx.raw(
+          "coalesce((select is_favorite from SeriesCollection where id = Book.series_collection_id), 0) as series_favorite",
+        ),
         "last_read_at",
         "state_version",
         "state_updated_at",
@@ -314,6 +370,12 @@ export class DesktopCompanionSyncService {
       history_event_id: historyEvent?.eventId ?? null,
       history_viewed_at: historyEvent?.viewedAt ?? null,
       history_current_page: historyEvent?.currentPage ?? null,
+      state_payload: JSON.stringify({
+        isRead: state.isRead,
+        isHidden: state.isHidden,
+        customTitle: state.customTitle,
+        seriesFavorite: state.seriesFavorite,
+      }),
     });
 
     return {
@@ -339,6 +401,10 @@ function toBookState(book: SyncBookRow): CompanionSyncBookState {
     syncId: book.sync_id,
     currentPage: Number(book.current_page || 0),
     isFavorite: Boolean(book.is_favorite),
+    isRead: Boolean(book.is_read),
+    isHidden: Boolean(book.is_hidden),
+    customTitle: book.custom_title || null,
+    seriesFavorite: Boolean(book.series_favorite),
     lastReadAt: book.last_read_at ? toIsoString(book.last_read_at) : null,
     version: Number(book.state_version || 0),
     updatedAt: book.state_updated_at
@@ -348,6 +414,7 @@ function toBookState(book: SyncBookRow): CompanionSyncBookState {
 }
 
 function toSyncChange(row: SyncChangeRow): CompanionSyncChange {
+  const payload = parseStatePayload(row.state_payload);
   const historyEvent = row.history_event_id
     ? {
         eventId: row.history_event_id,
@@ -363,6 +430,11 @@ function toSyncChange(row: SyncChangeRow): CompanionSyncChange {
       syncId: row.book_sync_id,
       currentPage: Number(row.current_page || 0),
       isFavorite: Boolean(row.is_favorite),
+      isRead: Boolean(payload.isRead),
+      isHidden: Boolean(payload.isHidden),
+      customTitle:
+        typeof payload.customTitle === "string" ? payload.customTitle : null,
+      seriesFavorite: Boolean(payload.seriesFavorite),
       lastReadAt: row.last_read_at ? toIsoString(row.last_read_at) : null,
       version: Number(row.state_version),
       updatedAt: toIsoString(row.changed_at),
@@ -370,6 +442,15 @@ function toSyncChange(row: SyncChangeRow): CompanionSyncChange {
     changedFields: parseChangedFields(row.changed_fields),
     historyEvent,
   };
+}
+
+function parseStatePayload(value: string | null): Record<string, unknown> {
+  try {
+    const parsed = JSON.parse(value || "{}");
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
 }
 
 function parseChangedFields(

@@ -50,6 +50,7 @@ const getCoverUrl = (coverPath: string | null) => {
 
 // 매치 타입 라벨
 const getMatchTypeLabel = (matchType: DuplicateGroup["matchType"]) => {
+  if (matchType === "uuid") return "UUID 일치";
   return matchType === "hitomi_id" ? "ID 일치" : "제목 일치";
 };
 
@@ -162,7 +163,7 @@ const confirmPermanent = () => performDelete(true);
           <div class="mb-3 flex items-center gap-2">
             <Badge
               :variant="
-                group.matchType === 'hitomi_id' ? 'default' : 'secondary'
+                group.matchType === 'title' ? 'secondary' : 'default'
               "
             >
               {{ getMatchTypeLabel(group.matchType) }}

@@ -34,6 +34,10 @@ export interface CompanionSyncBookState {
   syncId: string;
   currentPage: number;
   isFavorite: boolean;
+  isRead: boolean;
+  isHidden: boolean;
+  customTitle: string | null;
+  seriesFavorite: boolean;
   lastReadAt: string | null;
   version: number;
   updatedAt: string | null;
@@ -50,7 +54,15 @@ export interface CompanionSyncHistoryEvent {
 export interface CompanionSyncChange {
   cursor: number;
   state: CompanionSyncBookState;
-  changedFields: ("currentPage" | "isFavorite" | "history")[];
+  changedFields: (
+    | "currentPage"
+    | "isFavorite"
+    | "isRead"
+    | "isHidden"
+    | "customTitle"
+    | "seriesFavorite"
+    | "history"
+  )[];
   historyEvent?: CompanionSyncHistoryEvent;
 }
 
@@ -60,6 +72,10 @@ export interface CompanionSyncMutation {
   baseVersion?: number;
   currentPage?: number;
   isFavorite?: boolean;
+  isRead?: boolean;
+  isHidden?: boolean;
+  customTitle?: string | null;
+  seriesFavorite?: boolean;
   historyEvent?: {
     eventId: string;
     viewedAt: string;

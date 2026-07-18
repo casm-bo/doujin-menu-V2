@@ -1,7 +1,9 @@
-import { createReadStream } from "fs";
+import { createReadStream, createWriteStream } from "fs";
 import fs from "fs/promises";
 import path from "path";
-import type { Readable } from "stream";
+import { randomUUID } from "crypto";
+import { Transform, type Readable, type TransformCallback } from "stream";
+import { pipeline } from "stream/promises";
 import * as yauzl from "yauzl";
 import type { Knex } from "knex";
 import db from "../../db/index.js";
@@ -10,8 +12,10 @@ import type {
   CompanionOperationResult,
   CompanionLibraryBook,
   CompanionLibraryImage,
+  CompanionLibraryPage,
   CompanionLibraryService,
   CompanionSeriesAssignment,
+  CompanionSeriesAssignmentResult,
 } from "./companionServer.js";
 import { handleDeleteBook } from "../../handlers/bookHandler.js";
 
@@ -24,6 +28,7 @@ const IMAGE_EXTENSIONS = new Set([
   ".bmp",
   ".avif",
 ]);
+const MAX_IMPORT_BYTES = 2 * 1024 * 1024 * 1024;
 
 interface LibraryBookRow {
   id: number;
@@ -35,6 +40,9 @@ interface LibraryBookRow {
   file_mtime: number | null;
   current_page: number | null;
   is_favorite: number | boolean;
+  is_read: number | boolean;
+  is_hidden: number | boolean;
+  custom_title: string | null;
   last_read_at: string | null;
   state_version: number | null;
   state_updated_at: string | null;
@@ -50,73 +58,263 @@ interface LibraryBookRow {
   series_collection_name: string | null;
   series_order_index: number | null;
   series_state_updated_at: number | null;
+  series_favorite: number | boolean | null;
 }
 
 export class DesktopLibraryService implements CompanionLibraryService {
-  constructor(private readonly database: Knex = db) {}
+  constructor(
+    private readonly database: Knex = db,
+    private readonly getDownloadPath: () => string = () => "",
+  ) {}
 
   async saveSeriesAssignments(
     assignments: CompanionSeriesAssignment[],
-  ): Promise<CompanionOperationResult<{ updated: number }>> {
-    const updated = await this.database.transaction(async (trx) => {
-      let count = 0;
+  ): Promise<
+    CompanionOperationResult<{
+      updated: number;
+      results: CompanionSeriesAssignmentResult[];
+    }>
+  > {
+    const results = await this.database.transaction(async (trx) => {
+      const items: CompanionSeriesAssignmentResult[] = [];
       for (const assignment of assignments) {
         const book = await trx("Book")
-          .select("id", "series_state_updated_at")
+          .select(
+            "Book.id",
+            "Book.state_version",
+            "Book.series_order_index",
+            "Book.series_state_updated_at",
+            "SeriesCollection.name as series_name",
+          )
+          .leftJoin(
+            "SeriesCollection",
+            "Book.series_collection_id",
+            "SeriesCollection.id",
+          )
           .where("sync_id", assignment.bookSyncId)
           .first();
-        if (!book) continue;
-        if (
-          assignment.modifiedAt <= Number(book.series_state_updated_at || 0)
-        ) {
+        if (!book) {
+          items.push({
+            mutationId: assignment.mutationId ?? null,
+            bookSyncId: assignment.bookSyncId,
+            status: "not_found",
+          });
           continue;
         }
 
-        if (!assignment.name) {
-          await trx("Book").where("id", book.id).update({
+        const currentName = book.series_name ?? null;
+        const currentOrder = Math.max(0, (book.series_order_index || 1) - 1);
+        const version = Number(book.state_version || 0);
+        const currentModifiedAt = Number(book.series_state_updated_at || 0);
+        const requestedName = assignment.name?.trim() || null;
+        if (currentName === requestedName && currentOrder === assignment.order) {
+          items.push({
+            mutationId: assignment.mutationId ?? null,
+            bookSyncId: assignment.bookSyncId,
+            status: "already_applied",
+            version,
+            modifiedAt: currentModifiedAt,
+            name: currentName,
+            order: currentOrder,
+          });
+          continue;
+        }
+        if (
+          assignment.baseVersion === undefined &&
+          assignment.modifiedAt !== undefined &&
+          assignment.modifiedAt <= currentModifiedAt
+        ) {
+          items.push({
+            mutationId: assignment.mutationId ?? null,
+            bookSyncId: assignment.bookSyncId,
+            status: "conflict",
+            version,
+            modifiedAt: currentModifiedAt,
+            name: currentName,
+            order: currentOrder,
+          });
+          continue;
+        }
+        if (
+          assignment.baseVersion !== undefined &&
+          assignment.baseVersion !== version
+        ) {
+          items.push({
+            mutationId: assignment.mutationId ?? null,
+            bookSyncId: assignment.bookSyncId,
+            status: "conflict",
+            version,
+            modifiedAt: currentModifiedAt,
+            name: currentName,
+            order: currentOrder,
+          });
+          continue;
+        }
+
+        const nextVersion = version + 1;
+        const now = new Date().toISOString();
+        const stateModifiedAt =
+          assignment.baseVersion === undefined && assignment.modifiedAt !== undefined
+            ? assignment.modifiedAt
+            : Date.now();
+
+        if (!requestedName) {
+          await trx("Book").where("sync_id", assignment.bookSyncId).update({
             series_collection_id: null,
             series_order_index: null,
-            series_state_updated_at: assignment.modifiedAt,
+            series_state_updated_at: stateModifiedAt,
+            state_version: nextVersion,
+            state_updated_at: now,
           });
-          count++;
-          continue;
+        } else {
+          let series = await trx("SeriesCollection")
+            .select("id")
+            .where("name", requestedName)
+            .first();
+          if (!series) {
+            const [id] = await trx("SeriesCollection").insert({
+              name: requestedName,
+              is_auto_generated: false,
+              is_manually_edited: true,
+              confidence_score: 1.0,
+              created_at: trx.fn.now(),
+              updated_at: trx.fn.now(),
+            });
+            series = { id };
+          }
+          await trx("Book")
+            .where("sync_id", assignment.bookSyncId)
+            .update({
+              series_collection_id: series.id,
+              series_order_index: assignment.order + 1,
+              series_state_updated_at: stateModifiedAt,
+              state_version: nextVersion,
+              state_updated_at: now,
+            });
         }
-
-        const seriesName = assignment.name.trim();
-        let series = await trx("SeriesCollection")
-          .select("id")
-          .where("name", seriesName)
-          .first();
-        if (!series) {
-          const [id] = await trx("SeriesCollection").insert({
-            name: seriesName,
-            is_auto_generated: false,
-            is_manually_edited: true,
-            confidence_score: 1.0,
-            created_at: trx.fn.now(),
-            updated_at: trx.fn.now(),
-          });
-          series = { id };
-        }
-        await trx("Book")
-          .where("id", book.id)
-          .update({
-            series_collection_id: series.id,
-            series_order_index: assignment.order + 1,
-            series_state_updated_at: assignment.modifiedAt,
-          });
-        count++;
+        items.push({
+          mutationId: assignment.mutationId ?? null,
+          bookSyncId: assignment.bookSyncId,
+          status: "applied",
+          version: nextVersion,
+          modifiedAt: stateModifiedAt,
+          name: requestedName,
+          order: assignment.order,
+        });
       }
-      return count;
+      return items;
     });
-    return { success: true, data: { updated } };
+    return {
+      success: true,
+      data: {
+        updated: results.filter((item) => item.status === "applied").length,
+        results,
+      },
+    };
+  }
+
+  async importBook({
+    stream,
+    fileName,
+    syncId,
+    contentLength,
+  }: {
+    stream: Readable;
+    fileName: string;
+    syncId: string;
+    contentLength?: number;
+  }): Promise<
+    CompanionOperationResult<{
+      status: "imported" | "already_exists";
+      id: number;
+      syncId: string;
+      path: string;
+    }>
+  > {
+    const existing = await this.database("Book")
+      .select("id", "path", "sync_id")
+      .where("sync_id", syncId)
+      .first();
+    if (existing) {
+      stream.resume();
+      return {
+        success: true,
+        data: {
+          status: "already_exists",
+          id: existing.id,
+          syncId: existing.sync_id,
+          path: existing.path,
+        },
+      };
+    }
+
+    const downloadPath = this.getDownloadPath().trim();
+    if (!downloadPath) {
+      stream.resume();
+      return { success: false, error: "Desktop download path is not configured" };
+    }
+    if (contentLength !== undefined && contentLength > MAX_IMPORT_BYTES) {
+      stream.resume();
+      return { success: false, error: "Uploaded archive is too large" };
+    }
+
+    await fs.mkdir(downloadPath, { recursive: true });
+    const safeName = sanitizeArchiveName(fileName);
+    const finalPath = await availableArchivePath(downloadPath, safeName);
+    const temporaryPath = path.join(downloadPath, `.${randomUUID()}.upload`);
+    try {
+      await pipeline(
+        stream,
+        new ByteLimitTransform(MAX_IMPORT_BYTES),
+        createWriteStream(temporaryPath, { flags: "wx" }),
+      );
+      const stat = await fs.stat(temporaryPath);
+      if (stat.size <= 0 || stat.size > MAX_IMPORT_BYTES) {
+        throw new Error("Uploaded archive has an invalid size");
+      }
+      await validateArchive(temporaryPath);
+      await fs.rename(temporaryPath, finalPath);
+      const { scanFile } = await import("../../handlers/directoryHandler.js");
+      await scanFile(finalPath);
+      const imported = await this.database("Book")
+        .select("id", "path", "sync_id")
+        .where("path", finalPath)
+        .first();
+      if (!imported) throw new Error("Imported archive could not be registered");
+      return {
+        success: true,
+        data: {
+          status: "imported",
+          id: imported.id,
+          syncId: imported.sync_id || syncId,
+          path: imported.path,
+        },
+      };
+    } catch (error) {
+      await fs.rm(temporaryPath, { force: true }).catch(() => undefined);
+      await fs.rm(finalPath, { force: true }).catch(() => undefined);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
   }
 
   async deleteBook(bookId: number): Promise<CompanionOperationResult> {
     return handleDeleteBook(bookId);
   }
 
-  async listBooks(): Promise<CompanionLibraryBook[]> {
+  async listBooks(): Promise<CompanionLibraryBook[]>;
+  async listBooks(
+    cursor: number | undefined,
+    requestedLimit: number | undefined,
+  ): Promise<CompanionLibraryPage>;
+  async listBooks(
+    cursor?: number,
+    requestedLimit?: number,
+  ): Promise<CompanionLibraryBook[] | CompanionLibraryPage> {
+    const paginated = cursor !== undefined || requestedLimit !== undefined;
+    const limit = Math.min(Math.max(requestedLimit ?? 200, 1), 500);
     const books = (await this.database("Book")
       .select(
         "Book.*",
@@ -128,6 +326,7 @@ export class DesktopLibraryService implements CompanionLibraryService {
           "GROUP_CONCAT(DISTINCT `Character`.name) as characters",
         ),
         "SeriesCollection.name as series_collection_name",
+        "SeriesCollection.is_favorite as series_favorite",
         "Book.series_order_index",
         "Book.series_state_updated_at",
       )
@@ -146,10 +345,18 @@ export class DesktopLibraryService implements CompanionLibraryService {
         "Book.series_collection_id",
         "SeriesCollection.id",
       )
+      .modify((query) => {
+        if (cursor !== undefined) query.where("Book.id", "<", cursor);
+      })
       .groupBy("Book.id")
-      .orderBy("Book.added_at", "desc")) as LibraryBookRow[];
+      .orderBy("Book.id", "desc")
+      .modify((query) => {
+        if (paginated) query.limit(limit + 1);
+      })) as LibraryBookRow[];
 
-    return books
+    const hasMore = books.length > limit;
+    const page = hasMore ? books.slice(0, limit) : books;
+    const mapped = page
       .filter((book) => book.sync_id)
       .map((book) => ({
         id: book.id,
@@ -159,6 +366,10 @@ export class DesktopLibraryService implements CompanionLibraryService {
         modifiedAt: getModifiedAt(book),
         currentPage: Math.max(0, book.current_page || 0),
         isFavorite: Boolean(book.is_favorite),
+        isRead: Boolean(book.is_read),
+        isHidden: Boolean(book.is_hidden),
+        customTitle: book.custom_title ?? null,
+        seriesFavorite: Boolean(book.series_favorite),
         lastReadAt: book.last_read_at ?? null,
         stateVersion: Math.max(0, book.state_version || 0),
         stateUpdatedAt: book.state_updated_at ?? null,
@@ -178,6 +389,12 @@ export class DesktopLibraryService implements CompanionLibraryService {
         },
         coverUrl: `/v1/library/books/${book.id}/cover`,
       }));
+    if (!paginated) return mapped;
+    return {
+      books: mapped,
+      nextCursor: hasMore ? page.at(-1)?.id ?? null : null,
+      hasMore,
+    };
   }
 
   async getPageCount(bookId: number): Promise<number | null> {
@@ -325,5 +542,79 @@ function getImageContentType(filePath: string): string {
       return "image/avif";
     default:
       return "application/octet-stream";
+  }
+}
+
+function sanitizeArchiveName(fileName: string): string {
+  const extension = path.extname(fileName).toLowerCase() === ".zip" ? ".zip" : ".cbz";
+  const stem = path
+    .basename(fileName, path.extname(fileName))
+    .replace(/[<>:"/\\|?*\u0000-\u001f]/g, "_")
+    .replace(/[. ]+$/g, "")
+    .trim()
+    .slice(0, 160);
+  return `${stem || "android-import"}${extension}`;
+}
+
+async function availableArchivePath(directory: string, fileName: string): Promise<string> {
+  const extension = path.extname(fileName);
+  const stem = path.basename(fileName, extension);
+  for (let suffix = 0; suffix < 10_000; suffix++) {
+    const candidate = path.join(
+      directory,
+      suffix === 0 ? fileName : `${stem} (${suffix})${extension}`,
+    );
+    try {
+      await fs.access(candidate);
+    } catch {
+      return candidate;
+    }
+  }
+  throw new Error("Could not allocate an import file name");
+}
+
+async function validateArchive(filePath: string): Promise<void> {
+  await new Promise<void>((resolve, reject) => {
+    yauzl.open(filePath, { lazyEntries: true }, (error, archive) => {
+      if (error || !archive) {
+        reject(error || new Error("Invalid ZIP/CBZ archive"));
+        return;
+      }
+      let hasImage = false;
+      archive.once("error", reject);
+      archive.on("entry", (entry) => {
+        if (IMAGE_EXTENSIONS.has(path.extname(entry.fileName).toLowerCase())) {
+          hasImage = true;
+        }
+        archive.readEntry();
+      });
+      archive.once("end", () => {
+        archive.close();
+        if (hasImage) resolve();
+        else reject(new Error("Archive does not contain a supported image"));
+      });
+      archive.readEntry();
+    });
+  });
+}
+
+class ByteLimitTransform extends Transform {
+  private received = 0;
+
+  constructor(private readonly maximum: number) {
+    super();
+  }
+
+  override _transform(
+    chunk: Buffer,
+    encoding: BufferEncoding,
+    callback: TransformCallback,
+  ): void {
+    this.received += chunk.length;
+    if (this.received > this.maximum) {
+      callback(new Error("Uploaded archive is too large"));
+      return;
+    }
+    callback(null, chunk);
   }
 }

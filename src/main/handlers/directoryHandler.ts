@@ -231,7 +231,10 @@ export async function extractInfoTxtAndImageCountFromZip(
 
         // info.txt를 발견하면 백그라운드로 읽기 시작하고, 순회는 멈추지 않고 계속 진행.
         // 읽기 스트림 완료를 기다리지 않고 바로 다음 엔트리로 넘어간다.
-        if (entry.fileName === "info.txt" && !infoFound) {
+        if (
+          path.posix.basename(entry.fileName).toLowerCase() === "info.txt" &&
+          !infoFound
+        ) {
           infoFound = true;
           console.log(`[Main] ZIP에서 info.txt 발견: ${zipPath}`);
           zipfile.openReadStream(entry, (readErr, readStream) => {
@@ -510,7 +513,8 @@ async function processBatchInTransaction(
         !(await isPathAccessible(existingBySyncId.path)));
     const existingBook =
       existingByPath ?? (canRelocateBySyncId ? existingBySyncId : undefined);
-    if (!existingBook && existingBySyncId) bookData.sync_id = null;
+    // Keep the UUID on every physical copy. Duplicate cleanup is an explicit
+    // desktop action and the UUID identifies the shared logical book.
 
     let bookId: number;
     if (existingBook) {
@@ -681,15 +685,14 @@ export function deduplicateBookSyncIds(
   books: { bookData: Pick<Book, "sync_id"> }[],
   claimedSyncIds: Set<string>,
 ): void {
-  const seenSyncIds = new Set(claimedSyncIds);
   for (const { bookData } of books) {
     const syncId = cleanValue(bookData.sync_id)?.trim().toLowerCase() ?? null;
-    if (!syncId || seenSyncIds.has(syncId)) {
+    if (!syncId) {
       bookData.sync_id = null;
       continue;
     }
     bookData.sync_id = syncId;
-    seenSyncIds.add(syncId);
+    claimedSyncIds.add(syncId);
   }
 }
 
@@ -1245,7 +1248,8 @@ export async function scanFile(filePath: string) {
         const existingBook =
           existingByPath ??
           (canRelocateBySyncId ? existingBySyncId : undefined);
-        if (!existingBook && existingBySyncId) bookData.sync_id = null;
+        // Keep the UUID on every physical copy; the duplicates screen groups
+        // them by UUID for explicit review.
 
         if (existingBook) {
           bookId = existingBook.id;

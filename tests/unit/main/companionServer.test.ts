@@ -340,6 +340,48 @@ describe("CompanionServer", () => {
     expect((await response.json()).data).toEqual([book]);
   });
 
+  it("returns a cursor-paginated library page", async () => {
+    const token = await pairTestDevice();
+    const page = { books: [], nextCursor: 50, hasMore: true };
+    vi.mocked(libraryService.listBooks).mockResolvedValue(page);
+
+    const response = await fetch(`${baseUrl}/v1/library/books?limit=200&cursor=100`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+
+    expect(response.status).toBe(200);
+    expect((await response.json()).data).toEqual(page);
+    expect(libraryService.listBooks).toHaveBeenCalledWith(100, 200);
+  });
+
+  it("streams an authenticated CBZ import to the library service", async () => {
+    const token = await pairTestDevice();
+    libraryService.importBook = vi.fn().mockResolvedValue({
+      success: true,
+      data: {
+        status: "imported",
+        id: 7,
+        syncId: "123e4567-e89b-42d3-a456-426614174000",
+        path: "C:\\Downloads\\book.cbz",
+      },
+    });
+
+    const response = await fetch(`${baseUrl}/v1/library/import`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/zip",
+        "X-File-Name": encodeURIComponent("book.cbz"),
+        "X-Sync-Id": "123e4567-e89b-42d3-a456-426614174000",
+      },
+      body: Buffer.from("zip"),
+    });
+
+    expect(response.status).toBe(200);
+    expect((await response.json()).data.status).toBe("imported");
+    expect(libraryService.importBook).toHaveBeenCalledOnce();
+  });
+
   it("saves Android series assignments by stable book sync id", async () => {
     const token = await pairTestDevice();
     const assignments = [

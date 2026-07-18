@@ -7,7 +7,7 @@ const hitomiMocks = vi.hoisted(() => ({
 }));
 
 vi.mock("node-hitomi", () => ({
-  default: {
+  hitomi: {
     galleries: {
       list: hitomiMocks.list,
       retrieve: hitomiMocks.retrieve,

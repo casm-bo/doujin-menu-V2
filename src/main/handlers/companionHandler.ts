@@ -32,10 +32,16 @@ const deviceStore: CompanionDeviceStore = {
 };
 
 const downloadService: CompanionDownloadService = {
-  getPath: async () => ({
-    success: true,
-    data: { configured: Boolean(store.get("downloadPath", "").trim()) },
-  }),
+  getPath: async () => {
+    const configuredPath = store.get("downloadPath", "").trim();
+    return {
+      success: true,
+      data: {
+        configured: Boolean(configuredPath),
+        path: configuredPath || null,
+      },
+    };
+  },
   getQueue: handleGetDownloadQueue,
   add: async (galleryId) => {
     const downloadPath = store.get("downloadPath", "").trim();
@@ -66,9 +72,17 @@ export const companionServer = new CompanionServer(
   hitomiService,
   deviceStore,
   downloadService,
-  new DesktopLibraryService(),
+  new DesktopLibraryService(db, () => store.get("downloadPath", "")),
   new DesktopCompanionSyncService(db),
 );
+
+let syncStatus = {
+  state: "idle" as "idle" | "syncing" | "success" | "error",
+  lastSyncedAt: null as string | null,
+  bookCount: 0,
+  cursor: 0,
+  error: null as string | null,
+};
 
 export async function startCompanionServer() {
   try {
@@ -98,6 +112,26 @@ export async function registerCompanionHandlers() {
     ...companionServer.getStatus(store.get("companionEnabled", false)),
     enabled: store.get("companionEnabled", false),
   }));
+  ipcMain.handle("get-companion-sync-status", () => syncStatus);
+  ipcMain.handle("run-companion-sync", async () => {
+    syncStatus = { ...syncStatus, state: "syncing", error: null };
+    try {
+      const snapshot = await new DesktopCompanionSyncService(db).bootstrap();
+      companionServer.requestSync();
+      syncStatus = {
+        state: "success",
+        lastSyncedAt: new Date().toISOString(),
+        bookCount: snapshot.books.length,
+        cursor: snapshot.cursor,
+        error: null,
+      };
+      return { success: true };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      syncStatus = { ...syncStatus, state: "error", error: message };
+      return { success: false, error: message };
+    }
+  });
   ipcMain.handle("start-companion-server", () => startCompanionServer());
   ipcMain.handle("stop-companion-server", () => stopCompanionServer());
   ipcMain.handle("create-companion-pairing-code", () => {

@@ -142,4 +142,36 @@ describe("DesktopCompanionSyncService", () => {
       state: { currentPage: 8, version: 2 },
     });
   });
+
+  it("synchronizes read, hidden, title, and series favorite state", async () => {
+    const book = await seedBook(db, { page_count: 12 });
+    const [seriesId] = await db("SeriesCollection").insert({ name: "Series" });
+    await db("Book").where("id", book.id).update({ series_collection_id: seriesId });
+    const stored = await db("Book").where("id", book.id).first();
+
+    const result = await service.applyMutations("phone-1", [
+      {
+        mutationId: "all-state-1",
+        bookSyncId: stored.sync_id,
+        baseVersion: 0,
+        currentPage: 5,
+        isFavorite: true,
+        isRead: true,
+        isHidden: true,
+        customTitle: "Mobile title",
+        seriesFavorite: true,
+      },
+    ]);
+    const bootstrap = await service.bootstrap();
+
+    expect(result.results[0].state).toMatchObject({
+      currentPage: 5,
+      isFavorite: true,
+      isRead: true,
+      isHidden: true,
+      customTitle: "Mobile title",
+      seriesFavorite: true,
+    });
+    expect(bootstrap.books[0]).toMatchObject(result.results[0].state!);
+  });
 });

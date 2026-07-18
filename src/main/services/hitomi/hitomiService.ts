@@ -1,6 +1,7 @@
-import hitomi, {
+import {
   Extension,
   ThumbnailSize,
+  hitomi,
   type Gallery,
   type Image,
 } from "node-hitomi";

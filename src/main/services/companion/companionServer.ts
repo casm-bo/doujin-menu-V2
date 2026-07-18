@@ -40,7 +40,7 @@ export interface CompanionOperationResult<T = undefined> {
 }
 
 export interface CompanionDownloadService {
-  getPath(): Promise<CompanionOperationResult<{ configured: boolean }>>;
+  getPath(): Promise<CompanionOperationResult<{ configured: boolean; path: string | null }>>;
   getQueue(): Promise<CompanionOperationResult<DownloadQueueItem[]>>;
   add(galleryId: number): Promise<CompanionOperationResult<DownloadQueueItem>>;
   remove(queueId: number): Promise<CompanionOperationResult>;
@@ -58,6 +58,10 @@ export interface CompanionLibraryBook {
   modifiedAt: number;
   currentPage: number;
   isFavorite: boolean;
+  isRead?: boolean;
+  isHidden?: boolean;
+  customTitle?: string | null;
+  seriesFavorite?: boolean;
   lastReadAt: string | null;
   stateVersion: number;
   stateUpdatedAt: string | null;
@@ -77,11 +81,29 @@ export interface CompanionLibraryBook {
   coverUrl: string;
 }
 
+export interface CompanionLibraryPage {
+  books: CompanionLibraryBook[];
+  nextCursor: number | null;
+  hasMore: boolean;
+}
+
 export interface CompanionSeriesAssignment {
+  mutationId?: string;
   bookSyncId: string;
   name: string | null;
   order: number;
-  modifiedAt: number;
+  modifiedAt?: number;
+  baseVersion?: number;
+}
+
+export interface CompanionSeriesAssignmentResult {
+  mutationId: string | null;
+  bookSyncId: string;
+  status: "applied" | "already_applied" | "conflict" | "not_found";
+  version?: number;
+  modifiedAt?: number;
+  name?: string | null;
+  order?: number;
 }
 
 export interface CompanionLibraryImage {
@@ -91,10 +113,31 @@ export interface CompanionLibraryImage {
 }
 
 export interface CompanionLibraryService {
-  listBooks(): Promise<CompanionLibraryBook[]>;
+  listBooks(
+    cursor?: number,
+    limit?: number,
+  ): Promise<CompanionLibraryBook[] | CompanionLibraryPage>;
   saveSeriesAssignments(
     assignments: CompanionSeriesAssignment[],
-  ): Promise<CompanionOperationResult<{ updated: number }>>;
+  ): Promise<
+    CompanionOperationResult<{
+      updated: number;
+      results: CompanionSeriesAssignmentResult[];
+    }>
+  >;
+  importBook?(input: {
+    stream: Readable;
+    fileName: string;
+    syncId: string;
+    contentLength?: number;
+  }): Promise<
+    CompanionOperationResult<{
+      status: "imported" | "already_exists";
+      id: number;
+      syncId: string;
+      path: string;
+    }>
+  >;
   deleteBook(bookId: number): Promise<CompanionOperationResult>;
   getPageCount(bookId: number): Promise<number | null>;
   getCover(bookId: number): Promise<CompanionLibraryImage | null>;
@@ -142,6 +185,7 @@ export class CompanionServer {
     string,
     ReturnType<typeof setTimeout>
   >();
+  private syncGeneration = 0;
 
   constructor(
     private readonly hitomiService: CompanionHitomiService,
@@ -243,6 +287,11 @@ export class CompanionServer {
     return true;
   }
 
+  requestSync(): number {
+    this.syncGeneration += 1;
+    return this.syncGeneration;
+  }
+
   private async handleRequest(
     request: IncomingMessage,
     response: ServerResponse,
@@ -262,6 +311,7 @@ export class CompanionServer {
           service: "doujin-menu-companion",
           version: 1,
           pairingAvailable: this.getStatus().pairingAvailable,
+          syncGeneration: this.syncGeneration,
         },
       });
       return;
@@ -469,6 +519,45 @@ export class CompanionServer {
       return true;
     }
 
+    if (request.method === "POST" && pathname === "/v1/library/import") {
+      if (!service.importBook) {
+        this.sendJson(response, 501, { success: false, error: "Library import is unavailable" });
+        return true;
+      }
+      const fileName = decodeHeaderValue(request.headers["x-file-name"]);
+      const syncId = headerValue(request.headers["x-sync-id"])
+        ?.trim()
+        .toLowerCase();
+      const contentLengthText = request.headers["content-length"];
+      const contentLength = contentLengthText
+        ? Number.parseInt(headerValue(contentLengthText) || "", 10)
+        : undefined;
+      if (
+        !fileName ||
+        !syncId ||
+        !isUuid(syncId) ||
+        !/\.(cbz|zip)$/i.test(fileName) ||
+        (contentLength !== undefined &&
+          (!Number.isSafeInteger(contentLength) || contentLength <= 0))
+      ) {
+        this.sendJson(response, 400, {
+          success: false,
+          error: "A valid CBZ/ZIP file name, UUID, and content length are required",
+        });
+        return true;
+      }
+      this.sendOperationResult(
+        response,
+        await service.importBook({
+          stream: request,
+          fileName,
+          syncId,
+          contentLength,
+        }),
+      );
+      return true;
+    }
+
     const deleteMatch = pathname.match(/^\/v1\/library\/books\/(\d+)$/);
     if (request.method === "DELETE" && deleteMatch) {
       const bookId = Number.parseInt(deleteMatch[1], 10);
@@ -479,9 +568,29 @@ export class CompanionServer {
     if (request.method !== "GET") return false;
 
     if (pathname === "/v1/library/books") {
+      const requestUrl = new URL(request.url || "/", "http://companion.local");
+      const cursorText = requestUrl.searchParams.get("cursor");
+      const limitText = requestUrl.searchParams.get("limit");
+      const cursor = cursorText === null ? undefined : parsePositiveInteger(cursorText);
+      const limit = limitText === null ? undefined : parsePositiveInteger(limitText);
+      if ((cursorText !== null && cursor === null) || (limitText !== null && limit === null)) {
+        this.sendJson(response, 400, {
+          success: false,
+          error: "cursor and limit must be valid positive integers",
+        });
+        return true;
+      }
+      if (cursorText === null && limitText === null) {
+        this.sendJson(response, 200, {
+          success: true,
+          data: await service.listBooks(),
+        });
+        return true;
+      }
+      const page = await service.listBooks(cursor ?? undefined, limit ?? undefined);
       this.sendJson(response, 200, {
         success: true,
-        data: await service.listBooks(),
+        data: page,
       });
       return true;
     }
@@ -881,7 +990,32 @@ function isSeriesAssignment(
   }
   return (
     isNonNegativeInteger(assignment.order) &&
-    isNonNegativeInteger(assignment.modifiedAt)
+    (assignment.modifiedAt === undefined ||
+      isNonNegativeInteger(assignment.modifiedAt)) &&
+    (assignment.baseVersion === undefined ||
+      isNonNegativeInteger(assignment.baseVersion)) &&
+    (assignment.mutationId === undefined ||
+      isBoundedString(assignment.mutationId, 128))
+  );
+}
+
+function headerValue(value: string | string[] | undefined): string | undefined {
+  return Array.isArray(value) ? value[0] : value;
+}
+
+function decodeHeaderValue(value: string | string[] | undefined): string | null {
+  const raw = headerValue(value);
+  if (!raw) return null;
+  try {
+    return decodeURIComponent(raw.replace(/\+/g, "%20"));
+  } catch {
+    return null;
+  }
+}
+
+function isUuid(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+    value,
   );
 }
 
@@ -909,8 +1043,26 @@ function isSyncMutation(value: unknown): value is CompanionSyncMutation {
     return false;
   }
 
+  for (const field of ["isRead", "isHidden", "seriesFavorite"] as const) {
+    if (mutation[field] !== undefined && typeof mutation[field] !== "boolean") {
+      return false;
+    }
+  }
+  if (
+    mutation.customTitle !== undefined &&
+    mutation.customTitle !== null &&
+    !isBoundedString(mutation.customTitle, 500)
+  ) {
+    return false;
+  }
+
   let hasChange =
-    mutation.currentPage !== undefined || mutation.isFavorite !== undefined;
+    mutation.currentPage !== undefined ||
+    mutation.isFavorite !== undefined ||
+    mutation.isRead !== undefined ||
+    mutation.isHidden !== undefined ||
+    mutation.customTitle !== undefined ||
+    mutation.seriesFavorite !== undefined;
   if (mutation.historyEvent !== undefined) {
     if (
       !mutation.historyEvent ||
