@@ -10,11 +10,7 @@ import yauzl from "yauzl";
 import db from "../db/index.js";
 import { Book } from "../db/types.js";
 import { console } from "../main.js";
-import {
-  ParsedMetadata,
-  parseInfoTxt,
-  upsertInfoTxtUuid,
-} from "../parsers/infoTxtParser.js";
+import { ParsedMetadata, parseInfoTxt } from "../parsers/infoTxtParser.js";
 import type { LibraryScanProgress } from "../../types/ipc.js";
 import { naturalSort } from "../utils/index.js";
 import { filterLibraryPathRows } from "../utils/libraryPath.js";
@@ -345,7 +341,6 @@ async function processBookItem(
   // 1. 반환할 책 데이터, 커버 경로, 메타데이터 객체를 초기화합니다.
   let bookData: Book | null = null;
   let infoMetadata: ParsedMetadata = {};
-  let metadataPath: string | null = null;
 
   // 2. info.txt 메타데이터를 찾고 파싱합니다.
   // 2-1. 폴더 내부에 있는 info.txt를 먼저 시도합니다.
@@ -360,7 +355,6 @@ async function processBookItem(
     const stats = await fs.stat(infoTxtPath);
     if (stats.isFile()) {
       infoMetadata = parseInfoTxt(await fs.readFile(infoTxtPath, "utf-8"));
-      metadataPath = infoTxtPath;
     }
   } catch {
     // info.txt 파일이 없거나 읽을 수 없는 경우 무시하고 다음 단계로 진행합니다.
@@ -374,7 +368,6 @@ async function processBookItem(
         infoMetadata = parseInfoTxt(
           await fs.readFile(parentInfoTxtPath, "utf-8"),
         );
-        metadataPath = parentInfoTxtPath;
       }
     } catch {
       // 외부 info.txt 파일이 없거나 읽을 수 없는 경우 무시합니다.
@@ -458,8 +451,6 @@ async function processBookItem(
     return {
       bookData,
       infoMetadata,
-      metadataPath:
-        metadataPath ?? (isDirectory ? infoTxtPath : parentInfoTxtPath),
     };
   }
 
@@ -477,13 +468,11 @@ async function processBatchInTransaction(
   updated: number;
   newBookIds: number[];
   thumbnailNeeded: number[];
-  uuidBackfills: UuidBackfill[];
 }> {
   let addedCount = 0;
   let updatedCount = 0;
   const newBookIds: number[] = [];
   const thumbnailNeeded: number[] = [];
-  const uuidBackfills: UuidBackfill[] = [];
 
   deduplicateBookSyncIds(batch, claimedSyncIds);
 
@@ -499,7 +488,7 @@ async function processBatchInTransaction(
     });
 
   for (const processedBook of batch) {
-    const { bookData, infoMetadata, metadataPath } = processedBook;
+    const { bookData, infoMetadata } = processedBook;
     const existingByPath = existingBooksInBatch.find(
       (book) => book.path === bookData.path,
     );
@@ -567,9 +556,6 @@ async function processBatchInTransaction(
       .first();
     if (storedBook?.sync_id) {
       claimedSyncIds.add(storedBook.sync_id);
-      if (bookData.sync_id !== storedBook.sync_id) {
-        uuidBackfills.push({ metadataPath, uuid: storedBook.sync_id });
-      }
     }
 
     // 아티스트 처리
@@ -666,19 +652,12 @@ async function processBatchInTransaction(
     updated: updatedCount,
     newBookIds,
     thumbnailNeeded,
-    uuidBackfills,
   };
 }
 
 interface ProcessedBook {
   bookData: Book;
   infoMetadata: ParsedMetadata;
-  metadataPath: string;
-}
-
-interface UuidBackfill {
-  metadataPath: string;
-  uuid: string;
 }
 
 export function deduplicateBookSyncIds(
@@ -694,24 +673,6 @@ export function deduplicateBookSyncIds(
     bookData.sync_id = syncId;
     claimedSyncIds.add(syncId);
   }
-}
-
-export async function persistUuidBackfill({
-  metadataPath,
-  uuid,
-}: UuidBackfill): Promise<void> {
-  try {
-    const existing = await fs.readFile(metadataPath, "utf-8").catch(() => "");
-    const updated = upsertInfoTxtUuid(existing, uuid);
-    if (updated !== existing)
-      await fs.writeFile(metadataPath, updated, "utf-8");
-  } catch (error) {
-    console.warn(`[Main] UUID 메타데이터 저장 실패 ${metadataPath}:`, error);
-  }
-}
-
-async function persistUuidBackfills(backfills: UuidBackfill[]): Promise<void> {
-  await Promise.all(backfills.map((backfill) => persistUuidBackfill(backfill)));
 }
 
 // 라이브러리 루트 폴더 접근 가능 여부 확인
@@ -998,12 +959,6 @@ export async function scanDirectory(
             zipStat = { mtimeMs: stat.mtimeMs, size: stat.size };
             const cachedZip = zipCache.get(itemPath);
             if (isZipUnchanged(cachedZip, zipStat.mtimeMs, zipStat.size)) {
-              if (cachedZip?.sync_id) {
-                await persistUuidBackfill({
-                  metadataPath: `${itemPath}.info.txt`,
-                  uuid: cachedZip.sync_id,
-                });
-              }
               totalFoundBookPathsInScan.add(itemPath); // 삭제 대상에서 제외
               updateProgress("scanning");
               continue;
@@ -1038,7 +993,6 @@ export async function scanDirectory(
             totalUpdatedCount += result.updated;
             allNewlyAddedBookIds.push(...result.newBookIds);
             allBookIdsToGenerateThumbnails.push(...result.thumbnailNeeded);
-            await persistUuidBackfills(result.uuidBackfills);
             // 진행률 업데이트
             updateProgress("scanning");
             // 메모리 해제를 위해 청크 비우기
@@ -1062,7 +1016,6 @@ export async function scanDirectory(
       totalUpdatedCount += result.updated;
       allNewlyAddedBookIds.push(...result.newBookIds);
       allBookIdsToGenerateThumbnails.push(...result.thumbnailNeeded);
-      await persistUuidBackfills(result.uuidBackfills);
     }
 
     // 삭제 처리 (삭제 직전 루트 접근 재확인 포함)
@@ -1222,10 +1175,9 @@ export async function scanFile(filePath: string) {
     });
 
     if (processedBook) {
-      const { bookData, infoMetadata, metadataPath } = processedBook;
+      const { bookData, infoMetadata } = processedBook;
       let bookId: number | undefined;
       let shouldGenerateThumbnail = false;
-      let uuidBackfill: UuidBackfill | null = null;
 
       await db.transaction(async (trx) => {
         const existingCandidates = await trx("Book")
@@ -1377,15 +1329,6 @@ export async function scanFile(filePath: string) {
 
         // 썸네일 생성 필요 여부 결정
         const currentBookInDb = await trx("Book").where("id", bookId).first();
-        if (
-          currentBookInDb?.sync_id &&
-          currentBookInDb.sync_id !== bookData.sync_id
-        ) {
-          uuidBackfill = {
-            metadataPath,
-            uuid: currentBookInDb.sync_id,
-          };
-        }
         if (!currentBookInDb?.cover_path) {
           shouldGenerateThumbnail = true;
         } else {
@@ -1401,8 +1344,6 @@ export async function scanFile(filePath: string) {
       }); // 배치 트랜잭션 종료
 
       // 단일 파일 스캔 후 썸네일 생성 및 DB 업데이트
-      if (uuidBackfill) await persistUuidBackfill(uuidBackfill);
-
       if (shouldGenerateThumbnail && bookId) {
         const result = await generateThumbnailForBook(bookId);
         if (result) {

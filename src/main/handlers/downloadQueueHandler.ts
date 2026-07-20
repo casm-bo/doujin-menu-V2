@@ -12,6 +12,7 @@ import { formatDownloadFolderName } from "../utils/index.js";
 import { hitomiService } from "../services/hitomi/hitomiService.js";
 import { store as configStore } from "./configHandler.js";
 import { handleDownloadGallery } from "./downloaderHandler.js";
+import { notifyCompanionLibraryChanged } from "../services/companion/companionSyncSignal.js";
 
 // 다운로드 큐 처리 상태
 let isProcessingQueue = false;
@@ -343,6 +344,8 @@ export const updateQueueItemStatus = async (
     }
 
     await db("DownloadQueue").where("id", queueId).update(updateData);
+
+    if (status === "completed") notifyCompanionLibraryChanged();
 
     broadcastQueueUpdate();
   } catch (error) {

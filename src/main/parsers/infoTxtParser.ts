@@ -11,18 +11,6 @@ export interface ParsedMetadata {
   language?: string;
 }
 
-const UUID_LINE_PATTERN = /^(?:UUID|고유 UUID):\s*\S+\s*$/im;
-
-export function upsertInfoTxtUuid(content: string, uuid: string): string {
-  const uuidLine = `UUID: ${uuid}`;
-  if (UUID_LINE_PATTERN.test(content)) {
-    return content.replace(UUID_LINE_PATTERN, uuidLine);
-  }
-  if (!content) return `${uuidLine}\n`;
-  const lineEnding = content.includes("\r\n") ? "\r\n" : "\n";
-  return `${uuidLine}${lineEnding}${content}`;
-}
-
 /**
  * info.txt 파일의 내용을 파싱하여 책의 메타데이터를 추출합니다.
  *

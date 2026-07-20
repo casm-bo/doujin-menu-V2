@@ -9,6 +9,7 @@ import {
 } from "../services/companion/companionServer.js";
 import { DesktopLibraryService } from "../services/companion/companionLibraryService.js";
 import { DesktopCompanionSyncService } from "../services/companion/companionSyncService.js";
+import { setCompanionLibraryChangedHandler } from "../services/companion/companionSyncSignal.js";
 import db from "../db/index.js";
 import { store } from "./configHandler.js";
 import {
@@ -75,6 +76,7 @@ export const companionServer = new CompanionServer(
   new DesktopLibraryService(db, () => store.get("downloadPath", "")),
   new DesktopCompanionSyncService(db),
 );
+setCompanionLibraryChangedHandler(() => companionServer.requestSync());
 
 let syncStatus = {
   state: "idle" as "idle" | "syncing" | "success" | "error",

@@ -92,19 +92,7 @@ import {
   deduplicateBookSyncIds,
   extractInfoTxtAndImageCountFromZip,
   isZipUnchanged,
-  persistUuidBackfill,
 } from "../../../src/main/handlers/directoryHandler";
-
-let createdMetadataPaths: string[] = [];
-
-afterEach(async () => {
-  await Promise.all(
-    createdMetadataPaths.map((metadataPath) =>
-      fs.promises.unlink(metadataPath).catch(() => undefined),
-    ),
-  );
-  createdMetadataPaths = [];
-});
 
 describe("directoryHandler", () => {
   it("keeps the same UUID on duplicate physical copies", () => {
@@ -117,20 +105,6 @@ describe("directoryHandler", () => {
 
     expect(books[0].bookData.sync_id).toBe("shared-uuid");
     expect(books[1].bookData.sync_id).toBe("shared-uuid");
-  });
-
-  it("persists a generated UUID without discarding existing metadata", async () => {
-    const metadataPath = path.join(
-      os.tmpdir(),
-      `doujin-menu-uuid-${process.pid}-${Date.now()}.info.txt`,
-    );
-    createdMetadataPaths.push(metadataPath);
-    await fs.promises.writeFile(metadataPath, "제목: 기존 제목\r\n", "utf-8");
-
-    await persistUuidBackfill({ metadataPath, uuid: "stable-uuid" });
-
-    const stored = await fs.promises.readFile(metadataPath, "utf-8");
-    expect(stored).toBe("UUID: stable-uuid\r\n제목: 기존 제목\r\n");
   });
 
   describe("cleanValue", () => {

@@ -2,6 +2,7 @@ import { app, ipcMain } from "electron";
 import { fileURLToPath } from "url";
 import { Worker } from "worker_threads";
 import db from "../db/index.js";
+import { notifyCompanionLibraryChanged } from "../services/companion/companionSyncSignal.js";
 import type {
   Book,
   SeriesCollection,
@@ -1124,12 +1125,34 @@ export async function handleReorderBooksInSeries(
 ) {
   try {
     await db.transaction(async (trx) => {
+      if (
+        !Number.isInteger(seriesId) ||
+        seriesId <= 0 ||
+        bookIds.some((id) => !Number.isInteger(id) || id <= 0) ||
+        new Set(bookIds).size !== bookIds.length
+      ) {
+        throw new Error("잘못된 시리즈 순서 요청입니다.");
+      }
+      const currentBooks = await trx("Book")
+        .select("id")
+        .where("series_collection_id", seriesId);
+      const currentIds = new Set(currentBooks.map((book) => book.id));
+      if (
+        currentIds.size !== bookIds.length ||
+        bookIds.some((id) => !currentIds.has(id))
+      ) {
+        throw new Error(
+          "시리즈에 속한 모든 책을 정확히 한 번씩 보내야 합니다.",
+        );
+      }
       for (let i = 0; i < bookIds.length; i++) {
-        await trx("Book")
-          .where("id", bookIds[i])
+        const updated = await trx("Book")
+          .where({ id: bookIds[i], series_collection_id: seriesId })
           .update({
             series_order_index: i + 1,
           });
+        if (updated !== 1)
+          throw new Error("시리즈 순서 저장 중 책이 변경되었습니다.");
       }
 
       // 시리즈를 수동 편집으로 표시
@@ -1138,6 +1161,8 @@ export async function handleReorderBooksInSeries(
         updated_at: db.fn.now(),
       });
     });
+
+    notifyCompanionLibraryChanged();
 
     return {
       success: true,

@@ -983,7 +983,7 @@ function isSeriesAssignment(
   if (!isBoundedString(assignment.bookSyncId, 128)) return false;
   if (
     assignment.name !== null &&
-    (!isBoundedString(assignment.name, 200) ||
+    (!isBoundedString(assignment.name, 500) ||
       assignment.name.trim().length === 0)
   ) {
     return false;

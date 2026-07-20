@@ -387,7 +387,7 @@ describe("CompanionServer", () => {
     const assignments = [
       {
         bookSyncId: "book-sync-id",
-        name: "Desktop Series",
+        name: "긴 시리즈 이름 ".repeat(30),
         order: 2,
         modifiedAt: 1_721_088_000_000,
       },
