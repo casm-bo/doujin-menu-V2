@@ -89,11 +89,24 @@ import os from "os";
 import path from "path";
 import {
   cleanValue,
+  deduplicateBookSyncIds,
   extractInfoTxtAndImageCountFromZip,
   isZipUnchanged,
 } from "../../../src/main/handlers/directoryHandler";
 
 describe("directoryHandler", () => {
+  it("keeps the same UUID on duplicate physical copies", () => {
+    const books = [
+      { bookData: { sync_id: "SHARED-UUID" } },
+      { bookData: { sync_id: "shared-uuid" } },
+    ];
+
+    deduplicateBookSyncIds(books, new Set());
+
+    expect(books[0].bookData.sync_id).toBe("shared-uuid");
+    expect(books[1].bookData.sync_id).toBe("shared-uuid");
+  });
+
   describe("cleanValue", () => {
     it("'N/A' 문자열은 null을 반환해야 함", () => {
       expect(cleanValue("N/A")).toBeNull();

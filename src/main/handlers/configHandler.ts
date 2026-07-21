@@ -5,6 +5,7 @@ import { existsSync } from "fs";
 import fs from "fs/promises";
 import path from "path";
 import db, { closeDbConnection } from "../db/index.js";
+import { filterLibraryPathRows } from "../utils/libraryPath.js";
 import { scanDirectory } from "./directoryHandler.js";
 import { handleGenerateThumbnail } from "./thumbnailHandler.js";
 
@@ -222,10 +223,11 @@ export const handleRescanAllMetadata = async () => {
     for (const folderPath of libraryFolders) {
       // 사용자 명시적 전체 재스캔 → 캐시 무시 (force)
       await scanDirectory(folderPath, { force: true });
-      const books = await db("Book")
-        .select("id")
+      const candidates = await db("Book")
+        .select("id", "path")
         .whereLike("path", `${folderPath}%`)
         .and.where("cover_path", null);
+      const books = filterLibraryPathRows(candidates, folderPath);
       await Promise.all(books.map((book) => handleGenerateThumbnail(book.id)));
     }
     return { success: true };
@@ -276,33 +278,16 @@ export const handleAddLibraryFolder = async () => {
   }
 };
 
-async function deleteBooksInFolder(folderPath: string) {
-  await db.transaction(async (trx) => {
-    const booksToDelete = await trx("Book")
-      .select("id", "path", "cover_path")
-      .where("path", "like", `${folderPath}%`);
-
-    for (const book of booksToDelete) {
-      await trx("BookArtist").where("book_id", book.id).del();
-      await trx("BookTag").where("book_id", book.id).del();
-      await trx("BookSeries").where("book_id", book.id).del();
-      await trx("BookGroup").where("book_id", book.id).del();
-      await trx("BookCharacter").where("book_id", book.id).del();
-      await trx("BookHistory").where("book_id", book.id).del();
-      await trx("Book").where("id", book.id).del();
-
-      if (book.cover_path) {
-        try {
-          await fs.unlink(book.cover_path);
-        } catch (e) {
-          console.error(
-            `[ConfigHandler] Failed to delete thumbnail file ${book.cover_path}:`,
-            e,
-          );
-        }
-      }
-    }
-  });
+async function markBooksOfflineInFolder(folderPath: string) {
+  const candidates = await db("Book")
+    .select("id", "path")
+    .where("path", "like", `${folderPath}%`);
+  const bookIds = filterLibraryPathRows(candidates, folderPath).map(
+    (book) => book.id,
+  );
+  if (bookIds.length > 0) {
+    await db("Book").whereIn("id", bookIds).update({ is_offline: true });
+  }
 }
 
 export const handleRemoveLibraryFolder = async (folderPath: string) => {
@@ -310,7 +295,7 @@ export const handleRemoveLibraryFolder = async (folderPath: string) => {
   const newFolders = currentFolders.filter((p) => p !== folderPath);
 
   try {
-    await deleteBooksInFolder(folderPath); // 분리된 함수 호출
+    await markBooksOfflineInFolder(folderPath);
     store.set("libraryFolders", newFolders);
     return { success: true, folders: newFolders };
   } catch (error) {

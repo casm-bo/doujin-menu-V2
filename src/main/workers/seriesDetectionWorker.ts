@@ -4,7 +4,7 @@ import { parentPort } from "worker_threads";
 import type { Book } from "../db/types.js";
 import { PrefixIndex } from "../services/seriesDetection/prefixIndex.js";
 import type { SerializedIndexEntry } from "../services/seriesDetection/prefixIndex.js";
-import { detectSeriesCandidates } from "../services/seriesDetection/seriesDetector.js";
+import { detectAndroidStyleSeriesCandidates } from "../services/seriesDetection/seriesDetector.js";
 import type { DetectionOptions } from "../services/seriesDetection/types.js";
 
 if (parentPort) {
@@ -15,7 +15,7 @@ if (parentPort) {
       options: Partial<DetectionOptions>;
       protectManualEdits: boolean;
     }) => {
-      const { dbPath, options, protectManualEdits } = msg;
+      const { dbPath } = msg;
 
       // Worker 내부에서 DB 연결 생성
       const db = knex({
@@ -26,25 +26,7 @@ if (parentPort) {
 
       try {
         // 1. 기존 자동 시리즈 삭제
-        if (protectManualEdits) {
-          const seriesToDelete = await db("SeriesCollection")
-            .where("is_auto_generated", true)
-            .where("is_manually_edited", false)
-            .select("id");
-
-          if (seriesToDelete.length > 0) {
-            const idsToDelete = seriesToDelete.map((s) => s.id);
-
-            await db("Book")
-              .whereIn("series_collection_id", idsToDelete)
-              .update({
-                series_collection_id: null,
-                series_order_index: null,
-              });
-
-            await db("SeriesCollection").whereIn("id", idsToDelete).delete();
-          }
-        }
+        // Android와 동일하게 기존 시리즈는 그대로 두고 미지정 책만 검사합니다.
 
         // 2. 시리즈에 속하지 않은 책 조회
         const books = await db("Book")
@@ -81,18 +63,15 @@ if (parentPort) {
         );
 
         // 4. 시리즈 감지 알고리즘 실행
-        const result = await detectSeriesCandidates(booksWithArrays, options);
+        const existingSeries = await db("SeriesCollection").select("name");
+        const result = await detectAndroidStyleSeriesCandidates(
+          booksWithArrays,
+          existingSeries.map((series) => series.name),
+        );
 
         // 5. 감지된 시리즈 저장
         const createdSeries: { id: number; name: string }[] = [];
-        const minBooks =
-          (options as DetectionOptions & { minBooks?: number }).minBooks || 2;
-
         for (const candidate of result.candidates) {
-          if (candidate.books.length < minBooks) {
-            continue;
-          }
-
           await db.transaction(async (trx) => {
             const [seriesId] = await trx("SeriesCollection").insert({
               name: candidate.seriesName,
@@ -115,31 +94,6 @@ if (parentPort) {
         }
 
         // 6. 빈 시리즈 정리
-        await db.transaction(async (trx) => {
-          const allSeries = await trx("SeriesCollection").select("id");
-
-          for (const series of allSeries) {
-            const bookCount = await trx("Book")
-              .where("series_collection_id", series.id)
-              .count("* as count")
-              .first();
-
-            const count =
-              (bookCount as { count: number } | undefined)?.count || 0;
-
-            if (count < 2) {
-              await trx("Book")
-                .where("series_collection_id", series.id)
-                .update({
-                  series_collection_id: null,
-                  series_order_index: null,
-                });
-
-              await trx("SeriesCollection").where("id", series.id).delete();
-            }
-          }
-        });
-
         // 7. PrefixIndex 구축 (메인 스레드 DB 조회 대체)
         let indexEntries: SerializedIndexEntry[] | null = null;
         try {

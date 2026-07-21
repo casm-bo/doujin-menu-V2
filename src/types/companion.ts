@@ -11,6 +11,7 @@ export interface CompanionDeviceInfo {
   name: string;
   pairedAt: string;
   lastSeenAt: string | null;
+  connectionState: "connecting" | "connected" | "disconnected";
 }
 
 export interface CompanionServerStatus {
@@ -27,4 +28,66 @@ export interface CompanionPairingCode {
   expiresAt: string;
   port: number;
   addresses: string[];
+}
+
+export interface CompanionSyncBookState {
+  syncId: string;
+  currentPage: number;
+  isFavorite: boolean;
+  isRead: boolean;
+  isHidden: boolean;
+  customTitle: string | null;
+  seriesFavorite: boolean;
+  lastReadAt: string | null;
+  version: number;
+  updatedAt: string | null;
+}
+
+export interface CompanionSyncHistoryEvent {
+  eventId: string;
+  bookSyncId: string;
+  viewedAt: string;
+  currentPage: number | null;
+  deviceId: string;
+}
+
+export interface CompanionSyncChange {
+  cursor: number;
+  deviceId: string;
+  state: CompanionSyncBookState;
+  changedFields: (
+    | "currentPage"
+    | "isFavorite"
+    | "isRead"
+    | "isHidden"
+    | "customTitle"
+    | "seriesFavorite"
+    | "history"
+  )[];
+  historyEvent?: CompanionSyncHistoryEvent;
+}
+
+export interface CompanionSyncMutation {
+  mutationId: string;
+  bookSyncId: string;
+  baseVersion?: number;
+  modifiedAt?: number;
+  currentPage?: number;
+  isFavorite?: boolean;
+  isRead?: boolean;
+  isHidden?: boolean;
+  customTitle?: string | null;
+  seriesFavorite?: boolean;
+  historyEvent?: {
+    eventId: string;
+    viewedAt: string;
+    currentPage?: number;
+  };
+}
+
+export interface CompanionSyncMutationResult {
+  mutationId: string;
+  status: "applied" | "duplicate" | "conflict" | "not_found";
+  conflict: boolean;
+  state?: CompanionSyncBookState;
 }

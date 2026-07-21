@@ -19,6 +19,7 @@ const BOOK_COLUMNS = [
   "current_page",
   "last_read_at",
   "hitomi_id",
+  "sync_id",
 ];
 
 interface BookRow {
@@ -32,6 +33,7 @@ interface BookRow {
   current_page: number | null;
   last_read_at: string | null;
   hitomi_id: string | null;
+  sync_id: string | null;
 }
 
 // DB 행을 응답용 사본 정보로 변환 (SQLite의 0/1을 boolean으로)
@@ -51,8 +53,31 @@ const toBookInfo = (row: BookRow): DuplicateBookInfo => ({
 export const handleGetDuplicateGroups = async () => {
   try {
     const groups: DuplicateGroup[] = [];
+    const uuidGroupedIds = new Set<number>();
     // hitomi_id 그룹에 포함된 book id 집합 (title 그룹 교차 중복 제거용)
     const hitomiGroupedIds = new Set<number>();
+
+    const uuidRows: BookRow[] = await db("Book")
+      .select(BOOK_COLUMNS)
+      .whereIn(
+        "sync_id",
+        db("Book")
+          .select("sync_id")
+          .whereNotNull("sync_id")
+          .groupBy("sync_id")
+          .having(db.raw("count(*) > 1")),
+      )
+      .orderBy("id");
+    const byUuid = new Map<string, BookRow[]>();
+    for (const row of uuidRows) {
+      const key = String(row.sync_id);
+      if (!byUuid.has(key)) byUuid.set(key, []);
+      byUuid.get(key)!.push(row);
+      uuidGroupedIds.add(row.id);
+    }
+    for (const [key, books] of byUuid) {
+      groups.push({ key, matchType: "uuid", books: books.map(toBookInfo) });
+    }
 
     // 1) hitomi_id 기준 중복 그룹 — 서브쿼리 1회로 중복 키와 행을 함께 가져옴
     const hitomiRows: BookRow[] = await db("Book")
@@ -76,10 +101,12 @@ export const handleGetDuplicateGroups = async () => {
         hitomiGroupedIds.add(row.id);
       }
       for (const [key, books] of byHitomiId) {
+        const remaining = books.filter((book) => !uuidGroupedIds.has(book.id));
+        if (remaining.length < 2) continue;
         groups.push({
           key,
           matchType: "hitomi_id",
-          books: books.map(toBookInfo),
+          books: remaining.map(toBookInfo),
         });
       }
     }
@@ -105,8 +132,14 @@ export const handleGetDuplicateGroups = async () => {
       }
       for (const [key, books] of byTitle) {
         // 모든 사본이 이미 hitomi_id 그룹에 포함되면 같은 묶음이므로 title 그룹 제외 (교차 중복 제거)
-        if (books.every((b) => hitomiGroupedIds.has(b.id))) continue;
-        groups.push({ key, matchType: "title", books: books.map(toBookInfo) });
+        const remaining = books.filter((book) => !uuidGroupedIds.has(book.id));
+        if (
+          remaining.length < 2 ||
+          remaining.every((book) => hitomiGroupedIds.has(book.id))
+        ) {
+          continue;
+        }
+        groups.push({ key, matchType: "title", books: remaining.map(toBookInfo) });
       }
     }
 

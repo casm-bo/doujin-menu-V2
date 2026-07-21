@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">동인메뉴</string>
+    <string name="sync_title">동인메뉴 내부 동기화</string>
+    <string name="sync_description">데스크톱 설정에서 Companion 서버를 켜고 표시된 내부 IP와 페어링 코드를 입력하세요.</string>
+    <string name="address_hint">예: 192.168.0.10:47831</string>
+    <string name="pairing_code_hint">6자리 페어링 코드</string>
+    <string name="pair_and_sync">페어링 및 초기 동기화</string>
+    <string name="sync_now">지금 동기화</string>
+    <string name="registered_pc">등록된 PC</string>
+    <string name="connection_connecting">연결 중…</string>
+    <string name="connection_connected">연결됨</string>
+    <string name="connection_disconnected">연결 끊김</string>
+    <string name="pairing_in_progress">페어링 중…</string>
+    <string name="pairing_complete">페어링 및 초기 동기화 완료</string>
+    <string name="sync_in_progress">동기화 중…</string>
+    <string name="sync_complete">동기화 완료</string>
+    <string name="operation_failed">작업에 실패했습니다.</string>
+    <string name="disconnect">연결 해제</string>
+    <string name="search_library">제목 검색</string>
+    <string name="favorite_only">즐겨찾기만</string>
+    <string name="library_book_count">표시 %1$d권 / 전체 %2$d권</string>
+    <string name="reading_progress">%1$d / %2$d</string>
+    <string name="favorite_on">★</string>
+    <string name="favorite_off">☆</string>
+    <string name="add_favorite">즐겨찾기 추가</string>
+    <string name="remove_favorite">즐겨찾기 해제</string>
+    <string name="book_cover_description">%1$s 표지</string>
+    <string name="change_queued">변경사항을 동기화 대기열에 저장했습니다.</string>
+    <string-array name="library_sort_options">
+        <item>제목순</item>
+        <item>최근 읽은 순</item>
+        <item>진행률순</item>
+    </string-array>
+</resources>

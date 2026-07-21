@@ -6,9 +6,14 @@ export interface Book {
   cover_path: string | null;
   page_count: number;
   added_at: string;
+  published_date?: string | null;
   last_read_at: string | null;
   current_page: number | null;
   is_favorite: boolean;
+  sync_id?: string | null;
+  state_version?: number;
+  state_updated_at?: string | null;
+  updated_by_device_id?: string | null;
   is_offline?: boolean; // 라이브러리 폴더 접근 불가(외장하드 분리 등) 시 true
   hitomi_id?: string | null;
   // 증분 스캔 캐시 키 (ZIP/CBZ 파일만). 값이 같으면 재스캔을 건너뛴다.
@@ -25,6 +30,7 @@ export interface Book {
   // 시리즈 그룹 관련 필드 (자동 시리즈 감지 기능)
   series_collection_id?: number | null;
   series_order_index?: number | null;
+  series_state_updated_at?: number | null;
   series_collection?: SeriesCollection; // 조인 시 포함될 수 있음
 }
 

@@ -5,6 +5,7 @@ import {
   type CompanionDeviceStore,
   type CompanionDownloadService,
   type CompanionLibraryService,
+  type CompanionSyncService,
 } from "../../../src/main/services/companion/companionServer";
 import { Readable } from "stream";
 
@@ -15,6 +16,7 @@ describe("CompanionServer", () => {
   let baseUrl: string;
   let downloadService: CompanionDownloadService;
   let libraryService: CompanionLibraryService;
+  let syncService: CompanionSyncService;
   const hitomiService = {
     searchGalleries: vi.fn(),
     getGalleryDetails: vi.fn(),
@@ -33,7 +35,7 @@ describe("CompanionServer", () => {
     downloadService = {
       getPath: vi.fn().mockResolvedValue({
         success: true,
-        data: { path: "C:\\Downloads" },
+        data: { configured: true },
       }),
       getQueue: vi.fn().mockResolvedValue({ success: true, data: [] }),
       add: vi.fn(),
@@ -45,15 +47,39 @@ describe("CompanionServer", () => {
     };
     libraryService = {
       listBooks: vi.fn().mockResolvedValue([]),
+      saveSeriesAssignments: vi.fn().mockResolvedValue({
+        success: true,
+        data: { updated: 1 },
+      }),
+      deleteBook: vi.fn().mockResolvedValue({ success: true }),
       getPageCount: vi.fn(),
       getCover: vi.fn(),
       getPage: vi.fn(),
+    };
+    syncService = {
+      bootstrap: vi.fn().mockResolvedValue({
+        cursor: 0,
+        serverTime: "2026-07-16T00:00:00.000Z",
+        books: [],
+        history: [],
+      }),
+      getChanges: vi.fn().mockResolvedValue({
+        cursor: 0,
+        hasMore: false,
+        changes: [],
+      }),
+      applyMutations: vi.fn().mockResolvedValue({
+        cursor: 1,
+        serverTime: "2026-07-16T00:00:00.000Z",
+        results: [],
+      }),
     };
     server = new CompanionServer(
       hitomiService,
       deviceStore,
       downloadService,
       libraryService,
+      syncService,
     );
     const status = await server.start(0);
     baseUrl = `http://127.0.0.1:${status.port}`;
@@ -144,6 +170,21 @@ describe("CompanionServer", () => {
     expect((await request()).status).toBe(401);
   });
 
+  it("rate limits repeated invalid pairing attempts", async () => {
+    server.createPairingCode();
+    const invalidRequest = () =>
+      fetch(`${baseUrl}/v1/pair`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code: "wrong", deviceName: "Phone" }),
+      });
+
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      expect((await invalidRequest()).status).toBe(401);
+    }
+    expect((await invalidRequest()).status).toBe(429);
+  });
+
   it("연결 해제된 기기의 토큰을 거부한다", async () => {
     const pairing = server.createPairingCode();
     const pairResponse = await fetch(`${baseUrl}/v1/pair`, {
@@ -161,6 +202,24 @@ describe("CompanionServer", () => {
     });
 
     expect(response.status).toBe(401);
+  });
+
+  it("인증된 기기의 연결 상태 확인 요청을 처리한다", async () => {
+    const token = await pairTestDevice();
+
+    const response = await fetch(`${baseUrl}/v1/connection`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      success: true,
+      data: { connected: true },
+    });
+    expect(devices[0].lastSeenAt).not.toBeNull();
+    expect(server.getDevices()[0].connectionState).toBe("connecting");
+    await new Promise((resolve) => setTimeout(resolve, 1_300));
+    expect(server.getDevices()[0].connectionState).toBe("connected");
   });
 
   it("allows an authenticated device to list and add downloads", async () => {
@@ -199,8 +258,11 @@ describe("CompanionServer", () => {
     });
 
     expect(listResponse.status).toBe(200);
-    expect((await listResponse.json()).data).toEqual([item]);
+    const { download_path: _downloadPath, ...safeItem } = item;
+    void _downloadPath;
+    expect((await listResponse.json()).data).toEqual([safeItem]);
     expect(addResponse.status).toBe(201);
+    expect((await addResponse.json()).data).toEqual(safeItem);
     expect(downloadService.add).toHaveBeenCalledWith(123);
   });
 
@@ -216,7 +278,7 @@ describe("CompanionServer", () => {
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({
       success: true,
-      data: { path: "C:\\Downloads" },
+      data: { configured: true },
     });
   });
 
@@ -247,16 +309,25 @@ describe("CompanionServer", () => {
     const token = await pairTestDevice();
     const book = {
       id: 42,
+      syncId: "book-sync-id",
       title: "Desktop Gallery",
-      path: "C:\\Library\\Gallery",
-      libraryPath: "C:\\Library",
       pageCount: 2,
       modifiedAt: 1234,
+      currentPage: 1,
+      isFavorite: true,
+      lastReadAt: "2026-07-16T00:00:00.000Z",
+      stateVersion: 3,
+      stateUpdatedAt: "2026-07-16T00:00:00.000Z",
       artists: [{ name: "Artist" }],
       groups: [],
       series: [],
       characters: [],
       tags: [],
+      seriesCollection: {
+        name: "Desktop Series",
+        order: 1,
+        modifiedAt: 1_721_088_000_000,
+      },
       coverUrl: "/v1/library/books/42/cover",
     };
     vi.mocked(libraryService.listBooks).mockResolvedValue([book]);
@@ -267,6 +338,86 @@ describe("CompanionServer", () => {
 
     expect(response.status).toBe(200);
     expect((await response.json()).data).toEqual([book]);
+  });
+
+  it("returns a cursor-paginated library page", async () => {
+    const token = await pairTestDevice();
+    const page = { books: [], nextCursor: 50, hasMore: true };
+    vi.mocked(libraryService.listBooks).mockResolvedValue(page);
+
+    const response = await fetch(`${baseUrl}/v1/library/books?limit=200&cursor=100`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+
+    expect(response.status).toBe(200);
+    expect((await response.json()).data).toEqual(page);
+    expect(libraryService.listBooks).toHaveBeenCalledWith(100, 200);
+  });
+
+  it("streams an authenticated CBZ import to the library service", async () => {
+    const token = await pairTestDevice();
+    libraryService.importBook = vi.fn().mockResolvedValue({
+      success: true,
+      data: {
+        status: "imported",
+        id: 7,
+        syncId: "123e4567-e89b-42d3-a456-426614174000",
+        path: "C:\\Downloads\\book.cbz",
+      },
+    });
+
+    const response = await fetch(`${baseUrl}/v1/library/import`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/zip",
+        "X-File-Name": encodeURIComponent("book.cbz"),
+        "X-Sync-Id": "123e4567-e89b-42d3-a456-426614174000",
+      },
+      body: Buffer.from("zip"),
+    });
+
+    expect(response.status).toBe(200);
+    expect((await response.json()).data.status).toBe("imported");
+    expect(libraryService.importBook).toHaveBeenCalledOnce();
+  });
+
+  it("saves Android series assignments by stable book sync id", async () => {
+    const token = await pairTestDevice();
+    const assignments = [
+      {
+        bookSyncId: "book-sync-id",
+        name: "긴 시리즈 이름 ".repeat(30),
+        order: 2,
+        modifiedAt: 1_721_088_000_000,
+      },
+    ];
+
+    const response = await fetch(`${baseUrl}/v1/library/series`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ assignments }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(libraryService.saveSeriesAssignments).toHaveBeenCalledWith(
+      assignments,
+    );
+  });
+
+  it("deletes a library book through the authenticated Android API", async () => {
+    const token = await pairTestDevice();
+
+    const response = await fetch(`${baseUrl}/v1/library/books/42`, {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${token}` },
+    });
+
+    expect(response.status).toBe(200);
+    expect(libraryService.deleteBook).toHaveBeenCalledWith(42);
   });
 
   it("returns page URLs and streams authenticated library images", async () => {
@@ -301,6 +452,71 @@ describe("CompanionServer", () => {
 
     expect(response.status).toBe(401);
     expect(libraryService.getCover).not.toHaveBeenCalled();
+  });
+
+  it("exposes cursor-based sync only to an authenticated device", async () => {
+    const unauthenticated = await fetch(`${baseUrl}/v1/sync/bootstrap`);
+    expect(unauthenticated.status).toBe(401);
+
+    const token = await pairTestDevice();
+    const headers = {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    };
+    const bootstrap = await fetch(`${baseUrl}/v1/sync/bootstrap`, { headers });
+    const changes = await fetch(
+      `${baseUrl}/v1/sync/changes?cursor=7&limit=50`,
+      {
+        headers,
+      },
+    );
+    const push = await fetch(`${baseUrl}/v1/sync/changes`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        mutations: [
+          {
+            mutationId: "mutation-1",
+            bookSyncId: "book-1",
+            baseVersion: 2,
+            currentPage: 5,
+          },
+        ],
+      }),
+    });
+
+    expect(bootstrap.status).toBe(200);
+    expect(changes.status).toBe(200);
+    expect(push.status).toBe(200);
+    expect(syncService.getChanges).toHaveBeenCalledWith(7, 50);
+    expect(syncService.applyMutations).toHaveBeenCalledWith(
+      expect.any(String),
+      [
+        {
+          mutationId: "mutation-1",
+          bookSyncId: "book-1",
+          baseVersion: 2,
+          currentPage: 5,
+        },
+      ],
+    );
+  });
+
+  it("rejects malformed sync mutations", async () => {
+    const token = await pairTestDevice();
+    const response = await fetch(`${baseUrl}/v1/sync/changes`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        mutations: [{ mutationId: "bad", bookSyncId: "book-1" }],
+      }),
+    });
+
+    expect(response.status).toBe(400);
+    expect(syncService.applyMutations).not.toHaveBeenCalled();
   });
 
   async function pairTestDevice(): Promise<string> {

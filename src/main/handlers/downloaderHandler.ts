@@ -130,7 +130,7 @@ export const handleDownloadGallery = async (
 
       const file = gallery.files[i];
       const fileExt = file.hasWebp ? "webp" : "avif";
-      const fileName = `${String(file.index + 1).padStart(6, "0")}.${fileExt}`;
+      const fileName = `${String(i + 1).padStart(6, "0")}.${fileExt}`;
       const filePath = path.join(galleryDownloadPath, fileName);
 
       // 파일이 이미 존재하면 건너뛰기 (이어받기)
@@ -185,7 +185,7 @@ export const handleDownloadGallery = async (
         attempt++;
 
         // 이미지 서버 구성이 갱신될 수 있으므로 매 시도마다 URL을 다시 계산합니다.
-        const fullImageUrl = hitomiService.resolveImageUrl(file);
+        const fullImageUrl = await hitomiService.resolveImageUrl(file);
         let res: Response;
         try {
           res = await fetch(fullImageUrl, {
@@ -235,12 +235,6 @@ export const handleDownloadGallery = async (
         }
         if (attempt >= MAX_DOWNLOAD_ATTEMPTS) break;
 
-        if (res.status === 503 && attempt % 2 === 0) {
-          await hitomiService.synchronizeImageResolver().catch((error) => {
-            console.warn("[Downloader] 이미지 서버 정보 갱신 실패:", error);
-          });
-        }
-
         const delayMs = getRetryDelayMs(res, attempt);
         console.warn(
           `[Downloader] 일시적인 이미지 서버 오류 (${attempt}/${MAX_DOWNLOAD_ATTEMPTS}): ${fileName} - ${lastFailure}. ${formatRetryDelay(delayMs)} 후 재시도합니다.`,
@@ -286,19 +280,19 @@ export const handleDownloadGallery = async (
     // info.txt 파일 생성 (설정에 따라)
     const createInfoTxtFile = configStore.get("createInfoTxtFile", true);
     if (createInfoTxtFile) {
+      const infoFilePath = path.join(galleryDownloadPath, "info.txt");
       const infoContent = [
         `갤러리 넘버: ${gallery.id}`,
         `\n제목: ${gallery.title.display}`,
-        `\n작가: ${gallery.artists?.join(", ") || "N/A"}`,
-        `\n그룹: ${gallery.groups?.join(", ") || "N/A"}`,
+        `\n작가: ${gallery.artists.map((tag) => tag.name).join(", ") || "N/A"}`,
+        `\n그룹: ${gallery.groups.map((tag) => tag.name).join(", ") || "N/A"}`,
         `\n타입: ${gallery.type || "N/A"}`,
-        `\n시리즈: ${gallery.series?.join(", ") || "N/A"}`,
-        `\n캐릭터: ${gallery.characters?.join(", ") || "N/A"}`,
+        `\n시리즈: ${gallery.series.map((tag) => tag.name).join(", ") || "N/A"}`,
+        `\n캐릭터: ${gallery.characters.map((tag) => tag.name).join(", ") || "N/A"}`,
         `\n태그: ${gallery.tags?.map((t) => (t.type === "male" || t.type === "female" ? `${t.type}:${t.name}` : t.name)).join(", ") || "N/A"}`,
-        `\n언어: ${gallery.languageName?.english || "N/A"}`,
+        `\n언어: ${gallery.language?.name || "N/A"}`,
       ].join("\n");
 
-      const infoFilePath = path.join(galleryDownloadPath, "info.txt");
       await fs.writeFile(infoFilePath, infoContent);
     }
 
@@ -378,7 +372,10 @@ function isRetryableDownloadStatus(status: number): boolean {
   return status === 408 || status === 429 || status >= 500;
 }
 
-function getRetryDelayMs(response: Response | undefined, attempt: number): number {
+function getRetryDelayMs(
+  response: Response | undefined,
+  attempt: number,
+): number {
   const retryAfter = response?.headers.get("retry-after");
   if (retryAfter) {
     const seconds = Number(retryAfter);
@@ -468,9 +465,6 @@ export const handleDownloadTempThumbnail = async ({
  * 다운로더 관련 IPC 통신 핸들러를 등록합니다.
  */
 export async function registerDownloaderHandlers() {
-  await hitomiService.synchronizeImageResolver();
-  hitomiService.startImageResolverSynchronization();
-
   // 작품 검색 핸들러
   ipcMain.handle("search-galleries", (_event, params) =>
     handleSearchGalleries(params),

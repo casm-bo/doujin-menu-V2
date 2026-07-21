@@ -82,6 +82,188 @@ function sortAndIndexBooks(booksWithScore: BookWithScore[]): void {
 // 성능 최적화: 최대 그룹 크기 (이 이상이면 건너뜀)
 const MAX_GROUP_SIZE = 500;
 
+const ANDROID_TITLE_SIMILARITY_THRESHOLD = 0.82;
+
+function androidSeriesDisplayStem(title: string): string {
+  return title
+    .replace(/^\s*\[[^\]]+\]\s*/u, "")
+    .replace(
+      /\s*(?:[-_ ]*(?:vol(?:ume)?|ch(?:apter)?|episode|ep|part|권|화|장)\.?\s*)?#?[0-9０-９]+(?:\.[0-9]+)?\s*$/iu,
+      "",
+    )
+    .replace(/^[\s\-_.:]+|[\s\-_.:]+$/gu, "");
+}
+
+function androidSeriesComparisonStem(title: string): string {
+  return androidSeriesDisplayStem(title)
+    .replace(/\b(?:vol(?:ume)?|ch(?:apter)?|episode|ep|part)\.?\b/giu, " ")
+    .replace(/(?:전|중|후|상|하)편|완결|특별편|외전/gu, " ")
+    .replace(/[0-9０-９]+/gu, " ")
+    .trim();
+}
+
+function normalizeAndroidSeriesText(value: string): string {
+  return value.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
+}
+
+function androidDiceSimilarity(left: string, right: string): number {
+  if (left === right) return 1;
+  const leftChars = Array.from(left);
+  const rightChars = Array.from(right);
+  if (leftChars.length < 2 || rightChars.length < 2) return 0;
+
+  const leftBigrams = new Map<string, number>();
+  for (let index = 0; index < leftChars.length - 1; index += 1) {
+    const bigram = leftChars[index] + leftChars[index + 1];
+    leftBigrams.set(bigram, (leftBigrams.get(bigram) ?? 0) + 1);
+  }
+
+  let intersection = 0;
+  for (let index = 0; index < rightChars.length - 1; index += 1) {
+    const bigram = rightChars[index] + rightChars[index + 1];
+    const count = leftBigrams.get(bigram) ?? 0;
+    if (count > 0) {
+      intersection += 1;
+      leftBigrams.set(bigram, count - 1);
+    }
+  }
+
+  return (2 * intersection) / (leftChars.length + rightChars.length - 2);
+}
+
+function androidTrailingSeriesNumber(value: string): number | null {
+  const match = value.match(/([0-9]+)\D*$/u);
+  return match ? Number.parseInt(match[1], 10) : null;
+}
+
+function shareAndroidNormalizedArtist(left: Book, right: Book): string | null {
+  const leftArtists = new Map(
+    (left.artists ?? [])
+      .map(
+        (artist) =>
+          [normalizeAndroidSeriesText(artist.name), artist.name] as const,
+      )
+      .filter(([normalized]) => normalized.length > 0),
+  );
+  for (const artist of right.artists ?? []) {
+    const normalized = normalizeAndroidSeriesText(artist.name);
+    if (leftArtists.has(normalized))
+      return leftArtists.get(normalized) ?? artist.name;
+  }
+  return null;
+}
+
+/** Android 앱과 동일한 고정 규칙으로 아직 시리즈에 속하지 않은 책을 묶습니다. */
+export async function detectAndroidStyleSeriesCandidates(
+  books: Book[],
+  existingSeriesNames: Iterable<string> = [],
+): Promise<DetectionResult> {
+  const startTime = Date.now();
+  const parent = books.map((_, index) => index);
+  const find = (index: number): number => {
+    let root = index;
+    while (parent[root] !== root) root = parent[root];
+    while (parent[index] !== index) {
+      const next = parent[index];
+      parent[index] = root;
+      index = next;
+    }
+    return root;
+  };
+  const union = (left: number, right: number) => {
+    const leftRoot = find(left);
+    const rightRoot = find(right);
+    if (leftRoot !== rightRoot) parent[rightRoot] = leftRoot;
+  };
+
+  for (let left = 0; left < books.length; left += 1) {
+    for (let right = left + 1; right < books.length; right += 1) {
+      if (!shareAndroidNormalizedArtist(books[left], books[right])) continue;
+      const leftStem = normalizeAndroidSeriesText(
+        androidSeriesComparisonStem(books[left].title),
+      );
+      const rightStem = normalizeAndroidSeriesText(
+        androidSeriesComparisonStem(books[right].title),
+      );
+      if (leftStem.length < 2 || rightStem.length < 2) continue;
+      if (
+        leftStem === rightStem ||
+        androidDiceSimilarity(leftStem, rightStem) >=
+          ANDROID_TITLE_SIMILARITY_THRESHOLD
+      ) {
+        union(left, right);
+      }
+    }
+  }
+
+  const groupedIndexes = new Map<number, number[]>();
+  books.forEach((_, index) => {
+    const root = find(index);
+    const group = groupedIndexes.get(root) ?? [];
+    group.push(index);
+    groupedIndexes.set(root, group);
+  });
+
+  const usedNames = new Set(existingSeriesNames);
+  const candidates: SeriesCandidate[] = [];
+  for (const indexes of groupedIndexes.values()) {
+    if (indexes.length < 2) continue;
+    const groupedBooks = indexes.map((index) => books[index]);
+    const baseName =
+      androidSeriesDisplayStem(groupedBooks[0].title) || groupedBooks[0].title;
+    let seriesName = baseName;
+    let suffix = 2;
+    while (usedNames.has(seriesName)) {
+      seriesName = `${baseName} (${suffix})`;
+      suffix += 1;
+    }
+    usedNames.add(seriesName);
+
+    groupedBooks.sort((left, right) => {
+      const leftNumber = androidTrailingSeriesNumber(left.title);
+      const rightNumber = androidTrailingSeriesNumber(right.title);
+      if (
+        leftNumber !== null &&
+        rightNumber !== null &&
+        leftNumber !== rightNumber
+      )
+        return leftNumber - rightNumber;
+      if (leftNumber !== null && rightNumber === null) return -1;
+      if (leftNumber === null && rightNumber !== null) return 1;
+      return left.title.localeCompare(right.title, undefined, {
+        sensitivity: "base",
+      });
+    });
+
+    const sharedArtist = shareAndroidNormalizedArtist(
+      groupedBooks[0],
+      groupedBooks[1],
+    );
+    candidates.push({
+      seriesName,
+      confidence: 1,
+      detectionReason: [
+        { type: "title_pattern", pattern: baseName },
+        ...(sharedArtist
+          ? [{ type: "artist_match" as const, artistName: sharedArtist }]
+          : []),
+      ],
+      books: groupedBooks.map((book, index) => ({
+        book,
+        confidence: 1,
+        volumeNumber: androidTrailingSeriesNumber(book.title),
+        orderIndex: index + 1,
+      })),
+    });
+  }
+
+  return {
+    candidates,
+    processedBooks: books.length,
+    duration: Date.now() - startTime,
+  };
+}
+
 /**
  * 책들을 분석하여 시리즈 후보 그룹들을 생성
  */

@@ -8,7 +8,10 @@ import type {
   CompanionDeviceInfo,
   CompanionPairingCode,
   CompanionServerStatus,
+  CompanionSyncMutation,
+  CompanionSyncMutationResult,
 } from "../../../types/companion.js";
+import { notifyCompanionLibraryChanged } from "./companionSyncSignal.js";
 import type {
   SearchGalleriesParams,
   SearchGalleriesResult,
@@ -18,6 +21,11 @@ import type { DownloadQueueItem } from "../../../types/ipc.js";
 const DEFAULT_PORT = 47831;
 const MAX_REQUEST_BODY_BYTES = 64 * 1024;
 const PAIRING_CODE_TTL_MS = 5 * 60 * 1000;
+const PAIRING_ATTEMPT_WINDOW_MS = 60 * 1000;
+const MAX_PAIRING_ATTEMPTS_PER_WINDOW = 5;
+const MAX_SYNC_MUTATIONS_PER_REQUEST = 100;
+const DEVICE_CONNECTION_TIMEOUT_MS = 7_000;
+const DEVICE_CONNECTING_VISIBLE_MS = 1_200;
 
 interface CompanionHitomiService {
   searchGalleries(
@@ -34,7 +42,9 @@ export interface CompanionOperationResult<T = undefined> {
 }
 
 export interface CompanionDownloadService {
-  getPath(): Promise<CompanionOperationResult<{ path: string | null }>>;
+  getPath(): Promise<
+    CompanionOperationResult<{ configured: boolean; path: string | null }>
+  >;
   getQueue(): Promise<CompanionOperationResult<DownloadQueueItem[]>>;
   add(galleryId: number): Promise<CompanionOperationResult<DownloadQueueItem>>;
   remove(queueId: number): Promise<CompanionOperationResult>;
@@ -46,11 +56,19 @@ export interface CompanionDownloadService {
 
 export interface CompanionLibraryBook {
   id: number;
+  syncId: string;
   title: string;
-  path: string;
-  libraryPath: string;
   pageCount: number;
   modifiedAt: number;
+  currentPage: number;
+  isFavorite: boolean;
+  isRead?: boolean;
+  isHidden?: boolean;
+  customTitle?: string | null;
+  seriesFavorite?: boolean;
+  lastReadAt: string | null;
+  stateVersion: number;
+  stateUpdatedAt: string | null;
   hitomiId?: string | null;
   type?: string | null;
   language?: string | null;
@@ -59,7 +77,37 @@ export interface CompanionLibraryBook {
   series: { name: string }[];
   characters: { name: string }[];
   tags: { name: string }[];
+  seriesCollection: {
+    name: string | null;
+    order: number;
+    modifiedAt: number;
+  };
   coverUrl: string;
+}
+
+export interface CompanionLibraryPage {
+  books: CompanionLibraryBook[];
+  nextCursor: number | null;
+  hasMore: boolean;
+}
+
+export interface CompanionSeriesAssignment {
+  mutationId?: string;
+  bookSyncId: string;
+  name: string | null;
+  order: number;
+  modifiedAt?: number;
+  baseVersion?: number;
+}
+
+export interface CompanionSeriesAssignmentResult {
+  mutationId: string | null;
+  bookSyncId: string;
+  status: "applied" | "already_applied" | "conflict" | "not_found";
+  version?: number;
+  modifiedAt?: number;
+  name?: string | null;
+  order?: number;
 }
 
 export interface CompanionLibraryImage {
@@ -69,7 +117,30 @@ export interface CompanionLibraryImage {
 }
 
 export interface CompanionLibraryService {
-  listBooks(): Promise<CompanionLibraryBook[]>;
+  listBooks(
+    cursor?: number,
+    limit?: number,
+  ): Promise<CompanionLibraryBook[] | CompanionLibraryPage>;
+  saveSeriesAssignments(assignments: CompanionSeriesAssignment[]): Promise<
+    CompanionOperationResult<{
+      updated: number;
+      results: CompanionSeriesAssignmentResult[];
+    }>
+  >;
+  importBook?(input: {
+    stream: Readable;
+    fileName: string;
+    syncId: string;
+    contentLength?: number;
+  }): Promise<
+    CompanionOperationResult<{
+      status: "imported" | "already_exists";
+      id: number;
+      syncId: string;
+      path: string;
+    }>
+  >;
+  deleteBook(bookId: number): Promise<CompanionOperationResult>;
   getPageCount(bookId: number): Promise<number | null>;
   getCover(bookId: number): Promise<CompanionLibraryImage | null>;
   getPage(
@@ -83,21 +154,51 @@ export interface CompanionDeviceStore {
   setDevices(devices: CompanionDevice[]): void;
 }
 
+export interface CompanionSyncService {
+  bootstrap(): Promise<unknown>;
+  getChanges(afterCursor: number, limit?: number): Promise<unknown>;
+  applyMutations(
+    deviceId: string,
+    mutations: CompanionSyncMutation[],
+  ): Promise<{
+    cursor: number;
+    serverTime: string;
+    results: CompanionSyncMutationResult[];
+  }>;
+}
+
 interface PairingState {
   code: string;
   expiresAt: number;
+}
+
+interface PairingAttemptState {
+  attempts: number;
+  windowStartedAt: number;
 }
 
 export class CompanionServer {
   private server: ReturnType<typeof createServer> | null = null;
   private port = DEFAULT_PORT;
   private pairingState: PairingState | null = null;
+  private readonly pairingAttempts = new Map<string, PairingAttemptState>();
+  private readonly deviceActivity = new Map<string, number>();
+  private readonly deviceConnectionStates = new Map<
+    string,
+    CompanionDeviceInfo["connectionState"]
+  >();
+  private readonly connectionTimers = new Map<
+    string,
+    ReturnType<typeof setTimeout>
+  >();
+  private syncGeneration = 0;
 
   constructor(
     private readonly hitomiService: CompanionHitomiService,
     private readonly deviceStore: CompanionDeviceStore,
     private readonly downloadService?: CompanionDownloadService,
     private readonly libraryService?: CompanionLibraryService,
+    private readonly syncService?: CompanionSyncService,
   ) {}
 
   async start(port = DEFAULT_PORT): Promise<CompanionServerStatus> {
@@ -136,6 +237,7 @@ export class CompanionServer {
 
   async stop(): Promise<void> {
     this.pairingState = null;
+    this.clearConnectionStates();
     if (!this.server) return;
 
     const server = this.server;
@@ -175,7 +277,11 @@ export class CompanionServer {
   }
 
   getDevices(): CompanionDeviceInfo[] {
-    return this.deviceStore.getDevices().map(toDeviceInfo);
+    return this.deviceStore
+      .getDevices()
+      .map((device) =>
+        toDeviceInfo(device, this.getDeviceConnectionState(device.id)),
+      );
   }
 
   revokeDevice(deviceId: string): boolean {
@@ -183,7 +289,13 @@ export class CompanionServer {
     const remaining = devices.filter((device) => device.id !== deviceId);
     if (remaining.length === devices.length) return false;
     this.deviceStore.setDevices(remaining);
+    this.clearDeviceConnectionState(deviceId);
     return true;
+  }
+
+  requestSync(): number {
+    this.syncGeneration += 1;
+    return this.syncGeneration;
   }
 
   private async handleRequest(
@@ -205,6 +317,7 @@ export class CompanionServer {
           service: "doujin-menu-companion",
           version: 1,
           pairingAvailable: this.getStatus().pairingAvailable,
+          syncGeneration: this.syncGeneration,
         },
       });
       return;
@@ -221,6 +334,21 @@ export class CompanionServer {
         success: false,
         error: "Authentication required",
       });
+      return;
+    }
+
+    if (request.method === "GET" && pathname === "/v1/connection") {
+      this.sendJson(response, 200, {
+        success: true,
+        data: { connected: true, serverTime: new Date().toISOString() },
+      });
+      return;
+    }
+
+    if (
+      this.syncService &&
+      (await this.handleSyncRequest(request, response, pathname, device))
+    ) {
       return;
     }
 
@@ -285,18 +413,210 @@ export class CompanionServer {
     this.sendJson(response, 404, { success: false, error: "Not found" });
   }
 
+  private async handleSyncRequest(
+    request: IncomingMessage,
+    response: ServerResponse,
+    pathname: string,
+    device: CompanionDevice,
+  ): Promise<boolean> {
+    const service = this.syncService;
+    if (!service) return false;
+
+    if (request.method === "GET" && pathname === "/v1/sync/bootstrap") {
+      this.sendJson(response, 200, {
+        success: true,
+        data: await service.bootstrap(),
+      });
+      return true;
+    }
+
+    if (request.method === "GET" && pathname === "/v1/sync/changes") {
+      const requestUrl = new URL(request.url || "/", "http://companion.local");
+      const cursor = parseNonNegativeInteger(
+        requestUrl.searchParams.get("cursor") ?? "0",
+      );
+      const limitText = requestUrl.searchParams.get("limit");
+      const limit =
+        limitText === null ? undefined : parsePositiveInteger(limitText);
+      if (cursor === null || (limitText !== null && limit === null)) {
+        this.sendJson(response, 400, {
+          success: false,
+          error: "cursor and limit must be valid integers",
+        });
+        return true;
+      }
+      this.sendJson(response, 200, {
+        success: true,
+        data: await service.getChanges(cursor, limit ?? undefined),
+      });
+      return true;
+    }
+
+    if (request.method === "POST" && pathname === "/v1/sync/changes") {
+      const body = await this.readJsonBody(request);
+      if (!Array.isArray(body.mutations)) {
+        this.sendJson(response, 400, {
+          success: false,
+          error: "mutations must be an array",
+        });
+        return true;
+      }
+      if (body.mutations.length > MAX_SYNC_MUTATIONS_PER_REQUEST) {
+        this.sendJson(response, 400, {
+          success: false,
+          error: `A maximum of ${MAX_SYNC_MUTATIONS_PER_REQUEST} mutations is allowed`,
+        });
+        return true;
+      }
+      const mutations = body.mutations.filter(isSyncMutation);
+      if (mutations.length !== body.mutations.length) {
+        this.sendJson(response, 400, {
+          success: false,
+          error: "Invalid sync mutation",
+        });
+        return true;
+      }
+      const data = await service.applyMutations(device.id, mutations);
+      if (data.results.some((item) => item.status === "applied")) {
+        // Book-state changes are consumed through the durable cursor feed. Refresh
+        // desktop renderers without also invalidating every mobile library snapshot.
+        notifyCompanionLibraryChanged(false);
+      }
+      this.sendJson(response, 200, {
+        success: true,
+        data,
+      });
+      return true;
+    }
+
+    return false;
+  }
+
   private async handleLibraryRequest(
     request: IncomingMessage,
     response: ServerResponse,
     pathname: string,
   ): Promise<boolean> {
     const service = this.libraryService;
-    if (!service || request.method !== "GET") return false;
+    if (!service) return false;
+
+    if (request.method === "POST" && pathname === "/v1/library/series") {
+      const body = await this.readJsonBody(request);
+      if (!Array.isArray(body.assignments)) {
+        this.sendJson(response, 400, {
+          success: false,
+          error: "assignments must be an array",
+        });
+        return true;
+      }
+      if (body.assignments.length > MAX_SYNC_MUTATIONS_PER_REQUEST) {
+        this.sendJson(response, 400, {
+          success: false,
+          error: `A maximum of ${MAX_SYNC_MUTATIONS_PER_REQUEST} assignments is allowed`,
+        });
+        return true;
+      }
+      const assignments = body.assignments.filter(isSeriesAssignment);
+      if (assignments.length !== body.assignments.length) {
+        this.sendJson(response, 400, {
+          success: false,
+          error: "Invalid series assignment",
+        });
+        return true;
+      }
+      const result = await service.saveSeriesAssignments(assignments);
+      if (result.success && result.data && result.data.updated > 0) {
+        notifyCompanionLibraryChanged();
+      }
+      this.sendOperationResult(response, result);
+      return true;
+    }
+
+    if (request.method === "POST" && pathname === "/v1/library/import") {
+      if (!service.importBook) {
+        this.sendJson(response, 501, {
+          success: false,
+          error: "Library import is unavailable",
+        });
+        return true;
+      }
+      const fileName = decodeHeaderValue(request.headers["x-file-name"]);
+      const syncId = headerValue(request.headers["x-sync-id"])
+        ?.trim()
+        .toLowerCase();
+      const contentLengthText = request.headers["content-length"];
+      const contentLength = contentLengthText
+        ? Number.parseInt(headerValue(contentLengthText) || "", 10)
+        : undefined;
+      if (
+        !fileName ||
+        !syncId ||
+        !isUuid(syncId) ||
+        !/\.(cbz|zip)$/i.test(fileName) ||
+        (contentLength !== undefined &&
+          (!Number.isSafeInteger(contentLength) || contentLength <= 0))
+      ) {
+        this.sendJson(response, 400, {
+          success: false,
+          error:
+            "A valid CBZ/ZIP file name, UUID, and content length are required",
+        });
+        return true;
+      }
+      const result = await service.importBook({
+        stream: request,
+        fileName,
+        syncId,
+        contentLength,
+      });
+      if (result.success) notifyCompanionLibraryChanged();
+      this.sendOperationResult(response, result);
+      return true;
+    }
+
+    const deleteMatch = pathname.match(/^\/v1\/library\/books\/(\d+)$/);
+    if (request.method === "DELETE" && deleteMatch) {
+      const bookId = Number.parseInt(deleteMatch[1], 10);
+      const result = await service.deleteBook(bookId);
+      if (result.success) notifyCompanionLibraryChanged();
+      this.sendOperationResult(response, result);
+      return true;
+    }
+
+    if (request.method !== "GET") return false;
 
     if (pathname === "/v1/library/books") {
+      const requestUrl = new URL(request.url || "/", "http://companion.local");
+      const cursorText = requestUrl.searchParams.get("cursor");
+      const limitText = requestUrl.searchParams.get("limit");
+      const cursor =
+        cursorText === null ? undefined : parsePositiveInteger(cursorText);
+      const limit =
+        limitText === null ? undefined : parsePositiveInteger(limitText);
+      if (
+        (cursorText !== null && cursor === null) ||
+        (limitText !== null && limit === null)
+      ) {
+        this.sendJson(response, 400, {
+          success: false,
+          error: "cursor and limit must be valid positive integers",
+        });
+        return true;
+      }
+      if (cursorText === null && limitText === null) {
+        this.sendJson(response, 200, {
+          success: true,
+          data: await service.listBooks(),
+        });
+        return true;
+      }
+      const page = await service.listBooks(
+        cursor ?? undefined,
+        limit ?? undefined,
+      );
       this.sendJson(response, 200, {
         success: true,
-        data: await service.listBooks(),
+        data: page,
       });
       return true;
     }
@@ -362,7 +682,13 @@ export class CompanionServer {
     }
 
     if (request.method === "GET" && pathname === "/v1/downloads") {
-      this.sendOperationResult(response, await service.getQueue());
+      const result = await service.getQueue();
+      this.sendOperationResult(
+        response,
+        result.success
+          ? { ...result, data: result.data?.map(withoutDownloadPath) ?? [] }
+          : result,
+      );
       return true;
     }
 
@@ -376,7 +702,14 @@ export class CompanionServer {
         });
         return true;
       }
-      this.sendOperationResult(response, await service.add(galleryId), 201);
+      const result = await service.add(galleryId);
+      this.sendOperationResult(
+        response,
+        result.success && result.data
+          ? { ...result, data: withoutDownloadPath(result.data) }
+          : result,
+        201,
+      );
       return true;
     }
 
@@ -413,6 +746,14 @@ export class CompanionServer {
     response: ServerResponse,
   ): Promise<void> {
     this.clearExpiredPairingCode();
+    const remoteAddress = request.socket.remoteAddress || "unknown";
+    if (!this.canAttemptPairing(remoteAddress)) {
+      this.sendJson(response, 429, {
+        success: false,
+        error: "Too many pairing attempts. Try again shortly.",
+      });
+      return;
+    }
     const body = await this.readJsonBody(request);
     if (
       !this.pairingState ||
@@ -422,6 +763,7 @@ export class CompanionServer {
       body.deviceName.trim().length === 0 ||
       body.deviceName.length > 100
     ) {
+      this.recordFailedPairingAttempt(remoteAddress);
       this.sendJson(response, 401, {
         success: false,
         error: "Invalid or expired pairing code",
@@ -430,6 +772,7 @@ export class CompanionServer {
     }
 
     this.pairingState = null;
+    this.pairingAttempts.delete(remoteAddress);
     const token = randomBytes(32).toString("base64url");
     const now = new Date().toISOString();
     const device: CompanionDevice = {
@@ -440,11 +783,40 @@ export class CompanionServer {
       lastSeenAt: now,
     };
     this.deviceStore.setDevices([...this.deviceStore.getDevices(), device]);
+    this.markDeviceActivity(device.id);
 
     this.sendJson(response, 201, {
       success: true,
-      data: { device: toDeviceInfo(device), token },
+      data: {
+        device: toDeviceInfo(device, this.getDeviceConnectionState(device.id)),
+        token,
+      },
     });
+  }
+
+  private canAttemptPairing(remoteAddress: string): boolean {
+    const attempt = this.pairingAttempts.get(remoteAddress);
+    if (!attempt) return true;
+    if (Date.now() - attempt.windowStartedAt >= PAIRING_ATTEMPT_WINDOW_MS) {
+      this.pairingAttempts.delete(remoteAddress);
+      return true;
+    }
+    return attempt.attempts < MAX_PAIRING_ATTEMPTS_PER_WINDOW;
+  }
+
+  private recordFailedPairingAttempt(remoteAddress: string): void {
+    const existing = this.pairingAttempts.get(remoteAddress);
+    if (
+      !existing ||
+      Date.now() - existing.windowStartedAt >= PAIRING_ATTEMPT_WINDOW_MS
+    ) {
+      this.pairingAttempts.set(remoteAddress, {
+        attempts: 1,
+        windowStartedAt: Date.now(),
+      });
+      return;
+    }
+    existing.attempts += 1;
   }
 
   private authenticate(request: IncomingMessage): CompanionDevice | null {
@@ -458,7 +830,69 @@ export class CompanionServer {
 
     device.lastSeenAt = new Date().toISOString();
     this.deviceStore.setDevices(devices);
+    this.markDeviceActivity(device.id);
     return device;
+  }
+
+  private markDeviceActivity(deviceId: string): void {
+    const now = Date.now();
+    const previousActivity = this.deviceActivity.get(deviceId) ?? 0;
+    const previousState = this.deviceConnectionStates.get(deviceId);
+    this.deviceActivity.set(deviceId, now);
+
+    if (
+      previousState === "connected" &&
+      now - previousActivity < DEVICE_CONNECTION_TIMEOUT_MS
+    ) {
+      return;
+    }
+    if (previousState === "connecting") return;
+
+    this.deviceConnectionStates.set(deviceId, "connecting");
+    const existingTimer = this.connectionTimers.get(deviceId);
+    if (existingTimer) clearTimeout(existingTimer);
+    this.connectionTimers.set(
+      deviceId,
+      setTimeout(() => {
+        this.connectionTimers.delete(deviceId);
+        if (
+          Date.now() - (this.deviceActivity.get(deviceId) ?? 0) <
+          DEVICE_CONNECTION_TIMEOUT_MS
+        ) {
+          this.deviceConnectionStates.set(deviceId, "connected");
+        }
+      }, DEVICE_CONNECTING_VISIBLE_MS),
+    );
+  }
+
+  private getDeviceConnectionState(
+    deviceId: string,
+  ): CompanionDeviceInfo["connectionState"] {
+    const lastActivity = this.deviceActivity.get(deviceId);
+    if (
+      !this.server ||
+      !lastActivity ||
+      Date.now() - lastActivity >= DEVICE_CONNECTION_TIMEOUT_MS
+    ) {
+      this.deviceConnectionStates.set(deviceId, "disconnected");
+      return "disconnected";
+    }
+    return this.deviceConnectionStates.get(deviceId) ?? "connecting";
+  }
+
+  private clearDeviceConnectionState(deviceId: string): void {
+    const timer = this.connectionTimers.get(deviceId);
+    if (timer) clearTimeout(timer);
+    this.connectionTimers.delete(deviceId);
+    this.deviceActivity.delete(deviceId);
+    this.deviceConnectionStates.delete(deviceId);
+  }
+
+  private clearConnectionStates(): void {
+    for (const timer of this.connectionTimers.values()) clearTimeout(timer);
+    this.connectionTimers.clear();
+    this.deviceActivity.clear();
+    this.deviceConnectionStates.clear();
   }
 
   private async readJsonBody(
@@ -550,12 +984,171 @@ function isPositiveInteger(value: unknown): value is number {
   return typeof value === "number" && Number.isInteger(value) && value > 0;
 }
 
-function toDeviceInfo(device: CompanionDevice): CompanionDeviceInfo {
+function withoutDownloadPath(item: DownloadQueueItem) {
+  const { download_path: _downloadPath, ...safeItem } = item;
+  void _downloadPath;
+  return safeItem;
+}
+
+function parseNonNegativeInteger(value: string): number | null {
+  if (!/^\d+$/.test(value)) return null;
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) ? parsed : null;
+}
+
+function parsePositiveInteger(value: string): number | null {
+  const parsed = parseNonNegativeInteger(value);
+  return parsed !== null && parsed > 0 ? parsed : null;
+}
+
+function isSeriesAssignment(
+  value: unknown,
+): value is CompanionSeriesAssignment {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const assignment = value as Record<string, unknown>;
+  if (!isBoundedString(assignment.bookSyncId, 128)) return false;
+  if (
+    assignment.name !== null &&
+    (!isBoundedString(assignment.name, 500) ||
+      assignment.name.trim().length === 0)
+  ) {
+    return false;
+  }
+  return (
+    isNonNegativeInteger(assignment.order) &&
+    (assignment.modifiedAt === undefined ||
+      isNonNegativeInteger(assignment.modifiedAt)) &&
+    (assignment.baseVersion === undefined ||
+      isNonNegativeInteger(assignment.baseVersion)) &&
+    (assignment.mutationId === undefined ||
+      isBoundedString(assignment.mutationId, 128))
+  );
+}
+
+function headerValue(value: string | string[] | undefined): string | undefined {
+  return Array.isArray(value) ? value[0] : value;
+}
+
+function decodeHeaderValue(
+  value: string | string[] | undefined,
+): string | null {
+  const raw = headerValue(value);
+  if (!raw) return null;
+  try {
+    return decodeURIComponent(raw.replace(/\+/g, "%20"));
+  } catch {
+    return null;
+  }
+}
+
+function isUuid(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+    value,
+  );
+}
+
+function isSyncMutation(value: unknown): value is CompanionSyncMutation {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const mutation = value as Record<string, unknown>;
+  if (!isBoundedString(mutation.mutationId, 128)) return false;
+  if (!isBoundedString(mutation.bookSyncId, 128)) return false;
+  if (
+    mutation.baseVersion !== undefined &&
+    !isNonNegativeInteger(mutation.baseVersion)
+  ) {
+    return false;
+  }
+  if (
+    mutation.modifiedAt !== undefined &&
+    !isNonNegativeInteger(mutation.modifiedAt)
+  ) {
+    return false;
+  }
+  if (
+    mutation.currentPage !== undefined &&
+    !isNonNegativeInteger(mutation.currentPage)
+  ) {
+    return false;
+  }
+  if (
+    mutation.isFavorite !== undefined &&
+    typeof mutation.isFavorite !== "boolean"
+  ) {
+    return false;
+  }
+
+  for (const field of ["isRead", "isHidden", "seriesFavorite"] as const) {
+    if (mutation[field] !== undefined && typeof mutation[field] !== "boolean") {
+      return false;
+    }
+  }
+  if (
+    mutation.customTitle !== undefined &&
+    mutation.customTitle !== null &&
+    !isBoundedString(mutation.customTitle, 500)
+  ) {
+    return false;
+  }
+
+  let hasChange =
+    mutation.currentPage !== undefined ||
+    mutation.isFavorite !== undefined ||
+    mutation.isRead !== undefined ||
+    mutation.isHidden !== undefined ||
+    mutation.customTitle !== undefined ||
+    mutation.seriesFavorite !== undefined;
+  if (mutation.historyEvent !== undefined) {
+    if (
+      !mutation.historyEvent ||
+      typeof mutation.historyEvent !== "object" ||
+      Array.isArray(mutation.historyEvent)
+    ) {
+      return false;
+    }
+    const history = mutation.historyEvent as Record<string, unknown>;
+    if (!isBoundedString(history.eventId, 128)) return false;
+    if (
+      typeof history.viewedAt !== "string" ||
+      !Number.isFinite(Date.parse(history.viewedAt))
+    ) {
+      return false;
+    }
+    if (
+      history.currentPage !== undefined &&
+      !isNonNegativeInteger(history.currentPage)
+    ) {
+      return false;
+    }
+    hasChange = true;
+  }
+  return hasChange;
+}
+
+function isBoundedString(
+  value: unknown,
+  maximumLength: number,
+): value is string {
+  return (
+    typeof value === "string" &&
+    value.length > 0 &&
+    value.length <= maximumLength
+  );
+}
+
+function isNonNegativeInteger(value: unknown): value is number {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
+}
+
+function toDeviceInfo(
+  device: CompanionDevice,
+  connectionState: CompanionDeviceInfo["connectionState"],
+): CompanionDeviceInfo {
   return {
     id: device.id,
     name: device.name,
     pairedAt: device.pairedAt,
     lastSeenAt: device.lastSeenAt,
+    connectionState,
   };
 }
 

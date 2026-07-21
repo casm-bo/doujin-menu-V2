@@ -28,7 +28,7 @@ import { useUiStore } from "@/store/uiStore";
 import { Icon } from "@iconify/vue";
 import PageHeader from "../layout/PageHeader.vue";
 import { useInfiniteQuery } from "@tanstack/vue-query";
-import type { Gallery } from "node-hitomi";
+import type { HitomiGalleryDetails } from "../../../types/hitomi.js";
 import { AcceptableValue } from "reka-ui";
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from "vue";
 
@@ -102,7 +102,7 @@ const searchKey = ref(0); // 검색 트리거를 위한 키
 
 // 미리보기 다이얼로그 관련 상태
 const isPreviewDialogOpen = ref(false);
-const selectedGallery = ref<Gallery>();
+const selectedGallery = ref<HitomiGalleryDetails>();
 
 const {
   data,
@@ -135,7 +135,7 @@ const {
       );
       const detailResults = (await Promise.all(galleryDetailsPromises)) as {
         success: boolean;
-        data: Gallery & { thumbnailUrl: string };
+        data: HitomiGalleryDetails;
       }[];
       return {
         galleries: detailResults
@@ -160,7 +160,7 @@ const allGalleries = computed(() => {
 const observerTarget = ref(null);
 let observer: IntersectionObserver | null = null;
 
-const handleSelectGallery = (gallery: Gallery) => {
+const handleSelectGallery = (gallery: HitomiGalleryDetails) => {
   selectedGallery.value = gallery;
 };
 

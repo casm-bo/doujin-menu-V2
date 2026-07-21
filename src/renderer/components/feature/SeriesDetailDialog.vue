@@ -22,7 +22,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Textarea } from "@/components/ui/textarea";
 import { Icon } from "@iconify/vue";
 import { useMutation, useQuery } from "@tanstack/vue-query";
-import { computed, ref, watch } from "vue";
+import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import { toast } from "vue-sonner";
 import type { SeriesCollectionWithBooks } from "../../../main/db/types";
@@ -34,6 +34,7 @@ import {
   updateSeriesCollection,
 } from "../../api";
 import AddBookToSeriesDialog from "./AddBookToSeriesDialog.vue";
+import { reorderForDrop, type DropPosition } from "./seriesReorder";
 
 interface Props {
   open: boolean;
@@ -63,7 +64,16 @@ const bookToRemove = ref<number | null>(null);
 // 드래그 앤 드롭 상태
 const draggedIndex = ref<number | null>(null);
 const dragOverIndex = ref<number | null>(null);
+const dragOverPosition = ref<DropPosition>("before");
 const books = ref<Book[]>([]);
+let reorderTimer: ReturnType<typeof setTimeout> | null = null;
+let pendingReorder: {
+  seriesId: number;
+  bookIds: number[];
+  revision: number;
+} | null = null;
+let reorderRevision = 0;
+let reorderWriteChain: Promise<void> = Promise.resolve();
 
 // 시리즈 상세 조회
 const { data: seriesDetail, refetch } = useQuery({
@@ -124,24 +134,44 @@ const removeBookMutation = useMutation({
   },
 });
 
-// 순서 변경 뮤테이션
-const reorderMutation = useMutation({
-  mutationFn: ({
-    seriesId,
-    bookIds,
-  }: {
-    seriesId: number;
-    bookIds: number[];
-  }) => reorderBooksInSeries(seriesId, bookIds),
-  onSuccess: () => {
-    toast.success("순서가 변경되었습니다");
-    refetch();
-    emit("updated");
-  },
-  onError: (error) => {
-    toast.error(`순서 변경 실패: ${error.message}`);
-  },
-});
+const flushReorder = () => {
+  if (reorderTimer !== null) {
+    clearTimeout(reorderTimer);
+    reorderTimer = null;
+  }
+  const payload = pendingReorder;
+  pendingReorder = null;
+  if (!payload) return;
+
+  reorderWriteChain = reorderWriteChain
+    .catch(() => undefined)
+    .then(() => reorderBooksInSeries(payload.seriesId, payload.bookIds))
+    .then(() => {
+      if (payload.revision !== reorderRevision) return;
+      toast.success("순서가 변경되었습니다");
+      void refetch();
+      emit("updated");
+    })
+    .catch((error: Error) => {
+      if (payload.revision !== reorderRevision) return;
+      toast.error(`순서 변경 실패: ${error.message}`);
+      void refetch();
+    });
+};
+
+const scheduleReorder = () => {
+  if (!props.series) return;
+  reorderRevision += 1;
+  pendingReorder = {
+    seriesId: props.series.id,
+    bookIds: books.value.map((book) => book.id),
+    revision: reorderRevision,
+  };
+  if (reorderTimer !== null) clearTimeout(reorderTimer);
+  reorderTimer = setTimeout(flushReorder, 250);
+};
+
+onBeforeUnmount(flushReorder);
 
 // props.series 변경 시 편집 폼 초기화
 watch(
@@ -247,6 +277,9 @@ const handleDragOver = (e: DragEvent, index: number) => {
     return;
   }
   dragOverIndex.value = index;
+  const bounds = (e.currentTarget as HTMLElement).getBoundingClientRect();
+  dragOverPosition.value =
+    e.clientY < bounds.top + bounds.height / 2 ? "before" : "after";
 };
 
 const handleDragLeave = () => {
@@ -260,17 +293,13 @@ const handleDrop = (index: number) => {
     return;
   }
 
-  const newBooks = [...books.value];
-  const draggedBook = newBooks[draggedIndex.value];
-  newBooks.splice(draggedIndex.value, 1);
-  newBooks.splice(index, 0, draggedBook);
-  books.value = newBooks;
-
-  // 서버에 순서 저장
-  if (props.series) {
-    const bookIds = books.value.map((book) => book.id);
-    reorderMutation.mutate({ seriesId: props.series.id, bookIds });
-  }
+  books.value = reorderForDrop(
+    books.value,
+    draggedIndex.value,
+    index,
+    dragOverPosition.value,
+  );
+  scheduleReorder();
 
   draggedIndex.value = null;
   dragOverIndex.value = null;
@@ -293,8 +322,7 @@ const moveBook = (index: number, direction: "up" | "down") => {
   newBooks[newIndex] = temp;
   books.value = newBooks;
 
-  const bookIds = books.value.map((book) => book.id);
-  reorderMutation.mutate({ seriesId: props.series.id, bookIds });
+  scheduleReorder();
 };
 
 // 책 추가 완료
@@ -419,6 +447,7 @@ const excludeBookIds = computed(() => books.value.map((book) => book.id));
                 <div
                   v-if="
                     dragOverIndex === index &&
+                    dragOverPosition === 'before' &&
                     draggedIndex !== null &&
                     draggedIndex !== index
                   "
@@ -556,6 +585,16 @@ const excludeBookIds = computed(() => books.value.map((book) => book.id));
                     </Button>
                   </div>
                 </div>
+
+                <div
+                  v-if="
+                    dragOverIndex === index &&
+                    dragOverPosition === 'after' &&
+                    draggedIndex !== null &&
+                    draggedIndex !== index
+                  "
+                  class="bg-primary h-0.5 rounded-full transition-all"
+                />
               </template>
 
               <div

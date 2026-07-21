@@ -2,6 +2,7 @@ import { app, ipcMain } from "electron";
 import { fileURLToPath } from "url";
 import { Worker } from "worker_threads";
 import db from "../db/index.js";
+import { notifyCompanionLibraryChanged } from "../services/companion/companionSyncSignal.js";
 import type {
   Book,
   SeriesCollection,
@@ -1124,12 +1125,34 @@ export async function handleReorderBooksInSeries(
 ) {
   try {
     await db.transaction(async (trx) => {
+      if (
+        !Number.isInteger(seriesId) ||
+        seriesId <= 0 ||
+        bookIds.some((id) => !Number.isInteger(id) || id <= 0) ||
+        new Set(bookIds).size !== bookIds.length
+      ) {
+        throw new Error("잘못된 시리즈 순서 요청입니다.");
+      }
+      const currentBooks = await trx("Book")
+        .select("id")
+        .where("series_collection_id", seriesId);
+      const currentIds = new Set(currentBooks.map((book) => book.id));
+      if (
+        currentIds.size !== bookIds.length ||
+        bookIds.some((id) => !currentIds.has(id))
+      ) {
+        throw new Error(
+          "시리즈에 속한 모든 책을 정확히 한 번씩 보내야 합니다.",
+        );
+      }
       for (let i = 0; i < bookIds.length; i++) {
-        await trx("Book")
-          .where("id", bookIds[i])
+        const updated = await trx("Book")
+          .where({ id: bookIds[i], series_collection_id: seriesId })
           .update({
             series_order_index: i + 1,
           });
+        if (updated !== 1)
+          throw new Error("시리즈 순서 저장 중 책이 변경되었습니다.");
       }
 
       // 시리즈를 수동 편집으로 표시
@@ -1465,38 +1488,50 @@ export function registerSeriesCollectionHandlers() {
     handleGetSeriesCollectionById(seriesId),
   );
   ipcMain.handle("create-series-collection", (_event, data) =>
-    handleCreateSeriesCollection(data),
+    notifyAfterSuccessfulLibraryChange(handleCreateSeriesCollection(data)),
   );
   ipcMain.handle("update-series-collection", (_event, { seriesId, data }) =>
-    handleUpdateSeriesCollection(seriesId, data),
+    notifyAfterSuccessfulLibraryChange(
+      handleUpdateSeriesCollection(seriesId, data),
+    ),
   );
   ipcMain.handle("delete-series-collection", (_event, seriesId) =>
-    handleDeleteSeriesCollection(seriesId),
+    notifyAfterSuccessfulLibraryChange(handleDeleteSeriesCollection(seriesId)),
   );
   ipcMain.handle("run-series-detection", (_event, options) =>
-    handleRunSeriesDetection(options),
+    notifyAfterSuccessfulLibraryChange(handleRunSeriesDetection(options)),
   );
   ipcMain.handle("run-series-detection-for-book", (_event, bookId, options) =>
-    handleRunSeriesDetectionForBook(bookId, options),
+    notifyAfterSuccessfulLibraryChange(
+      handleRunSeriesDetectionForBook(bookId, options),
+    ),
   );
   ipcMain.handle(
     "add-book-to-series",
     (_event, { bookId, seriesId, orderIndex }) =>
-      handleAddBookToSeries(bookId, seriesId, orderIndex),
+      notifyAfterSuccessfulLibraryChange(
+        handleAddBookToSeries(bookId, seriesId, orderIndex),
+      ),
   );
   ipcMain.handle("remove-book-from-series", (_event, bookId) =>
-    handleRemoveBookFromSeries(bookId),
+    notifyAfterSuccessfulLibraryChange(handleRemoveBookFromSeries(bookId)),
   );
   ipcMain.handle("reorder-books-in-series", (_event, { seriesId, bookIds }) =>
-    handleReorderBooksInSeries(seriesId, bookIds),
+    notifyAfterSuccessfulLibraryChange(
+      handleReorderBooksInSeries(seriesId, bookIds),
+    ),
   );
   ipcMain.handle("merge-series-collections", (_event, sourceId, targetId) =>
-    handleMergeSeriesCollections(sourceId, targetId),
+    notifyAfterSuccessfulLibraryChange(
+      handleMergeSeriesCollections(sourceId, targetId),
+    ),
   );
   ipcMain.handle(
     "split-series-collection",
     (_event, sourceSeriesId, bookIds, newSeriesName) =>
-      handleSplitSeriesCollection(sourceSeriesId, bookIds, newSeriesName),
+      notifyAfterSuccessfulLibraryChange(
+        handleSplitSeriesCollection(sourceSeriesId, bookIds, newSeriesName),
+      ),
   );
   ipcMain.handle("get-next-book-in-series", (_event, currentBookId) =>
     handleGetNextBookInSeries(currentBookId),
@@ -1514,4 +1549,12 @@ export function registerSeriesCollectionHandlers() {
   ipcMain.handle("auto-detect-series-for-book", (_event, bookId) =>
     handleAutoDetectSeriesForBook(bookId),
   );
+}
+
+async function notifyAfterSuccessfulLibraryChange<
+  T extends { success: boolean },
+>(operation: Promise<T>): Promise<T> {
+  const result = await operation;
+  if (result.success) notifyCompanionLibraryChanged();
+  return result;
 }

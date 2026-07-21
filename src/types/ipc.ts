@@ -1,5 +1,5 @@
 // IPC 통신을 위한 타입 정의
-import type { Gallery } from "node-hitomi";
+import type { HitomiGalleryDetails } from "./hitomi.js";
 import type { Config } from "../main/handlers/configHandler.js";
 import type {
   CompanionDeviceInfo,
@@ -168,7 +168,7 @@ export interface DuplicateBookInfo {
 // 중복 그룹 (hitomi_id 또는 제목 일치)
 export interface DuplicateGroup {
   key: string;
-  matchType: "hitomi_id" | "title";
+  matchType: "uuid" | "hitomi_id" | "title";
   books: DuplicateBookInfo[];
 }
 
@@ -468,6 +468,20 @@ export interface IpcChannels {
     request: void;
     response: CompanionServerStatus;
   };
+  "get-companion-sync-status": {
+    request: void;
+    response: {
+      state: "idle" | "syncing" | "success" | "error";
+      lastSyncedAt: string | null;
+      bookCount: number;
+      cursor: number;
+      error: string | null;
+    };
+  };
+  "run-companion-sync": {
+    request: void;
+    response: { success: boolean; error?: string };
+  };
   "start-companion-server": {
     request: void;
     response: {
@@ -550,7 +564,7 @@ export interface IpcChannels {
     request: number; // galleryId
     response: {
       success: boolean;
-      data?: Gallery & { thumbnailUrl: string };
+      data?: HitomiGalleryDetails;
       error?: string;
     };
   };

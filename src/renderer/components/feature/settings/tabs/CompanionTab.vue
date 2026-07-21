@@ -11,7 +11,7 @@ import {
 } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
 import { Icon } from "@iconify/vue";
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, onUnmounted, ref } from "vue";
 import { toast } from "vue-sonner";
 import type {
   CompanionDeviceInfo,
@@ -23,6 +23,15 @@ const status = ref<CompanionServerStatus | null>(null);
 const devices = ref<CompanionDeviceInfo[]>([]);
 const pairing = ref<CompanionPairingCode | null>(null);
 const isUpdating = ref(false);
+const isRefreshing = ref(false);
+const syncStatus = ref<{
+  state: "idle" | "syncing" | "success" | "error";
+  lastSyncedAt: string | null;
+  bookCount: number;
+  cursor: number;
+  error: string | null;
+} | null>(null);
+let refreshTimer: ReturnType<typeof setInterval> | null = null;
 
 const serverAddresses = computed(() => {
   if (!status.value?.addresses.length) return [];
@@ -32,8 +41,15 @@ const serverAddresses = computed(() => {
 });
 
 async function refresh() {
-  status.value = await ipcRenderer.invoke("get-companion-status");
-  devices.value = await ipcRenderer.invoke("get-companion-devices");
+  if (isRefreshing.value) return;
+  isRefreshing.value = true;
+  try {
+    status.value = await ipcRenderer.invoke("get-companion-status");
+    devices.value = await ipcRenderer.invoke("get-companion-devices");
+    syncStatus.value = await ipcRenderer.invoke("get-companion-sync-status");
+  } finally {
+    isRefreshing.value = false;
+  }
 }
 
 async function toggleServer(enabled: boolean) {
@@ -83,7 +99,52 @@ function formatDate(value: string | null) {
   return new Date(value).toLocaleString();
 }
 
-onMounted(refresh);
+async function runSync() {
+  if (syncStatus.value?.state === "syncing") return;
+  syncStatus.value = {
+    ...(syncStatus.value || {
+      lastSyncedAt: null,
+      bookCount: 0,
+      cursor: 0,
+      error: null,
+    }),
+    state: "syncing",
+  };
+  const result = await ipcRenderer.invoke("run-companion-sync");
+  await refresh();
+  if (result.success) toast.success("연결된 Android 기기에 동기화를 요청했습니다.");
+  else toast.error("동기화 요청에 실패했습니다.", { description: result.error });
+}
+
+function connectionLabel(device: CompanionDeviceInfo) {
+  if (!status.value?.running) return "연결 끊김";
+  if (device.connectionState === "connecting") return "연결 중…";
+  if (device.connectionState === "connected") return "연결됨";
+  return "연결 끊김";
+}
+
+function connectionTextClass(device: CompanionDeviceInfo) {
+  if (device.connectionState === "connecting") return "text-amber-600";
+  if (device.connectionState === "connected") return "text-green-600";
+  return "text-muted-foreground";
+}
+
+function connectionDotClass(device: CompanionDeviceInfo) {
+  if (device.connectionState === "connecting") {
+    return "bg-amber-500 animate-pulse";
+  }
+  if (device.connectionState === "connected") return "bg-green-500";
+  return "bg-gray-400";
+}
+
+onMounted(() => {
+  void refresh();
+  refreshTimer = setInterval(() => void refresh(), 1_000);
+});
+
+onUnmounted(() => {
+  if (refreshTimer) clearInterval(refreshTimer);
+});
 </script>
 
 <template>
@@ -127,6 +188,33 @@ onMounted(refresh);
           <p v-else class="text-muted-foreground text-sm">
             사용 가능한 사설 IPv4 주소를 찾지 못했습니다.
           </p>
+        </div>
+        <div class="flex flex-wrap items-center gap-3 rounded-lg border p-4">
+          <Button
+            :disabled="!status?.running || syncStatus?.state === 'syncing'"
+            @click="runSync"
+          >
+            <Icon
+              :icon="syncStatus?.state === 'syncing' ? 'solar:refresh-circle-bold' : 'solar:refresh-bold'"
+              class="size-5"
+              :class="{ 'animate-spin': syncStatus?.state === 'syncing' }"
+            />
+            {{ syncStatus?.state === "syncing" ? "동기화 중" : "지금 동기화" }}
+          </Button>
+          <div class="text-sm">
+            <p>
+              상태:
+              <span :class="syncStatus?.state === 'error' ? 'text-destructive' : 'text-muted-foreground'">
+                {{ syncStatus?.state || "idle" }}
+              </span>
+            </p>
+            <p v-if="syncStatus?.lastSyncedAt" class="text-muted-foreground text-xs">
+              마지막 동기화 {{ formatDate(syncStatus.lastSyncedAt) }} · {{ syncStatus.bookCount }}권
+            </p>
+            <p v-if="syncStatus?.error" class="text-destructive text-xs">
+              {{ syncStatus.error }}
+            </p>
+          </div>
         </div>
       </CardContent>
     </Card>
@@ -178,6 +266,16 @@ onMounted(refresh);
           >
             <div>
               <p class="font-medium">{{ device.name }}</p>
+              <p
+                class="mt-1 flex items-center gap-1.5 text-sm font-medium"
+                :class="connectionTextClass(device)"
+              >
+                <span
+                  class="size-2 rounded-full"
+                  :class="connectionDotClass(device)"
+                />
+                {{ connectionLabel(device) }}
+              </p>
               <p class="text-muted-foreground text-xs">
                 마지막 연결: {{ formatDate(device.lastSeenAt) }}
               </p>

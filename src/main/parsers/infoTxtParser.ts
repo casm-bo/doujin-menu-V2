@@ -1,4 +1,5 @@
 export interface ParsedMetadata {
+  uuid?: string;
   hitomi_id?: string;
   title?: string;
   artists?: { name: string }[];
@@ -21,6 +22,8 @@ export function parseInfoTxt(content: string) {
   const lines = content.split("\n").filter((line) => line.trim() !== "");
 
   const keyMap = {
+    UUID: "uuid",
+    "고유 UUID": "uuid",
     "갤러리 넘버": "hitomi_id",
     제목: "title",
     작가: "artists",

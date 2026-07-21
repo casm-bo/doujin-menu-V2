@@ -1,5 +1,5 @@
 {
-  "appId": "com.doujin.menu.app",
+  "appId": "com.casm.doujinmenu",
   "productName": "동인메뉴판",
   "directories": {
     "output": "dist",
@@ -24,19 +24,14 @@
   "asar": true,
   "publish": {
     "provider": "github",
-    "owner": "qqoro",
-    "repo": "doujin-menu"
+    "owner": "casm-bo",
+    "repo": "doujin-menu-V2"
   },
   "files": ["build/main/**/*", "build/renderer/**/*", "package.json"],
   "extraResources": [
     {
       "from": "src/main/static",
       "to": "static",
-      "filter": ["**/*"]
-    },
-    {
-      "from": "build/main/migrations",
-      "to": "migrations",
       "filter": ["**/*"]
     }
   ]
