@@ -1,4 +1,4 @@
-import { app, ipcMain } from "electron";
+import { app, BrowserWindow, ipcMain } from "electron";
 import Store from "electron-store";
 import type { CompanionDevice } from "../../types/companion.js";
 import { hitomiService } from "../services/hitomi/hitomiService.js";
@@ -76,7 +76,13 @@ export const companionServer = new CompanionServer(
   new DesktopLibraryService(db, () => store.get("downloadPath", "")),
   new DesktopCompanionSyncService(db),
 );
-setCompanionLibraryChangedHandler(() => companionServer.requestSync());
+setCompanionLibraryChangedHandler((affectsLibrarySnapshot) => {
+  if (affectsLibrarySnapshot) companionServer.requestSync();
+  BrowserWindow.getAllWindows().forEach((window) => {
+    window.webContents.send("books-updated");
+    window.webContents.send("series-collections-updated");
+  });
+});
 
 let syncStatus = {
   state: "idle" as "idle" | "syncing" | "success" | "error",

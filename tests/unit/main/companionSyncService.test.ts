@@ -86,6 +86,7 @@ describe("DesktopCompanionSyncService", () => {
       state: { currentPage: 7, isFavorite: true, version: 1 },
     });
     expect(changes).toMatchObject({ cursor: 1, hasMore: false });
+    expect(changes.changes[0].deviceId).toBe("phone-1");
     expect(changes.changes[0].changedFields).toEqual([
       "currentPage",
       "isFavorite",
@@ -143,10 +144,71 @@ describe("DesktopCompanionSyncService", () => {
     });
   });
 
+  it("keeps the desktop state when a mobile mutation is older", async () => {
+    const book = await seedBook(db, {
+      page_count: 20,
+      current_page: 6,
+      state_updated_at: "2026-07-20T12:00:00.000Z",
+    });
+    const stored = await db("Book").where("id", book.id).first();
+
+    const result = await service.applyMutations("phone-1", [
+      {
+        mutationId: "older-phone-state",
+        bookSyncId: stored.sync_id,
+        baseVersion: 0,
+        modifiedAt: Date.parse("2026-07-20T11:00:00.000Z"),
+        currentPage: 2,
+      },
+    ]);
+
+    expect(result.results[0]).toMatchObject({
+      status: "conflict",
+      conflict: true,
+      state: { currentPage: 6 },
+    });
+    expect((await db("Book").where("id", book.id).first()).current_page).toBe(
+      6,
+    );
+  });
+
+  it("applies a newer mobile state even when its base version is stale", async () => {
+    const book = await seedBook(db, {
+      page_count: 20,
+      current_page: 3,
+      state_version: 4,
+      state_updated_at: "2026-07-20T12:00:00.000Z",
+    });
+    const stored = await db("Book").where("id", book.id).first();
+    const modifiedAt = Date.parse("2026-07-20T13:00:00.000Z");
+
+    const result = await service.applyMutations("phone-1", [
+      {
+        mutationId: "newer-phone-state",
+        bookSyncId: stored.sync_id,
+        baseVersion: 1,
+        modifiedAt,
+        currentPage: 9,
+      },
+    ]);
+
+    expect(result.results[0]).toMatchObject({
+      status: "applied",
+      conflict: true,
+      state: {
+        currentPage: 9,
+        version: 5,
+        updatedAt: "2026-07-20T13:00:00.000Z",
+      },
+    });
+  });
+
   it("synchronizes read, hidden, title, and series favorite state", async () => {
     const book = await seedBook(db, { page_count: 12 });
     const [seriesId] = await db("SeriesCollection").insert({ name: "Series" });
-    await db("Book").where("id", book.id).update({ series_collection_id: seriesId });
+    await db("Book")
+      .where("id", book.id)
+      .update({ series_collection_id: seriesId });
     const stored = await db("Book").where("id", book.id).first();
 
     const result = await service.applyMutations("phone-1", [

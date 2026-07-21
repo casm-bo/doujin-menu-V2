@@ -53,6 +53,7 @@ export interface CompanionSyncHistoryEvent {
 
 export interface CompanionSyncChange {
   cursor: number;
+  deviceId: string;
   state: CompanionSyncBookState;
   changedFields: (
     | "currentPage"
@@ -70,6 +71,7 @@ export interface CompanionSyncMutation {
   mutationId: string;
   bookSyncId: string;
   baseVersion?: number;
+  modifiedAt?: number;
   currentPage?: number;
   isFavorite?: boolean;
   isRead?: boolean;
@@ -85,7 +87,7 @@ export interface CompanionSyncMutation {
 
 export interface CompanionSyncMutationResult {
   mutationId: string;
-  status: "applied" | "duplicate" | "not_found";
+  status: "applied" | "duplicate" | "conflict" | "not_found";
   conflict: boolean;
   state?: CompanionSyncBookState;
 }

@@ -9,7 +9,9 @@ import type {
   CompanionPairingCode,
   CompanionServerStatus,
   CompanionSyncMutation,
+  CompanionSyncMutationResult,
 } from "../../../types/companion.js";
+import { notifyCompanionLibraryChanged } from "./companionSyncSignal.js";
 import type {
   SearchGalleriesParams,
   SearchGalleriesResult,
@@ -40,7 +42,9 @@ export interface CompanionOperationResult<T = undefined> {
 }
 
 export interface CompanionDownloadService {
-  getPath(): Promise<CompanionOperationResult<{ configured: boolean; path: string | null }>>;
+  getPath(): Promise<
+    CompanionOperationResult<{ configured: boolean; path: string | null }>
+  >;
   getQueue(): Promise<CompanionOperationResult<DownloadQueueItem[]>>;
   add(galleryId: number): Promise<CompanionOperationResult<DownloadQueueItem>>;
   remove(queueId: number): Promise<CompanionOperationResult>;
@@ -117,9 +121,7 @@ export interface CompanionLibraryService {
     cursor?: number,
     limit?: number,
   ): Promise<CompanionLibraryBook[] | CompanionLibraryPage>;
-  saveSeriesAssignments(
-    assignments: CompanionSeriesAssignment[],
-  ): Promise<
+  saveSeriesAssignments(assignments: CompanionSeriesAssignment[]): Promise<
     CompanionOperationResult<{
       updated: number;
       results: CompanionSeriesAssignmentResult[];
@@ -158,7 +160,11 @@ export interface CompanionSyncService {
   applyMutations(
     deviceId: string,
     mutations: CompanionSyncMutation[],
-  ): Promise<unknown>;
+  ): Promise<{
+    cursor: number;
+    serverTime: string;
+    results: CompanionSyncMutationResult[];
+  }>;
 }
 
 interface PairingState {
@@ -470,9 +476,15 @@ export class CompanionServer {
         });
         return true;
       }
+      const data = await service.applyMutations(device.id, mutations);
+      if (data.results.some((item) => item.status === "applied")) {
+        // Book-state changes are consumed through the durable cursor feed. Refresh
+        // desktop renderers without also invalidating every mobile library snapshot.
+        notifyCompanionLibraryChanged(false);
+      }
       this.sendJson(response, 200, {
         success: true,
-        data: await service.applyMutations(device.id, mutations),
+        data,
       });
       return true;
     }
@@ -512,16 +524,20 @@ export class CompanionServer {
         });
         return true;
       }
-      this.sendOperationResult(
-        response,
-        await service.saveSeriesAssignments(assignments),
-      );
+      const result = await service.saveSeriesAssignments(assignments);
+      if (result.success && result.data && result.data.updated > 0) {
+        notifyCompanionLibraryChanged();
+      }
+      this.sendOperationResult(response, result);
       return true;
     }
 
     if (request.method === "POST" && pathname === "/v1/library/import") {
       if (!service.importBook) {
-        this.sendJson(response, 501, { success: false, error: "Library import is unavailable" });
+        this.sendJson(response, 501, {
+          success: false,
+          error: "Library import is unavailable",
+        });
         return true;
       }
       const fileName = decodeHeaderValue(request.headers["x-file-name"]);
@@ -542,26 +558,28 @@ export class CompanionServer {
       ) {
         this.sendJson(response, 400, {
           success: false,
-          error: "A valid CBZ/ZIP file name, UUID, and content length are required",
+          error:
+            "A valid CBZ/ZIP file name, UUID, and content length are required",
         });
         return true;
       }
-      this.sendOperationResult(
-        response,
-        await service.importBook({
-          stream: request,
-          fileName,
-          syncId,
-          contentLength,
-        }),
-      );
+      const result = await service.importBook({
+        stream: request,
+        fileName,
+        syncId,
+        contentLength,
+      });
+      if (result.success) notifyCompanionLibraryChanged();
+      this.sendOperationResult(response, result);
       return true;
     }
 
     const deleteMatch = pathname.match(/^\/v1\/library\/books\/(\d+)$/);
     if (request.method === "DELETE" && deleteMatch) {
       const bookId = Number.parseInt(deleteMatch[1], 10);
-      this.sendOperationResult(response, await service.deleteBook(bookId));
+      const result = await service.deleteBook(bookId);
+      if (result.success) notifyCompanionLibraryChanged();
+      this.sendOperationResult(response, result);
       return true;
     }
 
@@ -571,9 +589,14 @@ export class CompanionServer {
       const requestUrl = new URL(request.url || "/", "http://companion.local");
       const cursorText = requestUrl.searchParams.get("cursor");
       const limitText = requestUrl.searchParams.get("limit");
-      const cursor = cursorText === null ? undefined : parsePositiveInteger(cursorText);
-      const limit = limitText === null ? undefined : parsePositiveInteger(limitText);
-      if ((cursorText !== null && cursor === null) || (limitText !== null && limit === null)) {
+      const cursor =
+        cursorText === null ? undefined : parsePositiveInteger(cursorText);
+      const limit =
+        limitText === null ? undefined : parsePositiveInteger(limitText);
+      if (
+        (cursorText !== null && cursor === null) ||
+        (limitText !== null && limit === null)
+      ) {
         this.sendJson(response, 400, {
           success: false,
           error: "cursor and limit must be valid positive integers",
@@ -587,7 +610,10 @@ export class CompanionServer {
         });
         return true;
       }
-      const page = await service.listBooks(cursor ?? undefined, limit ?? undefined);
+      const page = await service.listBooks(
+        cursor ?? undefined,
+        limit ?? undefined,
+      );
       this.sendJson(response, 200, {
         success: true,
         data: page,
@@ -1003,7 +1029,9 @@ function headerValue(value: string | string[] | undefined): string | undefined {
   return Array.isArray(value) ? value[0] : value;
 }
 
-function decodeHeaderValue(value: string | string[] | undefined): string | null {
+function decodeHeaderValue(
+  value: string | string[] | undefined,
+): string | null {
   const raw = headerValue(value);
   if (!raw) return null;
   try {
@@ -1027,6 +1055,12 @@ function isSyncMutation(value: unknown): value is CompanionSyncMutation {
   if (
     mutation.baseVersion !== undefined &&
     !isNonNegativeInteger(mutation.baseVersion)
+  ) {
+    return false;
+  }
+  if (
+    mutation.modifiedAt !== undefined &&
+    !isNonNegativeInteger(mutation.modifiedAt)
   ) {
     return false;
   }

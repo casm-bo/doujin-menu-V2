@@ -1162,8 +1162,6 @@ export async function handleReorderBooksInSeries(
       });
     });
 
-    notifyCompanionLibraryChanged();
-
     return {
       success: true,
     };
@@ -1490,38 +1488,50 @@ export function registerSeriesCollectionHandlers() {
     handleGetSeriesCollectionById(seriesId),
   );
   ipcMain.handle("create-series-collection", (_event, data) =>
-    handleCreateSeriesCollection(data),
+    notifyAfterSuccessfulLibraryChange(handleCreateSeriesCollection(data)),
   );
   ipcMain.handle("update-series-collection", (_event, { seriesId, data }) =>
-    handleUpdateSeriesCollection(seriesId, data),
+    notifyAfterSuccessfulLibraryChange(
+      handleUpdateSeriesCollection(seriesId, data),
+    ),
   );
   ipcMain.handle("delete-series-collection", (_event, seriesId) =>
-    handleDeleteSeriesCollection(seriesId),
+    notifyAfterSuccessfulLibraryChange(handleDeleteSeriesCollection(seriesId)),
   );
   ipcMain.handle("run-series-detection", (_event, options) =>
-    handleRunSeriesDetection(options),
+    notifyAfterSuccessfulLibraryChange(handleRunSeriesDetection(options)),
   );
   ipcMain.handle("run-series-detection-for-book", (_event, bookId, options) =>
-    handleRunSeriesDetectionForBook(bookId, options),
+    notifyAfterSuccessfulLibraryChange(
+      handleRunSeriesDetectionForBook(bookId, options),
+    ),
   );
   ipcMain.handle(
     "add-book-to-series",
     (_event, { bookId, seriesId, orderIndex }) =>
-      handleAddBookToSeries(bookId, seriesId, orderIndex),
+      notifyAfterSuccessfulLibraryChange(
+        handleAddBookToSeries(bookId, seriesId, orderIndex),
+      ),
   );
   ipcMain.handle("remove-book-from-series", (_event, bookId) =>
-    handleRemoveBookFromSeries(bookId),
+    notifyAfterSuccessfulLibraryChange(handleRemoveBookFromSeries(bookId)),
   );
   ipcMain.handle("reorder-books-in-series", (_event, { seriesId, bookIds }) =>
-    handleReorderBooksInSeries(seriesId, bookIds),
+    notifyAfterSuccessfulLibraryChange(
+      handleReorderBooksInSeries(seriesId, bookIds),
+    ),
   );
   ipcMain.handle("merge-series-collections", (_event, sourceId, targetId) =>
-    handleMergeSeriesCollections(sourceId, targetId),
+    notifyAfterSuccessfulLibraryChange(
+      handleMergeSeriesCollections(sourceId, targetId),
+    ),
   );
   ipcMain.handle(
     "split-series-collection",
     (_event, sourceSeriesId, bookIds, newSeriesName) =>
-      handleSplitSeriesCollection(sourceSeriesId, bookIds, newSeriesName),
+      notifyAfterSuccessfulLibraryChange(
+        handleSplitSeriesCollection(sourceSeriesId, bookIds, newSeriesName),
+      ),
   );
   ipcMain.handle("get-next-book-in-series", (_event, currentBookId) =>
     handleGetNextBookInSeries(currentBookId),
@@ -1539,4 +1549,12 @@ export function registerSeriesCollectionHandlers() {
   ipcMain.handle("auto-detect-series-for-book", (_event, bookId) =>
     handleAutoDetectSeriesForBook(bookId),
   );
+}
+
+async function notifyAfterSuccessfulLibraryChange<
+  T extends { success: boolean },
+>(operation: Promise<T>): Promise<T> {
+  const result = await operation;
+  if (result.success) notifyCompanionLibraryChanged();
+  return result;
 }

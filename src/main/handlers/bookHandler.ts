@@ -7,6 +7,7 @@ import db from "../db/index.js";
 import { console } from "../main.js";
 import { naturalSort } from "../utils/index.js";
 import { DesktopCompanionSyncService } from "../services/companion/companionSyncService.js";
+import { notifyCompanionLibraryChanged } from "../services/companion/companionSyncSignal.js";
 import { store as configStore } from "./configHandler.js";
 
 export interface ExcludeTerms {
@@ -622,6 +623,7 @@ export const handleUpdateBookCurrentPage = async ({
         currentPage,
       },
     );
+    if (result.status === "applied") notifyCompanionLibraryChanged(false);
     return result.status === "not_found"
       ? { success: false, error: "Book not found" }
       : { success: true };
@@ -1051,6 +1053,7 @@ export const handleToggleBookFavorite = async ({
         isFavorite,
       },
     );
+    if (result.status === "applied") notifyCompanionLibraryChanged(false);
     return result.status === "not_found"
       ? { success: false, error: "Book not found" }
       : { success: true, is_favorite: isFavorite };
@@ -1089,6 +1092,7 @@ export const handleAddBookHistory = async (bookId: number) => {
         addHistory: true,
       },
     );
+    if (result.status === "applied") notifyCompanionLibraryChanged(false);
     return result.status === "not_found"
       ? { success: false, error: "Book not found" }
       : { success: true };

@@ -14,6 +14,7 @@ import { ParsedMetadata, parseInfoTxt } from "../parsers/infoTxtParser.js";
 import type { LibraryScanProgress } from "../../types/ipc.js";
 import { naturalSort } from "../utils/index.js";
 import { filterLibraryPathRows } from "../utils/libraryPath.js";
+import { notifyCompanionLibraryChanged } from "../services/companion/companionSyncSignal.js";
 import {
   getPrefixIndex,
   handleAutoDetectSeriesForBook,
@@ -1151,6 +1152,9 @@ export async function scanDirectory(
       deletedCount: totalDeletedCount,
     });
 
+    if (totalAddedCount > 0 || totalUpdatedCount > 0 || totalDeletedCount > 0) {
+      notifyCompanionLibraryChanged();
+    }
     return {
       added: totalAddedCount,
       updated: totalUpdatedCount,
@@ -1357,6 +1361,7 @@ export async function scanFile(filePath: string) {
     BrowserWindow.getAllWindows().forEach((window) => {
       window.webContents.send("books-updated");
     });
+    notifyCompanionLibraryChanged();
   } catch (error) {
     console.error(`[Main] 파일 스캔 오류 ${filePath}:`, error);
   }

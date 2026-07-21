@@ -238,14 +238,14 @@ export class DesktopCompanionSyncService {
         "sync_id",
         "page_count",
         "current_page",
-          "is_favorite",
-          "is_read",
-          "is_hidden",
-          "custom_title",
-          "series_collection_id",
-          trx.raw(
-            "coalesce((select is_favorite from SeriesCollection where id = Book.series_collection_id), 0) as series_favorite",
-          ),
+        "is_favorite",
+        "is_read",
+        "is_hidden",
+        "custom_title",
+        "series_collection_id",
+        trx.raw(
+          "coalesce((select is_favorite from SeriesCollection where id = Book.series_collection_id), 0) as series_favorite",
+        ),
         "last_read_at",
         "state_version",
         "state_updated_at",
@@ -260,10 +260,27 @@ export class DesktopCompanionSyncService {
       };
     }
 
-    const conflict =
+    const versionConflict =
       mutation.baseVersion !== undefined &&
       mutation.baseVersion !== Number(book.state_version || 0);
-    const now = new Date().toISOString();
+    const currentModifiedAt = book.state_updated_at
+      ? Date.parse(book.state_updated_at)
+      : 0;
+    if (
+      mutation.modifiedAt !== undefined &&
+      mutation.modifiedAt <= currentModifiedAt
+    ) {
+      return {
+        mutationId: mutation.mutationId,
+        status: "conflict",
+        conflict: true,
+        state: toBookState(book),
+      };
+    }
+    const now =
+      mutation.modifiedAt === undefined
+        ? new Date().toISOString()
+        : new Date(mutation.modifiedAt).toISOString();
     const changedFields: CompanionSyncChange["changedFields"] = [];
     const update: Record<string, unknown> = {
       state_version: Number(book.state_version || 0) + 1,
@@ -381,7 +398,7 @@ export class DesktopCompanionSyncService {
     return {
       mutationId: mutation.mutationId,
       status: "applied",
-      conflict,
+      conflict: versionConflict,
       state,
     };
   }
@@ -426,6 +443,7 @@ function toSyncChange(row: SyncChangeRow): CompanionSyncChange {
     : undefined;
   return {
     cursor: Number(row.cursor),
+    deviceId: row.device_id,
     state: {
       syncId: row.book_sync_id,
       currentPage: Number(row.current_page || 0),

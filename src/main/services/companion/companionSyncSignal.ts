@@ -1,9 +1,13 @@
-let onLibraryChanged: (() => void) | null = null;
+let onLibraryChanged: ((affectsLibrarySnapshot: boolean) => void) | null = null;
 
-export function setCompanionLibraryChangedHandler(handler: () => void): void {
+export function setCompanionLibraryChangedHandler(
+  handler: (affectsLibrarySnapshot: boolean) => void,
+): void {
   onLibraryChanged = handler;
 }
 
-export function notifyCompanionLibraryChanged(): void {
-  onLibraryChanged?.();
+export function notifyCompanionLibraryChanged(
+  affectsLibrarySnapshot = true,
+): void {
+  onLibraryChanged?.(affectsLibrarySnapshot);
 }
