@@ -9,15 +9,18 @@ import {
   vi,
 } from "vitest";
 import type { Knex } from "knex";
+import { createWriteStream } from "fs";
 import fs from "fs/promises";
 import os from "os";
 import path from "path";
+import archiver from "archiver";
 import {
   cleanupMissingBooks,
   isPathAccessible,
   markBooksOfflineUnderPath,
   restoreBooksOnlineUnderPath,
   scanDirectory,
+  scanFile,
 } from "../../../src/main/handlers/directoryHandler.js";
 
 // electron 모듈 모킹
@@ -65,6 +68,20 @@ import {
 
 let db: Knex;
 
+async function writeTestArchive(filePath: string): Promise<void> {
+  await new Promise<void>((resolve, reject) => {
+    const output = createWriteStream(filePath);
+    const archive = archiver("zip");
+    output.once("close", resolve);
+    output.once("error", reject);
+    archive.once("error", reject);
+    archive.pipe(output);
+    archive.append(Buffer.from("image"), { name: "001.jpg" });
+    archive.append("제목: Android import", { name: "info.txt" });
+    void archive.finalize();
+  });
+}
+
 describe("오프라인 라이브러리 보존", () => {
   beforeAll(async () => {
     db = await createTestDb();
@@ -83,6 +100,50 @@ describe("오프라인 라이브러리 보존", () => {
     it("Book 테이블에 is_offline 컬럼이 기본값 0으로 존재해야 함", async () => {
       const book = await seedBook(db, { path: "C:\\lib\\book1" });
       expect(book.is_offline).toBe(0);
+    });
+  });
+
+  describe("Android import identity", () => {
+    let tmpDir: string;
+
+    beforeEach(async () => {
+      tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "android-import-"));
+    });
+
+    afterEach(async () => {
+      await fs.rm(tmpDir, { recursive: true, force: true });
+    });
+
+    it("uses the authenticated sync ID when the archive has no UUID", async () => {
+      const archivePath = path.join(tmpDir, "book.cbz");
+      const syncId = "123e4567-e89b-42d3-a456-426614174000";
+      await writeTestArchive(archivePath);
+
+      await scanFile(archivePath, syncId);
+
+      const stored = await db("Book").where("path", archivePath).first();
+      expect(stored.sync_id).toBe(syncId);
+    });
+
+    it("relocates an offline copy instead of creating another logical book", async () => {
+      const archivePath = path.join(tmpDir, "restored.cbz");
+      const syncId = "123e4567-e89b-42d3-a456-426614174001";
+      const existing = await seedBook(db, {
+        path: path.join(tmpDir, "missing.cbz"),
+        sync_id: syncId,
+        is_offline: true,
+      });
+      await writeTestArchive(archivePath);
+
+      await scanFile(archivePath, syncId);
+
+      const copies = await db("Book").where("sync_id", syncId);
+      expect(copies).toHaveLength(1);
+      expect(copies[0]).toMatchObject({
+        id: existing.id,
+        path: archivePath,
+        is_offline: 0,
+      });
     });
   });
 

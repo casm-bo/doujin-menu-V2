@@ -315,7 +315,7 @@ export class CompanionServer {
         success: true,
         data: {
           service: "doujin-menu-companion",
-          version: 1,
+          version: 2,
           pairingAvailable: this.getStatus().pairingAvailable,
           syncGeneration: this.syncGeneration,
         },

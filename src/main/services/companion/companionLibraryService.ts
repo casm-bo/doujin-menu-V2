@@ -107,27 +107,14 @@ export class DesktopLibraryService implements CompanionLibraryService {
         const version = Number(book.state_version || 0);
         const currentModifiedAt = Number(book.series_state_updated_at || 0);
         const requestedName = assignment.name?.trim() || null;
-        if (currentName === requestedName && currentOrder === assignment.order) {
-          items.push({
-            mutationId: assignment.mutationId ?? null,
-            bookSyncId: assignment.bookSyncId,
-            status: "already_applied",
-            version,
-            modifiedAt: currentModifiedAt,
-            name: currentName,
-            order: currentOrder,
-          });
-          continue;
-        }
         if (
-          assignment.baseVersion === undefined &&
-          assignment.modifiedAt !== undefined &&
-          assignment.modifiedAt <= currentModifiedAt
+          currentName === requestedName &&
+          currentOrder === assignment.order
         ) {
           items.push({
             mutationId: assignment.mutationId ?? null,
             bookSyncId: assignment.bookSyncId,
-            status: "conflict",
+            status: "already_applied",
             version,
             modifiedAt: currentModifiedAt,
             name: currentName,
@@ -153,10 +140,7 @@ export class DesktopLibraryService implements CompanionLibraryService {
 
         const nextVersion = version + 1;
         const now = new Date().toISOString();
-        const stateModifiedAt =
-          assignment.baseVersion === undefined && assignment.modifiedAt !== undefined
-            ? assignment.modifiedAt
-            : Date.now();
+        const stateModifiedAt = Math.max(Date.now(), currentModifiedAt + 1);
 
         if (!requestedName) {
           await trx("Book").where("sync_id", assignment.bookSyncId).update({
@@ -231,11 +215,26 @@ export class DesktopLibraryService implements CompanionLibraryService {
       path: string;
     }>
   > {
-    const existing = await this.database("Book")
-      .select("id", "path", "sync_id")
-      .where("sync_id", syncId)
-      .first();
+    const existingBooks = await this.database("Book")
+      .select("id", "path", "sync_id", "is_offline")
+      .where("sync_id", syncId);
+    const existing = (
+      await Promise.all(
+        existingBooks.map(async (book) => ({
+          book,
+          accessible: await fs
+            .access(book.path)
+            .then(() => true)
+            .catch(() => false),
+        })),
+      )
+    ).find(({ accessible }) => accessible)?.book;
     if (existing) {
+      if (existing.is_offline) {
+        await this.database("Book")
+          .where("id", existing.id)
+          .update({ is_offline: false });
+      }
       stream.resume();
       return {
         success: true,
@@ -251,7 +250,10 @@ export class DesktopLibraryService implements CompanionLibraryService {
     const downloadPath = this.getDownloadPath().trim();
     if (!downloadPath) {
       stream.resume();
-      return { success: false, error: "Desktop download path is not configured" };
+      return {
+        success: false,
+        error: "Desktop download path is not configured",
+      };
     }
     if (contentLength !== undefined && contentLength > MAX_IMPORT_BYTES) {
       stream.resume();
@@ -275,24 +277,35 @@ export class DesktopLibraryService implements CompanionLibraryService {
       await validateArchive(temporaryPath);
       await fs.rename(temporaryPath, finalPath);
       const { scanFile } = await import("../../handlers/directoryHandler.js");
-      await scanFile(finalPath);
+      await scanFile(finalPath, syncId);
       const imported = await this.database("Book")
         .select("id", "path", "sync_id")
         .where("path", finalPath)
         .first();
-      if (!imported) throw new Error("Imported archive could not be registered");
+      if (!imported)
+        throw new Error("Imported archive could not be registered");
+      if (imported.sync_id !== syncId) {
+        throw new Error("Imported archive did not keep its requested sync ID");
+      }
       return {
         success: true,
         data: {
           status: "imported",
           id: imported.id,
-          syncId: imported.sync_id || syncId,
+          syncId: imported.sync_id,
           path: imported.path,
         },
       };
     } catch (error) {
       await fs.rm(temporaryPath, { force: true }).catch(() => undefined);
-      await fs.rm(finalPath, { force: true }).catch(() => undefined);
+      const registered = await this.database("Book")
+        .where("path", finalPath)
+        .first()
+        .then(Boolean)
+        .catch(() => false);
+      if (!registered) {
+        await fs.rm(finalPath, { force: true }).catch(() => undefined);
+      }
       return {
         success: false,
         error: error instanceof Error ? error.message : String(error),
@@ -392,7 +405,7 @@ export class DesktopLibraryService implements CompanionLibraryService {
     if (!paginated) return mapped;
     return {
       books: mapped,
-      nextCursor: hasMore ? page.at(-1)?.id ?? null : null,
+      nextCursor: hasMore ? (page.at(-1)?.id ?? null) : null,
       hasMore,
     };
   }
@@ -546,7 +559,8 @@ function getImageContentType(filePath: string): string {
 }
 
 function sanitizeArchiveName(fileName: string): string {
-  const extension = path.extname(fileName).toLowerCase() === ".zip" ? ".zip" : ".cbz";
+  const extension =
+    path.extname(fileName).toLowerCase() === ".zip" ? ".zip" : ".cbz";
   const stem = path
     .basename(fileName, path.extname(fileName))
     .replace(/[<>:"/\\|?*\u0000-\u001f]/g, "_")
@@ -556,7 +570,10 @@ function sanitizeArchiveName(fileName: string): string {
   return `${stem || "android-import"}${extension}`;
 }
 
-async function availableArchivePath(directory: string, fileName: string): Promise<string> {
+async function availableArchivePath(
+  directory: string,
+  fileName: string,
+): Promise<string> {
   const extension = path.extname(fileName);
   const stem = path.basename(fileName, extension);
   for (let suffix = 0; suffix < 10_000; suffix++) {

@@ -37,10 +37,10 @@ describe("DesktopLibraryService series synchronization", () => {
     await db.destroy();
   });
 
-  it("keeps only the newest series state for each book", async () => {
+  it("uses server arrival order instead of device clocks", async () => {
     const book = await seedBook(db, { series_state_updated_at: 1_000 });
 
-    const applied = await service.saveSeriesAssignments([
+    const first = await service.saveSeriesAssignments([
       {
         bookSyncId: book.sync_id as string,
         name: " Mobile Series ",
@@ -48,21 +48,25 @@ describe("DesktopLibraryService series synchronization", () => {
         modifiedAt: 2_000,
       },
     ]);
-    const ignored = await service.saveSeriesAssignments([
+    const second = await service.saveSeriesAssignments([
       {
         bookSyncId: book.sync_id as string,
         name: "Older Series",
         order: 0,
-        modifiedAt: 1_500,
+        modifiedAt: 1,
       },
     ]);
 
-    expect(applied.data?.updated).toBe(1);
-    expect(ignored.data?.updated).toBe(0);
+    expect(first.data?.updated).toBe(1);
+    expect(second.data?.updated).toBe(1);
+    const secondModifiedAt = second.data?.results[0].modifiedAt as number;
+    expect(secondModifiedAt).toBeGreaterThan(
+      first.data?.results[0].modifiedAt as number,
+    );
     expect((await service.listBooks())[0].seriesCollection).toEqual({
-      name: "Mobile Series",
-      order: 2,
-      modifiedAt: 2_000,
+      name: "Older Series",
+      order: 0,
+      modifiedAt: secondModifiedAt,
     });
 
     const removed = await service.saveSeriesAssignments([
@@ -75,10 +79,12 @@ describe("DesktopLibraryService series synchronization", () => {
     ]);
 
     expect(removed.data?.updated).toBe(1);
-    expect((await service.listBooks())[0].seriesCollection).toEqual({
+    expect(
+      (await service.listBooks())[0].seriesCollection.modifiedAt,
+    ).toBeGreaterThan(secondModifiedAt);
+    expect((await service.listBooks())[0].seriesCollection).toMatchObject({
       name: null,
       order: 0,
-      modifiedAt: 3_000,
     });
   });
 

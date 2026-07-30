@@ -1169,7 +1169,7 @@ export async function scanDirectory(
   }
 }
 
-export async function scanFile(filePath: string) {
+export async function scanFile(filePath: string, syncIdOverride?: string) {
   try {
     const stats = await fs.stat(filePath);
     const processedBook = await processBookItem(filePath, {
@@ -1180,6 +1180,7 @@ export async function scanFile(filePath: string) {
 
     if (processedBook) {
       const { bookData, infoMetadata } = processedBook;
+      if (syncIdOverride) bookData.sync_id = cleanValue(syncIdOverride);
       let bookId: number | undefined;
       let shouldGenerateThumbnail = false;
 
@@ -1219,6 +1220,9 @@ export async function scanFile(filePath: string) {
               type: cleanValue(bookData.type),
               language_name_english: cleanValue(bookData.language_name_english),
               language_name_local: cleanValue(bookData.language_name_local),
+              ...(syncIdOverride
+                ? { sync_id: cleanValue(syncIdOverride) }
+                : {}),
               file_mtime: bookData.file_mtime ?? null,
               file_size: bookData.file_size ?? null,
               is_offline: false,
