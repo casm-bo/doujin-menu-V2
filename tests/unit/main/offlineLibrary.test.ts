@@ -324,9 +324,9 @@ describe("오프라인 라이브러리 보존", () => {
 
         expect(removed).toBe(1);
         expect(await db("Book").where("id", book.id).first()).toBeUndefined();
-        expect(
-          await db("BookHistory").where("book_id", book.id),
-        ).toHaveLength(0);
+        expect(await db("BookHistory").where("book_id", book.id)).toHaveLength(
+          0,
+        );
         await expect(fs.stat(bookDir)).resolves.toBeDefined();
       } finally {
         await fs.rm(tmpDir, { recursive: true, force: true });

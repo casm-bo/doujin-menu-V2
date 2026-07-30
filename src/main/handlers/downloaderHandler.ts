@@ -477,10 +477,6 @@ export async function registerDownloaderHandlers() {
   ipcMain.handle("get-gallery-image-urls", (_event, galleryId) =>
     handleGetGalleryImageUrls(galleryId),
   );
-  // 작품 다운로드 핸들러
-  ipcMain.handle("download-gallery", (event, params) =>
-    handleDownloadGallery(event, params),
-  );
   // 임시 썸네일 다운로드 핸들러
   ipcMain.handle("download-temp-thumbnail", (_event, params) =>
     handleDownloadTempThumbnail(params),

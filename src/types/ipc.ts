@@ -517,10 +517,6 @@ export interface IpcChannels {
   };
 
   // Directory handlers
-  "add-books-from-directory": {
-    request: void;
-    response: { success: boolean; error?: string };
-  };
   "select-folder": {
     request: void;
     response: { success: boolean; path?: string };
@@ -543,10 +539,6 @@ export interface IpcChannels {
   };
 
   // Thumbnail handlers
-  "generate-thumbnail": {
-    request: number; // bookId
-    response: { success: boolean; error?: string };
-  };
   "regenerate-all-thumbnails": {
     request: void;
     response: { success: boolean; error?: string };
@@ -580,10 +572,6 @@ export interface IpcChannels {
       data?: string[];
       error?: string;
     };
-  };
-  "download-gallery": {
-    request: { galleryId: number; downloadPath: string };
-    response: { success: boolean; error?: string; paused?: boolean };
   };
   "download-temp-thumbnail": {
     request: { url: string; referer: string; galleryId: number };
@@ -707,24 +695,6 @@ export interface IpcChannels {
       error?: string;
     };
   };
-  "run-series-detection-for-book": {
-    request: {
-      bookId: number;
-      options?: {
-        minConfidence?: number;
-        minBooks?: number;
-      };
-    };
-    response: {
-      success: boolean;
-      data?: {
-        seriesName: string;
-        confidence: number;
-        books: Book[];
-      } | null;
-      error?: string;
-    };
-  };
   "auto-detect-series-for-book": {
     request: number;
     response: {
@@ -762,28 +732,6 @@ export interface IpcChannels {
       error?: string;
     };
   };
-  "merge-series-collections": {
-    request: {
-      sourceId: number;
-      targetId: number;
-    };
-    response: {
-      success: boolean;
-      error?: string;
-    };
-  };
-  "split-series-collection": {
-    request: {
-      sourceSeriesId: number;
-      bookIds: number[];
-      newSeriesName: string;
-    };
-    response: {
-      success: boolean;
-      data?: { newSeriesId: number };
-      error?: string;
-    };
-  };
   "get-next-book-in-series": {
     request: number; // currentBookId
     response: {
@@ -805,25 +753,6 @@ export interface IpcChannels {
     response: {
       success: boolean;
       data?: Book[];
-      error?: string;
-    };
-  };
-  "get-series-navigation-book": {
-    request: {
-      currentBookId: number;
-      direction: "next" | "previous";
-    };
-    response: {
-      success: boolean;
-      data?: { id: number; title: string } | null;
-      error?: string;
-    };
-  };
-  "cleanup-empty-series": {
-    request: void;
-    response: {
-      success: boolean;
-      data?: { cleaned_count: number };
       error?: string;
     };
   };
@@ -902,10 +831,6 @@ export interface IpcChannels {
   "install-update": {
     request: void;
     response: { success: boolean; error?: string };
-  };
-  "open-github-releases": {
-    request: string; // url
-    response: void;
   };
 }
 

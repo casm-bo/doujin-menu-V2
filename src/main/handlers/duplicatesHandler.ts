@@ -145,7 +145,11 @@ export const handleGetDuplicateGroups = async () => {
         ) {
           continue;
         }
-        groups.push({ key, matchType: "title", books: remaining.map(toBookInfo) });
+        groups.push({
+          key,
+          matchType: "title",
+          books: remaining.map(toBookInfo),
+        });
       }
     }
 

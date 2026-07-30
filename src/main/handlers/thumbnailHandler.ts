@@ -252,9 +252,6 @@ export const handleRegenerateAllThumbnails = async () => {
 export function registerThumbnailHandlers() {
   initializeWorkerPool(); // 워커 풀 초기화
 
-  ipcMain.handle("generate-thumbnail", (_event, bookId) =>
-    handleGenerateThumbnail(bookId),
-  );
   ipcMain.handle("regenerate-all-thumbnails", (_event) =>
     handleRegenerateAllThumbnails(),
   );

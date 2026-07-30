@@ -563,7 +563,11 @@ function sanitizeArchiveName(fileName: string): string {
     path.extname(fileName).toLowerCase() === ".zip" ? ".zip" : ".cbz";
   const stem = path
     .basename(fileName, path.extname(fileName))
-    .replace(/[<>:"/\\|?*\u0000-\u001f]/g, "_")
+    .split("")
+    .map((char) =>
+      '<>:"/\\|?*'.includes(char) || char.charCodeAt(0) < 32 ? "_" : char,
+    )
+    .join("")
     .replace(/[. ]+$/g, "")
     .trim()
     .slice(0, 160);
@@ -624,7 +628,7 @@ class ByteLimitTransform extends Transform {
 
   override _transform(
     chunk: Buffer,
-    encoding: BufferEncoding,
+    _encoding: BufferEncoding,
     callback: TransformCallback,
   ): void {
     this.received += chunk.length;

@@ -162,9 +162,7 @@ const confirmPermanent = () => performDelete(true);
           <!-- 그룹 헤더 (전체 선택 경고를 같은 줄에 표시해 본문 레이아웃 시프팅 방지) -->
           <div class="mb-3 flex items-center gap-2">
             <Badge
-              :variant="
-                group.matchType === 'title' ? 'secondary' : 'default'
-              "
+              :variant="group.matchType === 'title' ? 'secondary' : 'default'"
             >
               {{ getMatchTypeLabel(group.matchType) }}
             </Badge>

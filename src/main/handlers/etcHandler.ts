@@ -211,20 +211,6 @@ export function registerEtcHandlers(win: BrowserWindow) {
     shell.openPath(logPath);
   });
 
-  // 탐색기에서 폴더 열기
-  ipcMain.handle(
-    "open-folder-in-explorer",
-    async (_event, folderPath: string) => {
-      try {
-        await shell.openPath(folderPath);
-        return { success: true };
-      } catch (error) {
-        console.error(`Failed to open folder ${folderPath}:`, error);
-        return { success: false, error: (error as Error).message };
-      }
-    },
-  );
-
   ipcMain.handle("get-temp-files-size", async () => {
     try {
       const tempPath = [

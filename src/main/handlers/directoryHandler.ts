@@ -290,27 +290,6 @@ export async function extractInfoTxtAndImageCountFromZip(
   });
 }
 
-export const handleAddBooksFromDirectory = async () => {
-  const { filePaths } = await dialog.showOpenDialog({
-    properties: ["openDirectory"],
-  });
-
-  if (!filePaths || filePaths.length === 0) {
-    return;
-  }
-
-  const directoryPath = filePaths[0];
-  const { added, updated, deleted } = await scanDirectory(directoryPath);
-  const books = await db("Book")
-    .select("id")
-    .whereLike("path", `${directoryPath}%`)
-    .and.where("cover_path", null);
-  await Promise.all(books.map((book) => handleGenerateThumbnail(book.id)));
-  console.log(
-    `[Main] ${directoryPath}에 대한 초기 스캔 완료: 추가 ${added}, 업데이트 ${updated}, 삭제 ${deleted}`,
-  );
-};
-
 export const handleSelectFolder = async () => {
   const { filePaths } = await dialog.showOpenDialog({
     properties: ["openDirectory"],
@@ -529,8 +508,7 @@ async function resolveExistingBookForScan(
     return staleCopies.reduce<ExistingScanBook | undefined>(
       (best, candidate) =>
         !best ||
-        Number(candidate.state_version || 0) >
-          Number(best.state_version || 0)
+        Number(candidate.state_version || 0) > Number(best.state_version || 0)
           ? candidate
           : best,
       undefined,
@@ -540,8 +518,7 @@ async function resolveExistingBookForScan(
 
   const keep = staleCopies.reduce(
     (best, candidate) =>
-      Number(candidate.state_version || 0) >
-      Number(best.state_version || 0)
+      Number(candidate.state_version || 0) > Number(best.state_version || 0)
         ? candidate
         : best,
     existingByPath,
@@ -1550,9 +1527,6 @@ export const handleRescanBookMetadata = async (bookId: number) => {
 };
 
 export function registerDirectoryHandlers() {
-  ipcMain.handle("add-books-from-directory", (_event) =>
-    handleAddBooksFromDirectory(),
-  );
   ipcMain.handle("select-folder", (_event) => handleSelectFolder());
   ipcMain.handle("rescan-library-folder", (_event, folderPath) =>
     handleRescanLibraryFolder(folderPath),

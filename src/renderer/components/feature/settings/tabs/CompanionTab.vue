@@ -112,8 +112,10 @@ async function runSync() {
   };
   const result = await ipcRenderer.invoke("run-companion-sync");
   await refresh();
-  if (result.success) toast.success("연결된 Android 기기에 동기화를 요청했습니다.");
-  else toast.error("동기화 요청에 실패했습니다.", { description: result.error });
+  if (result.success)
+    toast.success("연결된 Android 기기에 동기화를 요청했습니다.");
+  else
+    toast.error("동기화 요청에 실패했습니다.", { description: result.error });
 }
 
 function connectionLabel(device: CompanionDeviceInfo) {
@@ -195,7 +197,11 @@ onUnmounted(() => {
             @click="runSync"
           >
             <Icon
-              :icon="syncStatus?.state === 'syncing' ? 'solar:refresh-circle-bold' : 'solar:refresh-bold'"
+              :icon="
+                syncStatus?.state === 'syncing'
+                  ? 'solar:refresh-circle-bold'
+                  : 'solar:refresh-bold'
+              "
               class="size-5"
               :class="{ 'animate-spin': syncStatus?.state === 'syncing' }"
             />
@@ -204,12 +210,22 @@ onUnmounted(() => {
           <div class="text-sm">
             <p>
               상태:
-              <span :class="syncStatus?.state === 'error' ? 'text-destructive' : 'text-muted-foreground'">
+              <span
+                :class="
+                  syncStatus?.state === 'error'
+                    ? 'text-destructive'
+                    : 'text-muted-foreground'
+                "
+              >
                 {{ syncStatus?.state || "idle" }}
               </span>
             </p>
-            <p v-if="syncStatus?.lastSyncedAt" class="text-muted-foreground text-xs">
-              마지막 동기화 {{ formatDate(syncStatus.lastSyncedAt) }} · {{ syncStatus.bookCount }}권
+            <p
+              v-if="syncStatus?.lastSyncedAt"
+              class="text-muted-foreground text-xs"
+            >
+              마지막 동기화 {{ formatDate(syncStatus.lastSyncedAt) }} ·
+              {{ syncStatus.bookCount }}권
             </p>
             <p v-if="syncStatus?.error" class="text-destructive text-xs">
               {{ syncStatus.error }}
