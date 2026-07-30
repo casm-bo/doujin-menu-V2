@@ -20,13 +20,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { useQueryAndParams } from "@/composable/useQueryAndParams";
 import { useScrollRestoration } from "@/composable/useScrollRestoration";
@@ -75,11 +68,8 @@ const route = useRoute();
 // 무한 스크롤 IntersectionObserver용 로더 ref
 const loader = ref<HTMLElement | null>(null);
 
-// 필터 및 정렬 상태 (URL 동기화)
-const filterType = ref<"all" | "auto" | "manual">("all");
-const sortBy = ref<"name" | "book_count" | "confidence_score" | "created_at">(
-  "name",
-);
+// 정렬 상태 (URL 동기화)
+const sortBy = ref<"name" | "book_count" | "created_at">("name");
 const sortOrder = ref<"asc" | "desc">("asc");
 
 // 뷰 모드 (URL에 저장하지 않고 config에만 저장)
@@ -98,8 +88,8 @@ const handleViewModeChange = (value: AcceptableValue | AcceptableValue[]) => {
 
 // URL 쿼리 파라미터와 상태 동기화
 const { schWord: searchQuery } = useQueryAndParams({
-  queries: { filterType, sortBy, sortOrder },
-  defaultOptions: { filterType: "all", sortBy: "name", sortOrder: "asc" },
+  queries: { sortBy, sortOrder },
+  defaultOptions: { sortBy: "name", sortOrder: "asc" },
 });
 
 // 검색어 debounce 적용 (API 호출 최적화)
@@ -125,7 +115,10 @@ const loadSettings = () => {
     const query = route.query;
 
     // 각 파라미터를 개별적으로 확인하여 URL 쿼리에 없는 것만 설정에서 불러옴
-    if (!query.sortBy) {
+    if (
+      !query.sortBy &&
+      ["name", "book_count", "created_at"].includes(settings.sortBy)
+    ) {
       sortBy.value = settings.sortBy as typeof sortBy.value;
     }
     if (!query.sortOrder) {
@@ -193,7 +186,7 @@ const showDetailDialog = ref(false);
 const showCreateDialog = ref(false);
 const showDeleteDialog = ref(false);
 const selectedSeries = ref<SeriesCollectionWithBooks | null>(null);
-const seriesToDelete = ref<number | null>(null);
+const seriesToDelete = ref<number[]>([]);
 
 // 무한 쿼리 키
 const queryKey = computed(
@@ -202,7 +195,6 @@ const queryKey = computed(
       "seriesCollections",
       {
         searchQuery: debouncedSearchQuery.value,
-        filterType: filterType.value,
         sortBy: sortBy.value,
         sortOrder: sortOrder.value,
       },
@@ -224,12 +216,7 @@ const {
       pageParam,
       pageSize: 50,
       searchQuery: debouncedSearchQuery.value,
-      filterType: filterType.value as "all" | "auto" | "manual",
-      sortBy: sortBy.value as
-        | "name"
-        | "book_count"
-        | "confidence_score"
-        | "created_at",
+      sortBy: sortBy.value,
       sortOrder: sortOrder.value,
     });
   },
@@ -249,6 +236,47 @@ const totalCount = computed(() => {
   if (!pages || pages.length === 0) return 0;
   return pages[pages.length - 1]?.pagination?.totalCount || 0;
 });
+const selectedSeriesIds = ref<Set<number>>(new Set());
+const selectedCount = computed(() => selectedSeriesIds.value.size);
+const isSelectingAll = ref(false);
+const allSelected = computed(
+  () => totalCount.value > 0 && selectedCount.value === totalCount.value,
+);
+
+const toggleSeriesSelection = (seriesId: number) => {
+  const next = new Set(selectedSeriesIds.value);
+  if (!next.delete(seriesId)) next.add(seriesId);
+  selectedSeriesIds.value = next;
+};
+
+const toggleAll = async () => {
+  if (allSelected.value) {
+    selectedSeriesIds.value = new Set();
+    return;
+  }
+  isSelectingAll.value = true;
+  try {
+    const result = await getSeriesCollections({
+      page: 1,
+      limit: Math.max(totalCount.value, 1),
+      searchQuery: debouncedSearchQuery.value,
+      sortBy: sortBy.value,
+      sortOrder: sortOrder.value,
+    });
+    selectedSeriesIds.value = new Set(
+      result.collections.map((series) => series.id),
+    );
+  } catch (error) {
+    toast.error(`전체 선택 실패: ${(error as Error).message}`);
+  } finally {
+    isSelectingAll.value = false;
+  }
+};
+
+watch([debouncedSearchQuery, sortBy, sortOrder], () => {
+  selectedSeriesIds.value = new Set();
+});
+
 const handleSeriesCollectionsUpdated = () => {
   void queryClient.invalidateQueries({ queryKey: ["seriesCollections"] });
 };
@@ -308,9 +336,26 @@ const detectionMutation = useMutation({
 
 // 시리즈 삭제 뮤테이션
 const deleteMutation = useMutation({
-  mutationFn: deleteSeriesCollection,
-  onSuccess: () => {
-    toast.success("시리즈가 삭제되었습니다");
+  mutationFn: async (seriesIds: number[]) => {
+    const failedIds: number[] = [];
+    for (const seriesId of seriesIds) {
+      try {
+        await deleteSeriesCollection(seriesId);
+      } catch {
+        failedIds.push(seriesId);
+      }
+    }
+    return { deletedCount: seriesIds.length - failedIds.length, failedIds };
+  },
+  onSuccess: ({ deletedCount, failedIds }) => {
+    if (failedIds.length > 0) {
+      toast.warning(
+        `${deletedCount}개 삭제 완료, ${failedIds.length}개 삭제 실패`,
+      );
+    } else {
+      toast.success(`${deletedCount}개 시리즈가 삭제되었습니다`);
+    }
+    selectedSeriesIds.value = new Set(failedIds);
     queryClient.invalidateQueries({ queryKey: ["seriesCollections"] });
   },
   onError: (error) => {
@@ -337,26 +382,28 @@ const handleSeriesClick = (series: SeriesCollection) => {
 
 // 시리즈 삭제 요청
 const handleDeleteSeries = (seriesId: number) => {
-  seriesToDelete.value = seriesId;
+  seriesToDelete.value = [seriesId];
+  showDeleteDialog.value = true;
+};
+
+const handleDeleteSelected = () => {
+  if (selectedSeriesIds.value.size === 0) return;
+  seriesToDelete.value = [...selectedSeriesIds.value];
   showDeleteDialog.value = true;
 };
 
 // 시리즈 삭제 확정
 const confirmDelete = () => {
-  if (seriesToDelete.value !== null) {
-    deleteMutation.mutate(seriesToDelete.value);
-    seriesToDelete.value = null;
+  if (seriesToDelete.value.length > 0) {
+    deleteMutation.mutate([...seriesToDelete.value]);
+    seriesToDelete.value = [];
   }
   showDeleteDialog.value = false;
 };
 
 // 정렬 기준 설정
 const setSortBy = (column: string) => {
-  sortBy.value = column as
-    | "name"
-    | "book_count"
-    | "confidence_score"
-    | "created_at";
+  sortBy.value = column as "name" | "book_count" | "created_at";
 };
 
 // 정렬 순서 토글
@@ -390,28 +437,15 @@ useScrollRestoration(".flex-grow.overflow-y-auto");
                 제목 패턴, 작가, 태그 등을 분석하여 시리즈를 자동으로
                 감지합니다.
               </li>
-              <li>
-                자동 감지 실행 시 기존 자동 생성 시리즈는 삭제되고 다시
-                인식됩니다.
-              </li>
-              <li>수동으로 편집한 시리즈는 자동 감지에서 보호됩니다.</li>
-              <li>신뢰도 점수를 참고하여 감지 결과를 확인하세요.</li>
+              <li>기존 시리즈는 유지하고 시리즈가 없는 책만 분석합니다.</li>
             </ul>
             <h3 class="text-foreground text-base font-semibold">시리즈 관리</h3>
             <ul class="list-inside list-disc">
               <li>시리즈 카드를 클릭하여 상세 정보를 확인할 수 있습니다.</li>
               <li>상세 화면에서 시리즈명, 설명 등을 수정할 수 있습니다.</li>
               <li>시리즈에 속한 책들의 순서를 조정할 수 있습니다.</li>
-              <li>필요 없는 시리즈는 삭제할 수 있습니다.</li>
-            </ul>
-            <h3 class="text-foreground text-base font-semibold">
-              필터 및 정렬
-            </h3>
-            <ul class="list-inside list-disc">
-              <li>자동 생성/수동 생성 시리즈를 필터링할 수 있습니다.</li>
-              <li>
-                이름, 생성일, 도서 수, 신뢰도 기준으로 정렬할 수 있습니다.
-              </li>
+              <li>여러 시리즈를 선택하여 한 번에 삭제할 수 있습니다.</li>
+              <li>이름, 생성일, 도서 수 기준으로 정렬할 수 있습니다.</li>
             </ul>
           </div>
         </HelpDialog>
@@ -435,16 +469,32 @@ useScrollRestoration(".flex-grow.overflow-y-auto");
     <div class="flex min-h-0 flex-1 flex-col gap-4">
       <!-- 검색 및 필터 영역 -->
       <div class="flex items-center gap-2">
-        <Select v-model="filterType">
-          <SelectTrigger class="w-[180px]">
-            <SelectValue placeholder="필터 선택" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">전체</SelectItem>
-            <SelectItem value="auto">자동 생성만</SelectItem>
-            <SelectItem value="manual">수동 생성만</SelectItem>
-          </SelectContent>
-        </Select>
+        <Button
+          variant="outline"
+          :disabled="totalCount === 0 || isSelectingAll"
+          @click="toggleAll"
+        >
+          <Icon
+            :icon="
+              allSelected
+                ? 'solar:close-square-bold-duotone'
+                : 'solar:check-square-bold-duotone'
+            "
+            class="mr-2 h-4 w-4"
+          />
+          {{ allSelected ? "선택 해제" : "전체 선택" }}
+        </Button>
+        <Button
+          variant="destructive"
+          :disabled="selectedCount === 0 || deleteMutation.isPending.value"
+          @click="handleDeleteSelected"
+        >
+          <Icon
+            icon="solar:trash-bin-trash-bold-duotone"
+            class="mr-2 h-4 w-4"
+          />
+          선택 삭제 ({{ selectedCount }})
+        </Button>
         <SmartSearchInput
           v-model="searchQuery"
           placeholder="시리즈명, 작가, 태그, 타입으로 검색"
@@ -481,14 +531,6 @@ useScrollRestoration(".flex-grow.overflow-y-auto");
                 도서 수순
                 <Icon
                   v-if="sortBy === 'book_count'"
-                  icon="solar:check-circle-bold-duotone"
-                  class="ml-auto h-4 w-4"
-                />
-              </DropdownMenuItem>
-              <DropdownMenuItem @click="setSortBy('confidence_score')">
-                신뢰도순
-                <Icon
-                  v-if="sortBy === 'confidence_score'"
                   icon="solar:check-circle-bold-duotone"
                   class="ml-auto h-4 w-4"
                 />
@@ -551,8 +593,10 @@ useScrollRestoration(".flex-grow.overflow-y-auto");
           v-for="series in collections"
           :key="series.id"
           :series="series"
+          :selected="selectedSeriesIds.has(series.id)"
           @click="handleSeriesClick(series)"
           @delete="handleDeleteSeries(series.id)"
+          @toggle-select="toggleSeriesSelection(series.id)"
         />
         <div
           v-if="hasNextPage"
@@ -575,8 +619,10 @@ useScrollRestoration(".flex-grow.overflow-y-auto");
           v-for="series in collections"
           :key="series.id"
           :series="series"
+          :selected="selectedSeriesIds.has(series.id)"
           @click="handleSeriesClick(series)"
           @delete="handleDeleteSeries(series.id)"
+          @toggle-select="toggleSeriesSelection(series.id)"
         />
         <div v-if="hasNextPage" ref="loader" class="p-4 text-center">
           <Button :disabled="isFetchingNextPage" @click="fetchNextPage">
@@ -648,8 +694,9 @@ useScrollRestoration(".flex-grow.overflow-y-auto");
           <AlertDialogHeader>
             <AlertDialogTitle>시리즈 삭제</AlertDialogTitle>
             <AlertDialogDescription>
-              정말 이 시리즈를 삭제하시겠습니까? 시리즈에 속한 책들은 시리즈에서
-              제거되지만 책 자체는 삭제되지 않습니다.
+              선택한 {{ seriesToDelete.length }}개 시리즈를 삭제하시겠습니까?
+              시리즈에 속한 책들은 시리즈에서 제거되지만 책 자체는 삭제되지
+              않습니다.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

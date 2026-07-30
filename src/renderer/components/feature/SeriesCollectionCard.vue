@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { getThumbnailUrl } from "@/api";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -8,46 +9,30 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Icon } from "@iconify/vue";
-import { computed } from "vue";
 
 interface Props {
+  selected?: boolean;
   series: {
     id: number;
     name: string;
     description: string | null;
     cover_image: string | null;
-    is_auto_generated: boolean;
-    is_manually_edited: boolean;
-    confidence_score: number;
     book_count?: number;
   };
 }
 
-const props = defineProps<Props>();
+defineProps<Props>();
 const emit = defineEmits<{
   click: [];
   delete: [];
+  "toggle-select": [];
 }>();
-
-// 신뢰도 표시
-const confidenceLevel = computed(() => {
-  const score = props.series.confidence_score;
-  if (score >= 0.8) return { label: "높음", class: "bg-green-500" };
-  if (score >= 0.5) return { label: "중간", class: "bg-yellow-500" };
-  return { label: "낮음", class: "bg-red-500" };
-});
-
-// 생성 방식 표시
-const creationType = computed(() => {
-  if (props.series.is_manually_edited) return "수동";
-  if (props.series.is_auto_generated) return "자동";
-  return "혼합";
-});
 </script>
 
 <template>
   <div
     class="group bg-card text-card-foreground relative cursor-pointer rounded-lg border shadow-sm transition-all hover:shadow-md"
+    :class="{ 'ring-primary ring-2': selected }"
     @click="emit('click')"
   >
     <!-- 커버 이미지 영역 -->
@@ -78,7 +63,7 @@ const creationType = computed(() => {
 
       <!-- 옵션 메뉴 -->
       <div
-        class="absolute top-2 left-2 opacity-0 transition-opacity group-hover:opacity-100"
+        class="absolute top-2 left-11 opacity-0 transition-opacity group-hover:opacity-100"
       >
         <DropdownMenu>
           <DropdownMenuTrigger as-child @click.stop>
@@ -108,6 +93,13 @@ const creationType = computed(() => {
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
+
+      <div
+        class="absolute top-2 left-2 flex size-8 items-center justify-center rounded bg-black/60"
+        @click.stop="emit('toggle-select')"
+      >
+        <Checkbox :model-value="selected" :aria-label="`${series.name} 선택`" />
+      </div>
     </div>
 
     <!-- 정보 영역 -->
@@ -125,25 +117,6 @@ const creationType = computed(() => {
       >
         {{ series.description }}
       </p>
-
-      <!-- 메타 정보 -->
-      <div class="flex items-center gap-2 pt-2">
-        <!-- 생성 방식 -->
-        <div
-          class="bg-secondary text-secondary-foreground rounded px-2 py-0.5 text-xs"
-        >
-          {{ creationType }}
-        </div>
-
-        <!-- 신뢰도 (자동 생성인 경우만) -->
-        <div
-          v-if="series.is_auto_generated"
-          class="rounded px-2 py-0.5 text-xs text-white"
-          :class="confidenceLevel.class"
-        >
-          {{ confidenceLevel.label }}
-        </div>
-      </div>
     </div>
   </div>
 </template>

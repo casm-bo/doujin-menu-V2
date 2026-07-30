@@ -237,15 +237,6 @@ const handleBookClick = (bookId: number) => {
   emit("update:open", false);
 };
 
-// 신뢰도 표시
-const confidenceLevel = computed(() => {
-  if (!props.series) return { label: "", class: "" };
-  const score = props.series.confidence_score;
-  if (score >= 0.8) return { label: "높음", class: "bg-green-500" };
-  if (score >= 0.5) return { label: "중간", class: "bg-yellow-500" };
-  return { label: "낮음", class: "bg-red-500" };
-});
-
 // 썸네일 URL 생성
 const getCoverUrl = (book: Book) => {
   return getThumbnailUrl(book.cover_path);
@@ -340,23 +331,7 @@ const excludeBookIds = computed(() => books.value.map((book) => book.id));
   <Dialog :open="props.open" @update:open="emit('update:open', $event)">
     <DialogScrollContent class="max-h-[85vh] max-w-[700px]">
       <DialogHeader>
-        <DialogTitle class="flex items-center justify-between">
-          <span>시리즈 상세</span>
-          <div class="flex items-center gap-2">
-            <!-- 생성 방식 -->
-            <span class="bg-secondary rounded px-2 py-1 text-xs">
-              {{ series?.is_manually_edited ? "수동" : "자동" }}
-            </span>
-            <!-- 신뢰도 -->
-            <span
-              v-if="series?.is_auto_generated"
-              class="rounded px-2 py-1 text-xs text-white"
-              :class="confidenceLevel.class"
-            >
-              {{ confidenceLevel.label }}
-            </span>
-          </div>
-        </DialogTitle>
+        <DialogTitle>시리즈 상세</DialogTitle>
       </DialogHeader>
 
       <ScrollArea class="max-h-[calc(85vh-120px)] min-w-0">
