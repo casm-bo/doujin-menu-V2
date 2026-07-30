@@ -84,10 +84,7 @@ const handleCardClick = (event: MouseEvent) => {
 const thumbnailKey = ref(0);
 
 const coverUrl = computed(() => {
-  if (!props.book.cover_path) return "";
-  return thumbnailKey.value
-    ? `file://${props.book.cover_path}?v=${thumbnailKey.value}`
-    : `file://${props.book.cover_path}`;
+  return api.getThumbnailUrl(props.book.cover_path, thumbnailKey.value);
 });
 
 const validArtists = computed(() => {

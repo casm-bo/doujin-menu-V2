@@ -53,6 +53,7 @@ import { registerWindowHandlers } from "./handlers/windowHandler.js";
 import { registerCompanionHandlers } from "./handlers/companionHandler.js";
 import { registerUpdaterHandlers } from "./updater.js";
 import { naturalSort } from "./utils/index.js";
+import { parseMediaRequestUrl } from "./mediaProtocol.js";
 
 log.initialize();
 export const console = log;
@@ -60,7 +61,12 @@ export const console = log;
 protocol.registerSchemesAsPrivileged([
   {
     scheme: "doujin-menu",
-    privileges: { secure: true, standard: true, supportFetchAPI: true },
+    privileges: {
+      secure: true,
+      standard: true,
+      supportFetchAPI: true,
+      corsEnabled: true,
+    },
   },
 ]);
 
@@ -352,15 +358,27 @@ app.whenReady().then(async () => {
 
   // 커스텀 프로토콜 등록
   protocol.handle("doujin-menu", async (request) => {
-    const url = new URL(request.url);
-    const bookId = parseInt(url.hostname); // URL의 호스트 부분을 bookId로 사용
-    const pageIndex = parseInt(url.pathname.substring(1)); // URL의 경로 부분을 페이지 인덱스로 사용 (선행 / 제거)
-
-    if (isNaN(bookId) || isNaN(pageIndex)) {
+    const mediaRequest = parseMediaRequestUrl(request.url);
+    if (!mediaRequest) {
       return new Response("Invalid URL", { status: 400 });
     }
 
     try {
+      if (mediaRequest.kind === "thumbnail") {
+        const thumbnailPath = path.join(
+          app.getPath("userData"),
+          "thumbnails",
+          mediaRequest.fileName,
+        );
+        const imageBuffer = await fs.readFile(thumbnailPath);
+        const mimeType = `image/${path.extname(thumbnailPath).substring(1)}`;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        return new Response(imageBuffer as any, {
+          headers: { "Content-Type": mimeType },
+        });
+      }
+
+      const { bookId, pageIndex } = mediaRequest;
       const book = await db("Book").where("id", bookId).first();
 
       if (!book || !book.path) {

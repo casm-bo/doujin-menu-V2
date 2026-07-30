@@ -136,6 +136,7 @@ if (legacyPath) {
 }
 
 const isDevelopment = process.env.NODE_ENV === "development";
+const DEV_RESTART_EXIT_CODE = 75;
 const getDbPath = () => {
   if (isDevelopment) {
     return path.resolve(process.cwd(), "dev.sqlite3");
@@ -144,7 +145,11 @@ const getDbPath = () => {
   }
 };
 
-const restartApp = () => {
+export const restartApp = (development = isDevelopment) => {
+  if (development) {
+    app.exit(DEV_RESTART_EXIT_CODE);
+    return;
+  }
   app.relaunch();
   setTimeout(() => app.quit(), 100);
 };

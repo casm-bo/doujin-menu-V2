@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { getThumbnailUrl } from "@/api";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -44,7 +45,7 @@ const creationType = computed(() => {
     <div class="bg-muted h-20 w-14 flex-shrink-0 overflow-hidden rounded">
       <img
         v-if="series.cover_image"
-        :src="`file://${series.cover_image}`"
+        :src="getThumbnailUrl(series.cover_image)"
         :alt="series.name"
         class="h-full w-full object-cover"
         @error="(e) => ((e.target as HTMLImageElement).style.display = 'none')"

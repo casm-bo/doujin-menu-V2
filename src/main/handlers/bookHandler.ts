@@ -529,7 +529,7 @@ export const handleGetBookPagePaths = async (bookId: number) => {
         .filter((file) => file.match(/\.(jpg|jpeg|png|webp|gif|bmp)$/i))
         .sort(naturalSort);
       for (let i = 0; i < imageFiles.length; i++) {
-        pagePaths.push(`doujin-menu://${bookId}/${i}`);
+        pagePaths.push(`doujin-menu://page/${bookId}/${i}`);
       }
       return {
         success: true,
@@ -572,7 +572,7 @@ export const handleGetBookPagePaths = async (bookId: number) => {
             zipfile.on("end", () => {
               imageEntries.sort((a, b) => naturalSort(a.fileName, b.fileName)); // 파일명으로 정렬
               for (let i = 0; i < imageEntries.length; i++) {
-                pagePaths.push(`doujin-menu://${bookId}/${i}`);
+                pagePaths.push(`doujin-menu://page/${bookId}/${i}`);
               }
               zipfile.close();
               resolve({

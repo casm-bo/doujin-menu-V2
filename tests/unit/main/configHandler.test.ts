@@ -25,6 +25,7 @@ vi.mock("electron-store", () => ({
 vi.mock("electron", () => ({
   app: {
     getPath: vi.fn(() => "/mock/user/data"),
+    exit: vi.fn(),
     relaunch: vi.fn(),
     quit: vi.fn(),
   },
@@ -83,6 +84,7 @@ const {
   handleClearLockPassword,
   handleRestoreDatabase,
   handleResetAllData,
+  restartApp,
 } = await import("../../../src/main/handlers/configHandler.js");
 const { app, dialog } = await import("electron");
 const { existsSync } = await import("fs");
@@ -106,6 +108,14 @@ describe("configHandler", () => {
     mockDelete.mockImplementation(() => {
       // 아무것도 안함 (성공)
     });
+  });
+
+  it("개발 모드 재시작은 개발 서버가 처리할 종료 코드를 사용함", () => {
+    restartApp(true);
+
+    expect(app.exit).toHaveBeenCalledWith(75);
+    expect(app.relaunch).not.toHaveBeenCalled();
+    expect(app.quit).not.toHaveBeenCalled();
   });
 
   describe("handleGetConfig", () => {

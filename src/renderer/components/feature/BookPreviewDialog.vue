@@ -110,7 +110,7 @@ watch(
         const pageCount = props.book.page_count || 0;
         const urls: string[] = [];
         for (let i = 0; i < pageCount; i++) {
-          urls.push(`doujin-menu://${props.book.id}/${i}`);
+          urls.push(`doujin-menu://page/${props.book.id}/${i}`);
         }
         previewImageUrls.value = urls;
         nextTick(() => {

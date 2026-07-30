@@ -1,5 +1,10 @@
 <script setup lang="ts">
-import { clearBookHistory, deleteBookHistory, getBookHistory } from "@/api";
+import {
+  clearBookHistory,
+  deleteBookHistory,
+  getBookHistory,
+  getThumbnailUrl,
+} from "@/api";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -104,9 +109,7 @@ const goToBook = (bookId: number) => {
 };
 
 const getCoverUrl = (coverPath: string) => {
-  return coverPath
-    ? `file://${coverPath}`
-    : "https://via.placeholder.com/256x384";
+  return getThumbnailUrl(coverPath) || "https://via.placeholder.com/256x384";
 };
 
 const handleDelete = async (historyId: number) => {

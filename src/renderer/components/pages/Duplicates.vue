@@ -1,5 +1,9 @@
 <script setup lang="ts">
-import { deleteDuplicateBooks, getDuplicateGroups } from "@/api";
+import {
+  deleteDuplicateBooks,
+  getDuplicateGroups,
+  getThumbnailUrl,
+} from "@/api";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -43,9 +47,7 @@ const isPermanentDialogOpen = ref(false);
 
 // 커버 이미지 URL (없으면 placeholder)
 const getCoverUrl = (coverPath: string | null) => {
-  return coverPath
-    ? `file://${coverPath}`
-    : "https://via.placeholder.com/256x384";
+  return getThumbnailUrl(coverPath) || "https://via.placeholder.com/256x384";
 };
 
 // 매치 타입 라벨

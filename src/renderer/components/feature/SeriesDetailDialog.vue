@@ -29,6 +29,7 @@ import type { SeriesCollectionWithBooks } from "../../../main/db/types";
 import type { Book } from "../../../types/ipc";
 import {
   getSeriesCollectionById,
+  getThumbnailUrl,
   removeBookFromSeries,
   reorderBooksInSeries,
   updateSeriesCollection,
@@ -247,8 +248,7 @@ const confidenceLevel = computed(() => {
 
 // 썸네일 URL 생성
 const getCoverUrl = (book: Book) => {
-  if (!book.cover_path) return "";
-  return `file://${book.cover_path}`;
+  return getThumbnailUrl(book.cover_path);
 };
 
 // 작가명 표시

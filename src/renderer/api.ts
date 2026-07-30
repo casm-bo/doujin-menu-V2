@@ -8,6 +8,16 @@ import type {
 
 export const ipcRenderer: TypedIpcRenderer = window.ipcRenderer;
 
+export function getThumbnailUrl(
+  coverPath: string | null | undefined,
+  version = 0,
+) {
+  const fileName = coverPath?.split(/[/\\]/).pop();
+  if (!fileName) return "";
+  const query = version ? `?v=${version}` : "";
+  return `doujin-menu://thumbnail/${encodeURIComponent(fileName)}${query}`;
+}
+
 export async function getBook(bookId: number) {
   return ipcRenderer.invoke("get-book", bookId);
 }
