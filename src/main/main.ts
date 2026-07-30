@@ -155,6 +155,12 @@ function createViewerWindow(fromUrl: string) {
   });
 
   viewerWindows.add(viewerWindow);
+  viewerWindow.on("maximize", () => {
+    viewerWindow.webContents.send("window-maximized", true);
+  });
+  viewerWindow.on("unmaximize", () => {
+    viewerWindow.webContents.send("window-maximized", false);
+  });
   viewerWindow.on("closed", () => {
     viewerWindows.delete(viewerWindow);
   });
@@ -478,11 +484,6 @@ app.whenReady().then(async () => {
     }
   });
 
-  // 현재 창 최대화 상태 요청 핸들러
-  ipcMain.handle("get-window-maximized-state", () => {
-    return mainWindow?.isMaximized() || false;
-  });
-
   session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
     callback({
       responseHeaders: {
@@ -536,24 +537,29 @@ app.whenReady().then(async () => {
       hasRunInitialLibraryScan = true;
 
       // 스캔을 백그라운드에서 비동기로 실행 (UI 로딩을 차단하지 않음)
-      Promise.resolve().then(async () => {
-        for (const folderPath of libraryFolders) {
-          console.log(`[Main] Auto-scanning library folder: ${folderPath}`);
-          await scanDirectory(folderPath);
+      void (async () => {
+        try {
+          for (const folderPath of libraryFolders) {
+            console.log(`[Main] Auto-scanning library folder: ${folderPath}`);
+            await scanDirectory(folderPath);
 
-          const books = await db("Book")
-            .select("id")
-            .whereLike("path", `${folderPath}%`)
-            .and.where("cover_path", null);
+            const books = await db("Book")
+              .select("id")
+              .whereLike("path", `${folderPath}%`)
+              .and.where("cover_path", null);
 
-          await Promise.all(
-            books.map((book) => handleGenerateThumbnail(book.id)),
-          );
+            await Promise.all(
+              books.map((book) => handleGenerateThumbnail(book.id)),
+            );
+          }
+        } catch (error) {
+          console.error("[Main] Initial library scan failed:", error);
+        } finally {
+          if (!mainWindow.isDestroyed()) {
+            mainWindow.webContents.send("library-scan-completed");
+          }
         }
-
-        // 스캔 완료 후 UI에 알림
-        mainWindow.webContents.send("library-scan-completed");
-      });
+      })();
     });
   }
 });

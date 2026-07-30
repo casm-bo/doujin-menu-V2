@@ -40,10 +40,16 @@ await db.migrate.latest();
 
 export default db;
 
-export async function closeDbConnection() {
-  if (db) {
-    await db.raw(`PRAGMA wal_checkpoint(TRUNCATE);`);
-    await db.destroy();
+let closePromise: Promise<void> | null = null;
+
+export function closeDbConnection() {
+  closePromise ??= (async () => {
+    try {
+      await db.raw(`PRAGMA wal_checkpoint(TRUNCATE);`);
+    } finally {
+      await db.destroy();
+    }
     console.log("[Main] Database connection closed.");
-  }
+  })();
+  return closePromise;
 }

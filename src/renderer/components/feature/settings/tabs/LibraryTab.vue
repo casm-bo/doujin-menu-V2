@@ -25,7 +25,7 @@ import { Switch } from "@/components/ui/switch";
 import LibraryScanProgress from "@/components/feature/LibraryScanProgress.vue";
 import SettingItem from "@/components/feature/settings/SettingItem.vue";
 import { Icon } from "@iconify/vue";
-import { onMounted, ref } from "vue";
+import { onMounted, onUnmounted, ref } from "vue";
 import { toast } from "vue-sonner";
 import { ipcRenderer } from "@/api";
 import { useQueryClient } from "@tanstack/vue-query";
@@ -58,6 +58,20 @@ const generationProgress = ref({
   message: "",
 });
 const infoFilePattern = ref("\\((\\d+)\\)$");
+const handleInfoGenerationProgress = (
+  _event: Electron.IpcRendererEvent,
+  ...args: unknown[]
+) => {
+  const progress = args[0] as {
+    current: number;
+    total: number;
+    message: string;
+  };
+  generationProgress.value = progress;
+  if (progress.current >= progress.total) {
+    isGeneratingInfoFiles.value = false;
+  }
+};
 
 onMounted(async () => {
   const config = await ipcRenderer.invoke("get-config");
@@ -65,17 +79,11 @@ onMounted(async () => {
   hideLibraryTags.value = config.hideLibraryTags === true;
   await loadLibraryFolders();
 
-  ipcRenderer.on("info-generation-progress", (_event, ...args) => {
-    const progress = args[0] as {
-      current: number;
-      total: number;
-      message: string;
-    };
-    generationProgress.value = progress;
-    if (progress.current >= progress.total) {
-      isGeneratingInfoFiles.value = false;
-    }
-  });
+  ipcRenderer.on("info-generation-progress", handleInfoGenerationProgress);
+});
+
+onUnmounted(() => {
+  ipcRenderer.off("info-generation-progress", handleInfoGenerationProgress);
 });
 
 // 라이브러리 폴더 정보 불러오기
@@ -303,7 +311,9 @@ const generateMissingInfoFiles = async () => {
     >
       <AlertDialogContent>
         <AlertDialogHeader>
-          <AlertDialogTitle>라이브러리 폴더를 제거하시겠습니까?</AlertDialogTitle>
+          <AlertDialogTitle
+            >라이브러리 폴더를 제거하시겠습니까?</AlertDialogTitle
+          >
           <AlertDialogDescription>
             실제 파일은 삭제하지 않습니다. 이 경로의 책 정보, 읽기 기록,
             즐겨찾기와 썸네일만 앱에서 제거합니다.

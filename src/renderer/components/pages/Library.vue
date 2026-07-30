@@ -30,6 +30,7 @@ import {
   onActivated,
   onDeactivated,
   onMounted,
+  onUnmounted,
   ref,
   shallowRef,
   toRaw,
@@ -255,15 +256,20 @@ const {
 const books = computed(
   () => data.value?.pages.flatMap((page) => page.data) ?? [],
 );
+const handleBooksUpdated = () => {
+  void queryClient.invalidateQueries({ queryKey: ["books"] });
+};
 
 onMounted(() => {
   // 라이브러리 스캔 Store 초기화
   const libraryScanStore = useLibraryScanStore();
   libraryScanStore.initialize();
 
-  ipcRenderer.on("books-updated", () =>
-    queryClient.invalidateQueries({ queryKey: ["books"] }),
-  );
+  ipcRenderer.on("books-updated", handleBooksUpdated);
+});
+
+onUnmounted(() => {
+  ipcRenderer.off("books-updated", handleBooksUpdated);
 });
 
 // keep-alive로 캐시된 컴포넌트가 활성화될 때 쿼리 다시 불러오기

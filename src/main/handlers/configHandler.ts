@@ -3,13 +3,11 @@ import { app, BrowserWindow, dialog, ipcMain } from "electron";
 import Store from "electron-store";
 import { existsSync } from "fs";
 import fs from "fs/promises";
+import knex from "knex";
 import path from "path";
 import db, { closeDbConnection } from "../db/index.js";
 import { filterLibraryPathRows } from "../utils/libraryPath.js";
-import {
-  forgetBooksUnderPath,
-  scanDirectory,
-} from "./directoryHandler.js";
+import { forgetBooksUnderPath, scanDirectory } from "./directoryHandler.js";
 import { handleGenerateThumbnail } from "./thumbnailHandler.js";
 
 // 라이브러리 뷰 설정 타입
@@ -143,6 +141,38 @@ const getDbPath = () => {
     return path.resolve(process.cwd(), "dev.sqlite3");
   } else {
     return path.join(app.getPath("userData"), "database.db");
+  }
+};
+
+const restartApp = () => {
+  app.relaunch();
+  setTimeout(() => app.quit(), 100);
+};
+
+const validateBackupDatabase = async (databasePath: string) => {
+  const backup = knex({
+    client: "better-sqlite3",
+    connection: {
+      filename: databasePath,
+      options: { readonly: true },
+    },
+    useNullAsDefault: true,
+  });
+  try {
+    const result = await backup.raw("PRAGMA quick_check");
+    const integrity = Object.values(result[0] || {})[0];
+    if (integrity !== "ok") {
+      throw new Error(`Backup database integrity check failed: ${integrity}`);
+    }
+    const tables = await backup("sqlite_master")
+      .select("name")
+      .where("type", "table")
+      .whereIn("name", ["Book", "knex_migrations"]);
+    if (tables.length !== 2) {
+      throw new Error("Backup database does not contain the required schema.");
+    }
+  } finally {
+    await backup.destroy();
   }
 };
 
@@ -398,11 +428,18 @@ export const handleRestoreDatabase = async (
   }
 
   const backupDir = filePaths[0];
-  try {
-    const dbPath = getDbPath();
-    const dbFileName = isDevelopment ? "dev.sqlite3" : "database.db";
-    const backupDbPath = path.join(backupDir, dbFileName);
+  const dbPath = getDbPath();
+  const dbFileName = isDevelopment ? "dev.sqlite3" : "database.db";
+  const backupDbPath = path.join(backupDir, dbFileName);
+  const stagedDbPath = `${dbPath}.restore.tmp`;
+  const previousDbPath = `${dbPath}.restore.bak`;
+  const configPath = path.join(app.getPath("userData"), "config.json");
+  const backupConfigPath = path.join(backupDir, "config.json");
+  const stagedConfigPath = `${configPath}.restore.tmp`;
+  const previousConfigPath = `${configPath}.restore.bak`;
+  let databaseClosed = false;
 
+  try {
     if (!existsSync(backupDbPath)) {
       return {
         success: false,
@@ -410,64 +447,84 @@ export const handleRestoreDatabase = async (
       };
     }
 
-    // 0. 데이터베이스 연결 종료 (복원 전에)
-    await closeDbConnection();
-
-    // 1. 데이터베이스 파일 복사
-    await fs.copyFile(backupDbPath, dbPath);
-
-    // 2. electron-store 설정 파일 복사
-    const configPath = path.join(app.getPath("userData"), "config.json");
-    const backupConfigPath = path.join(backupDir, "config.json");
+    await fs.rm(stagedDbPath, { force: true });
+    await fs.copyFile(backupDbPath, stagedDbPath);
+    validateBackupDatabase(stagedDbPath);
     if (existsSync(backupConfigPath)) {
-      await fs.copyFile(backupConfigPath, configPath);
+      await fs.rm(stagedConfigPath, { force: true });
+      await fs.copyFile(backupConfigPath, stagedConfigPath);
     }
 
-    // 앱 재시작 (데이터베이스 및 설정 변경 사항 적용)
-    app.relaunch();
-    setTimeout(() => {
-      app.quit();
-    }, 100); // 100ms 지연 후 종료
+    await closeDbConnection();
+    databaseClosed = true;
+
+    await fs.rm(previousDbPath, { force: true });
+    if (existsSync(dbPath)) await fs.rename(dbPath, previousDbPath);
+    await fs.rename(stagedDbPath, dbPath);
+    if (existsSync(stagedConfigPath)) {
+      await fs.rm(previousConfigPath, { force: true });
+      if (existsSync(configPath)) {
+        await fs.rename(configPath, previousConfigPath);
+      }
+      await fs.rename(stagedConfigPath, configPath);
+    }
+
+    restartApp();
     return { success: true };
   } catch (error) {
     console.error("[ConfigHandler] Failed to restore data:", error);
+    if (databaseClosed) {
+      try {
+        if (existsSync(previousDbPath)) {
+          await fs.rm(dbPath, { force: true });
+          await fs.rename(previousDbPath, dbPath);
+        }
+        if (existsSync(previousConfigPath)) {
+          await fs.rm(configPath, { force: true });
+          await fs.rename(previousConfigPath, configPath);
+        }
+      } catch (rollbackError) {
+        console.error(
+          "[ConfigHandler] Failed to roll back restore:",
+          rollbackError,
+        );
+      }
+      restartApp();
+    }
     return { success: false, error: (error as Error).message };
+  } finally {
+    await fs.rm(stagedDbPath, { force: true }).catch(() => undefined);
+    await fs.rm(stagedConfigPath, { force: true }).catch(() => undefined);
   }
 };
 
 export const handleResetAllData = async () => {
+  let databaseClosed = false;
   try {
-    // 0. 데이터베이스 연결 종료
     await closeDbConnection();
+    databaseClosed = true;
 
-    // 1. 데이터베이스 파일 삭제
     const dbPath = getDbPath();
     if (existsSync(dbPath)) {
       await fs.unlink(dbPath);
     }
 
-    // 2. electron-store 설정 파일 삭제
     const configPath = path.join(app.getPath("userData"), "config.json");
     if (existsSync(configPath)) {
       await fs.unlink(configPath);
     }
 
-    // 3. 썸네일 캐시 폴더 삭제
     const thumbnailDir = path.join(app.getPath("userData"), "thumbnails");
     if (existsSync(thumbnailDir)) {
       await fs.rm(thumbnailDir, { recursive: true, force: true });
     }
 
-    // 4. 앱 재시작
-    app.relaunch();
-    setTimeout(() => {
-      app.quit();
-    }, 100); // 100ms 지연 후 종료
-
     return { success: true };
   } catch (error) {
     console.error("[ConfigHandler] Failed to reset all data:", error);
     return { success: false, error: (error as Error).message };
+  } finally {
+    if (databaseClosed) restartApp();
   }
 };
 

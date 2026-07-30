@@ -55,14 +55,17 @@ vi.mock("fs/promises", () => ({
     copyFile: vi.fn(),
     unlink: vi.fn(),
     rm: vi.fn(),
+    rename: vi.fn(),
   },
   copyFile: vi.fn(),
   unlink: vi.fn(),
   rm: vi.fn(),
+  rename: vi.fn(),
 }));
 
 // directoryHandler와 thumbnailHandler 모킹
 vi.mock("../../../src/main/handlers/directoryHandler.js", () => ({
+  forgetBooksUnderPath: vi.fn(),
   scanDirectory: vi.fn(),
 }));
 
@@ -78,11 +81,21 @@ const {
   handleSetLockPassword,
   handleVerifyLockPassword,
   handleClearLockPassword,
+  handleRestoreDatabase,
+  handleResetAllData,
 } = await import("../../../src/main/handlers/configHandler.js");
+const { app, dialog } = await import("electron");
+const { existsSync } = await import("fs");
+const { default: fs } = await import("fs/promises");
+const { closeDbConnection } = await import("../../../src/main/db/index.js");
 
 describe("configHandler", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(fs.copyFile).mockResolvedValue();
+    vi.mocked(fs.rm).mockResolvedValue();
+    vi.mocked(fs.rename).mockResolvedValue();
+    vi.mocked(fs.unlink).mockResolvedValue();
 
     // mockSet의 기본 동작 설정 (에러를 던지지 않도록)
     mockSet.mockImplementation(() => {
@@ -303,6 +316,40 @@ describe("configHandler", () => {
         // 10번 모두 다른 salt가 생성되어야 함
         expect(salts.size).toBe(10);
       });
+    });
+  });
+
+  describe("데이터 교체 실패 안전성", () => {
+    it("백업 준비가 실패하면 열린 DB를 닫지 않음", async () => {
+      vi.mocked(dialog.showOpenDialog).mockResolvedValue({
+        canceled: false,
+        filePaths: ["/backup"],
+      });
+      vi.mocked(existsSync).mockReturnValue(true);
+      vi.mocked(fs.copyFile).mockRejectedValueOnce(new Error("copy failed"));
+
+      const result = await handleRestoreDatabase({
+        sender: {},
+      } as Electron.IpcMainInvokeEvent);
+
+      expect(result.success).toBe(false);
+      expect(closeDbConnection).not.toHaveBeenCalled();
+      expect(app.relaunch).not.toHaveBeenCalled();
+    });
+
+    it("초기화가 DB 종료 후 실패하면 앱을 재시작", async () => {
+      vi.useFakeTimers();
+      vi.mocked(closeDbConnection).mockResolvedValue();
+      vi.mocked(existsSync).mockReturnValue(true);
+      vi.mocked(fs.unlink).mockRejectedValueOnce(new Error("unlink failed"));
+
+      const result = await handleResetAllData();
+      vi.runAllTimers();
+
+      expect(result.success).toBe(false);
+      expect(app.relaunch).toHaveBeenCalled();
+      expect(app.quit).toHaveBeenCalled();
+      vi.useRealTimers();
     });
   });
 });

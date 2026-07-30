@@ -29,6 +29,10 @@ export const handleIsFullscreen = (win: BrowserWindow): boolean => {
   return win.isSimpleFullScreen();
 };
 
+export const handleIsWindowMaximized = (win: BrowserWindow): boolean => {
+  return win.isMaximized();
+};
+
 // 메인 윈도우 닫기
 export const handleCloseWindow = (mainWindow: BrowserWindow | null) => {
   if (mainWindow && !mainWindow.isDestroyed()) mainWindow.close();
@@ -83,6 +87,11 @@ export function registerWindowHandlers(
   ipcMain.handle("is-fullscreen-window", (event) => {
     const win = BrowserWindow.fromWebContents(event.sender);
     return win ? handleIsFullscreen(win) : false;
+  });
+
+  ipcMain.handle("get-window-maximized-state", (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    return win ? handleIsWindowMaximized(win) : false;
   });
 
   ipcMain.on("close-window", (event) => {

@@ -9,20 +9,23 @@ const isMaximized = ref(false);
 const minimizeWindow = () => ipcRenderer.send("minimize-window");
 const maximizeToggleWindow = () => ipcRenderer.send("maximize-toggle-window");
 const closeWindow = () => ipcRenderer.send("close-window");
+const handleWindowMaximized = (
+  _event: Electron.IpcRendererEvent,
+  ...args: unknown[]
+) => {
+  isMaximized.value = args[0] as boolean;
+};
 
 onMounted(async () => {
   // 초기 창 상태 가져오기
   isMaximized.value = await ipcRenderer.invoke("get-window-maximized-state");
 
   // 창 상태 변경 이벤트 리스너 등록
-  ipcRenderer.on("window-maximized", (_event, ...args) => {
-    isMaximized.value = args[0] as boolean;
-  });
+  ipcRenderer.on("window-maximized", handleWindowMaximized);
 });
 
 onUnmounted(() => {
-  // 컴포넌트 언마운트 시 이벤트 리스너 제거 (메모리 누수 방지)
-  ipcRenderer.removeAllListeners("window-maximized");
+  ipcRenderer.off("window-maximized", handleWindowMaximized);
 });
 </script>
 

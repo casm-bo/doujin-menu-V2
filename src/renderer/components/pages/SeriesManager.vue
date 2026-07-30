@@ -46,6 +46,7 @@ import {
   onActivated,
   onDeactivated,
   onMounted,
+  onUnmounted,
   ref,
   shallowRef,
   watch,
@@ -248,12 +249,17 @@ const totalCount = computed(() => {
   if (!pages || pages.length === 0) return 0;
   return pages[pages.length - 1]?.pagination?.totalCount || 0;
 });
+const handleSeriesCollectionsUpdated = () => {
+  void queryClient.invalidateQueries({ queryKey: ["seriesCollections"] });
+};
 
 // IPC 이벤트 수신 - 시리즈 컬렉션 업데이트 시 쿼리 무효화
 onMounted(() => {
-  ipcRenderer.on("series-collections-updated", () =>
-    queryClient.invalidateQueries({ queryKey: ["seriesCollections"] }),
-  );
+  ipcRenderer.on("series-collections-updated", handleSeriesCollectionsUpdated);
+});
+
+onUnmounted(() => {
+  ipcRenderer.off("series-collections-updated", handleSeriesCollectionsUpdated);
 });
 
 // keep-alive로 캐시된 컴포넌트가 활성화될 때 쿼리 다시 불러오기
