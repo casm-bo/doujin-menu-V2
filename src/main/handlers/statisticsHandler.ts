@@ -97,6 +97,7 @@ export const handleGetStatistics = async () => {
     const duplicateBooksByTitle = await db("Book")
       .select("title")
       .count("* as count")
+      .where("is_offline", false)
       .groupBy("title")
       .having("count", ">", 1)
       .orderBy("count", "desc");
@@ -106,6 +107,7 @@ export const handleGetStatistics = async () => {
       .select("hitomi_id")
       .count("* as count")
       .whereNotNull("hitomi_id")
+      .where("is_offline", false)
       .groupBy("hitomi_id")
       .having("count", ">", 1)
       .orderBy("count", "desc");

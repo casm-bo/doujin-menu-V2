@@ -420,7 +420,12 @@ export interface IpcChannels {
   };
   "remove-library-folder": {
     request: string; // folderPath
-    response: { success: boolean; error?: string };
+    response: {
+      success: boolean;
+      folders?: string[];
+      removedBooks?: number;
+      error?: string;
+    };
   };
   "backup-database": {
     request: void;

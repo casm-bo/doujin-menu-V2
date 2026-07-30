@@ -183,8 +183,7 @@ describe("handleGetDuplicateGroups", () => {
     expect(archiveBook!.isArchive).toBe(true);
   });
 
-  it("is_offline/is_favorite는 boolean으로 변환되어 반환", async () => {
-    // is_offline: true 1권 + 일반 1권 (같은 제목)
+  it("오프라인 책은 중복 그룹에서 제외", async () => {
     await seedBook(db, {
       title: "불리언 테스트",
       path: "/lib/offline-book",
@@ -199,15 +198,7 @@ describe("handleGetDuplicateGroups", () => {
     const result = await handleGetDuplicateGroups();
 
     expect(result.success).toBe(true);
-    expect(result.groups).toHaveLength(1);
-    const books = result.groups![0].books;
-    const offlineBook = books.find((b) => b.path === "/lib/offline-book");
-    const onlineBook = books.find((b) => b.path === "/lib/online-book");
-    expect(offlineBook!.is_offline).toBe(true);
-    expect(onlineBook!.is_offline).toBe(false);
-    // is_offline의 타입이 boolean인지 확인 (숫자 1/0이 아님)
-    expect(typeof offlineBook!.is_offline).toBe("boolean");
-    expect(typeof onlineBook!.is_offline).toBe("boolean");
+    expect(result.groups).toEqual([]);
   });
 
   it("중복이 없으면 빈 배열", async () => {

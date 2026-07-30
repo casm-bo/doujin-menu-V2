@@ -16,6 +16,7 @@ import path from "path";
 import archiver from "archiver";
 import {
   cleanupMissingBooks,
+  forgetBooksUnderPath,
   isPathAccessible,
   markBooksOfflineUnderPath,
   restoreBooksOnlineUnderPath,
@@ -145,6 +146,50 @@ describe("오프라인 라이브러리 보존", () => {
         is_offline: 0,
       });
     });
+
+    it("consolidates an already indexed destination with its missing UUID source", async () => {
+      const archivePath = path.join(tmpDir, "moved.cbz");
+      const syncId = "123e4567-e89b-42d3-a456-426614174002";
+      const source = await seedBook(db, {
+        path: path.join(tmpDir, "missing.cbz"),
+        sync_id: syncId,
+        current_page: 7,
+        is_favorite: true,
+        state_version: 3,
+      });
+      await writeTestArchive(archivePath);
+      await seedBook(db, {
+        path: archivePath,
+        sync_id: syncId,
+        state_version: 0,
+      });
+
+      await scanFile(archivePath, syncId);
+
+      const copies = await db("Book").where("sync_id", syncId);
+      expect(copies).toHaveLength(1);
+      expect(copies[0]).toMatchObject({
+        id: source.id,
+        path: archivePath,
+        current_page: 7,
+        is_favorite: 1,
+      });
+    });
+
+    it("keeps a UUID copy when the old storage root is unavailable", async () => {
+      const archivePath = path.join(tmpDir, "local.cbz");
+      const syncId = "123e4567-e89b-42d3-a456-426614174003";
+      await seedBook(db, {
+        path: "Z:\\offline-library\\book.cbz",
+        sync_id: syncId,
+        is_offline: true,
+      });
+      await writeTestArchive(archivePath);
+
+      await scanFile(archivePath, syncId);
+
+      expect(await db("Book").where("sync_id", syncId)).toHaveLength(2);
+    });
   });
 
   describe("isPathAccessible", () => {
@@ -248,6 +293,44 @@ describe("오프라인 라이브러리 보존", () => {
       const books = await db("Book").select("*");
       expect(books).toHaveLength(1);
       expect(books[0].path).toBe(bookDir);
+    });
+
+    it("읽기 오류가 난 기존 항목은 누락으로 삭제하지 않음", async () => {
+      const archivePath = path.join(tmpDir, "broken.cbz");
+      await fs.writeFile(archivePath, "not-a-zip");
+      await seedBook(db, { path: archivePath });
+
+      const result = await scanDirectory(tmpDir);
+
+      expect(result.deleted).toBe(0);
+      expect(await db("Book").where("path", archivePath).first()).toBeDefined();
+    });
+  });
+
+  describe("forgetBooksUnderPath", () => {
+    it("실제 파일은 유지하고 앱 기록만 제거", async () => {
+      const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "forget-test-"));
+      try {
+        const bookDir = path.join(tmpDir, "book");
+        await fs.mkdir(bookDir);
+        await fs.writeFile(path.join(bookDir, "001.jpg"), "image");
+        const book = await seedBook(db, { path: bookDir });
+        await db("BookHistory").insert({
+          book_id: book.id,
+          viewed_at: new Date().toISOString(),
+        });
+
+        const removed = await forgetBooksUnderPath(tmpDir);
+
+        expect(removed).toBe(1);
+        expect(await db("Book").where("id", book.id).first()).toBeUndefined();
+        expect(
+          await db("BookHistory").where("book_id", book.id),
+        ).toHaveLength(0);
+        await expect(fs.stat(bookDir)).resolves.toBeDefined();
+      } finally {
+        await fs.rm(tmpDir, { recursive: true, force: true });
+      }
     });
   });
 

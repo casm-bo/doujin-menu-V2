@@ -186,7 +186,7 @@ export async function extractCoverFromZip(
 export async function extractInfoTxtAndImageCountFromZip(
   zipPath: string,
 ): Promise<{ infoTxt: string | null; imageCount: number }> {
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     let imageCount = 0;
     let infoTxt: string | null = null;
     let infoFound = false; // info.txt 엔트리를 발견했는지 여부
@@ -216,7 +216,7 @@ export async function extractInfoTxtAndImageCountFromZip(
     yauzl.open(zipPath, { lazyEntries: true }, (err, zipfile) => {
       if (err) {
         console.error(`[Main] ZIP 파일 열기 오류 ${zipPath}:`, err);
-        return resolve({ infoTxt: null, imageCount: 0 });
+        return reject(err);
       }
       openedZipfile = zipfile;
 
@@ -281,7 +281,7 @@ export async function extractInfoTxtAndImageCountFromZip(
           } catch {
             // 이미 닫혀 있는 경우 무시
           }
-          resolve({ infoTxt, imageCount });
+          reject(zipErr);
         }
       });
 
@@ -460,6 +460,112 @@ async function processBookItem(
 }
 
 // 청크 단위로 책을 처리하여 DB에 저장하는 헬퍼 함수
+type ExistingScanBook = Pick<
+  Book,
+  "id" | "path" | "cover_path" | "sync_id" | "is_offline" | "state_version"
+>;
+
+async function deleteBookRecords(
+  trx: Knex.Transaction,
+  books: Pick<Book, "id">[],
+) {
+  const bookIds = books.map((book) => book.id);
+  if (bookIds.length === 0) return;
+
+  for (const table of [
+    "BookArtist",
+    "BookTag",
+    "BookSeries",
+    "BookGroup",
+    "BookCharacter",
+    "BookHistory",
+    "CompanionSyncChange",
+  ]) {
+    await trx(table).whereIn("book_id", bookIds).del();
+  }
+  await trx("Book").whereIn("id", bookIds).del();
+}
+
+async function removeThumbnailFiles(
+  books: Pick<Book, "cover_path">[],
+): Promise<void> {
+  await Promise.all(
+    books
+      .map((book) => book.cover_path)
+      .filter((coverPath): coverPath is string => Boolean(coverPath))
+      .map((coverPath) =>
+        fs.unlink(coverPath).catch((error) => {
+          console.error(`[Main] 썸네일 파일 삭제 실패 ${coverPath}:`, error);
+        }),
+      ),
+  );
+}
+
+async function isMissingOnReachableStorage(bookPath: string) {
+  if (await isPathAccessible(bookPath)) return false;
+  return isPathAccessible(path.parse(bookPath).root);
+}
+
+async function resolveExistingBookForScan(
+  trx: Knex.Transaction,
+  candidates: ExistingScanBook[],
+  bookPath: string,
+  syncId: string | null | undefined,
+) {
+  const existingByPath = candidates.find((book) => book.path === bookPath);
+  if (!syncId) return existingByPath;
+
+  const sameIdentity = candidates.filter(
+    (book) => book.sync_id === syncId && book.path !== bookPath,
+  );
+  const staleCopies: ExistingScanBook[] = [];
+  for (const candidate of sameIdentity) {
+    if (await isMissingOnReachableStorage(candidate.path)) {
+      staleCopies.push(candidate);
+    }
+  }
+
+  if (!existingByPath) {
+    return staleCopies.reduce<ExistingScanBook | undefined>(
+      (best, candidate) =>
+        !best ||
+        Number(candidate.state_version || 0) >
+          Number(best.state_version || 0)
+          ? candidate
+          : best,
+      undefined,
+    );
+  }
+  if (staleCopies.length === 0) return existingByPath;
+
+  const keep = staleCopies.reduce(
+    (best, candidate) =>
+      Number(candidate.state_version || 0) >
+      Number(best.state_version || 0)
+        ? candidate
+        : best,
+    existingByPath,
+  );
+  const remove = [existingByPath, ...staleCopies].filter(
+    (candidate) => candidate.id !== keep.id,
+  );
+  const removeIds = remove.map((candidate) => candidate.id);
+
+  await trx("BookHistory").whereIn("book_id", removeIds).update({
+    book_id: keep.id,
+  });
+  await trx("CompanionSyncChange").whereIn("book_id", removeIds).update({
+    book_id: keep.id,
+  });
+  await deleteBookRecords(trx, remove);
+  await removeThumbnailFiles(remove);
+  for (const removed of remove) {
+    const index = candidates.findIndex((book) => book.id === removed.id);
+    if (index >= 0) candidates.splice(index, 1);
+  }
+  return keep;
+}
+
 async function processBatchInTransaction(
   batch: ProcessedBook[],
   trx: Knex.Transaction,
@@ -481,8 +587,15 @@ async function processBatchInTransaction(
   const batchSyncIds = batch
     .map((p) => p.bookData.sync_id)
     .filter((id): id is string => Boolean(id));
-  const existingBooksInBatch = await trx("Book")
-    .select("id", "path", "cover_path", "sync_id", "is_offline")
+  const existingBooksInBatch: ExistingScanBook[] = await trx("Book")
+    .select(
+      "id",
+      "path",
+      "cover_path",
+      "sync_id",
+      "is_offline",
+      "state_version",
+    )
     .where((query) => {
       query.whereIn("path", batchPaths);
       if (batchSyncIds.length > 0) query.orWhereIn("sync_id", batchSyncIds);
@@ -490,21 +603,12 @@ async function processBatchInTransaction(
 
   for (const processedBook of batch) {
     const { bookData, infoMetadata } = processedBook;
-    const existingByPath = existingBooksInBatch.find(
-      (book) => book.path === bookData.path,
+    const existingBook = await resolveExistingBookForScan(
+      trx,
+      existingBooksInBatch,
+      bookData.path,
+      bookData.sync_id,
     );
-    const existingBySyncId = bookData.sync_id
-      ? existingBooksInBatch.find((book) => book.sync_id === bookData.sync_id)
-      : undefined;
-    const canRelocateBySyncId =
-      !existingByPath &&
-      existingBySyncId &&
-      (Boolean(existingBySyncId.is_offline) ||
-        !(await isPathAccessible(existingBySyncId.path)));
-    const existingBook =
-      existingByPath ?? (canRelocateBySyncId ? existingBySyncId : undefined);
-    // Keep the UUID on every physical copy. Duplicate cleanup is an explicit
-    // desktop action and the UUID identifies the shared logical book.
 
     let bookId: number;
     if (existingBook) {
@@ -523,6 +627,8 @@ async function processBatchInTransaction(
           file_size: bookData.file_size ?? null,
           is_offline: false,
         });
+      existingBook.path = bookData.path;
+      existingBook.is_offline = false;
       updatedCount++;
 
       // 업데이트를 위해 기존 연결 제거
@@ -547,6 +653,14 @@ async function processBatchInTransaction(
       };
       const result = await trx("Book").insert(bookToInsert);
       bookId = result[0];
+      existingBooksInBatch.push({
+        id: bookId,
+        path: bookData.path,
+        cover_path: null,
+        sync_id: cleanValue(bookData.sync_id),
+        is_offline: false,
+        state_version: 0,
+      });
       addedCount++;
       newBookIds.push(bookId);
     }
@@ -751,36 +865,35 @@ export async function cleanupMissingBooks(
     return { deleted: 0, offline: true };
   }
 
-  let deletedCount = 0;
+  let booksToDelete: Pick<Book, "id" | "cover_path">[] = [];
   await db.transaction(async (trx) => {
     const candidates = await trx("Book")
       .select("id", "path", "cover_path")
       .where("path", "like", `${directoryPath}%`);
-    const existingBooksInDb = filterLibraryPathRows(candidates, directoryPath);
-
-    const booksToDelete = existingBooksInDb.filter(
+    booksToDelete = filterLibraryPathRows(candidates, directoryPath).filter(
       (book) => !foundPaths.has(book.path),
     );
-
-    for (const book of booksToDelete) {
-      await trx("BookArtist").where("book_id", book.id).del();
-      await trx("BookTag").where("book_id", book.id).del();
-      await trx("BookSeries").where("book_id", book.id).del();
-      await trx("BookGroup").where("book_id", book.id).del();
-      await trx("BookCharacter").where("book_id", book.id).del();
-      await trx("Book").where("id", book.id).del();
-      deletedCount++;
-
-      if (book.cover_path) {
-        try {
-          await fs.unlink(book.cover_path);
-        } catch (e) {
-          console.error(`[Main] 썸네일 파일 삭제 실패 ${book.cover_path}:`, e);
-        }
-      }
-    }
+    await deleteBookRecords(trx, booksToDelete);
   });
-  return { deleted: deletedCount, offline: false };
+  await removeThumbnailFiles(booksToDelete);
+  return { deleted: booksToDelete.length, offline: false };
+}
+
+export async function forgetBooksUnderPath(directoryPath: string) {
+  let books: Pick<Book, "id" | "cover_path">[] = [];
+  await db.transaction(async (trx) => {
+    const candidates = await trx("Book")
+      .select("id", "path", "cover_path")
+      .where("path", "like", `${directoryPath}%`);
+    books = filterLibraryPathRows(candidates, directoryPath);
+    await deleteBookRecords(trx, books);
+  });
+  await removeThumbnailFiles(books);
+  if (books.length > 0) {
+    broadcastBooksUpdated();
+    notifyCompanionLibraryChanged();
+  }
+  return books.length;
 }
 
 export async function scanDirectory(
@@ -929,6 +1042,7 @@ export async function scanDirectory(
       const itemPath = entryObj.path.replaceAll("/", "\\");
 
       if (itemPath.length >= MAX_PATH_LENGTH) {
+        totalFoundBookPathsInScan.add(itemPath);
         console.warn(
           `[Main] 긴 경로로 인해 파일 건너뛰기 (>${MAX_PATH_LENGTH}자): ${itemPath}`,
         );
@@ -1003,6 +1117,7 @@ export async function scanDirectory(
           }
         }
       } catch (fileProcessError) {
+        totalFoundBookPathsInScan.add(itemPath);
         console.error(`[Main] 파일 처리 오류 ${itemPath}:`, fileProcessError);
         continue;
       }
@@ -1185,28 +1300,25 @@ export async function scanFile(filePath: string, syncIdOverride?: string) {
       let shouldGenerateThumbnail = false;
 
       await db.transaction(async (trx) => {
-        const existingCandidates = await trx("Book")
+        const existingCandidates: ExistingScanBook[] = await trx("Book")
           .where((query) => {
             query.where("path", bookData.path);
             if (bookData.sync_id) query.orWhere("sync_id", bookData.sync_id);
           })
-          .select("*");
-        const existingByPath = existingCandidates.find(
-          (book) => book.path === bookData.path,
+          .select(
+            "id",
+            "path",
+            "cover_path",
+            "sync_id",
+            "is_offline",
+            "state_version",
+          );
+        const existingBook = await resolveExistingBookForScan(
+          trx,
+          existingCandidates,
+          bookData.path,
+          bookData.sync_id,
         );
-        const existingBySyncId = bookData.sync_id
-          ? existingCandidates.find((book) => book.sync_id === bookData.sync_id)
-          : undefined;
-        const canRelocateBySyncId =
-          !existingByPath &&
-          existingBySyncId &&
-          (Boolean(existingBySyncId.is_offline) ||
-            !(await isPathAccessible(existingBySyncId.path)));
-        const existingBook =
-          existingByPath ??
-          (canRelocateBySyncId ? existingBySyncId : undefined);
-        // Keep the UUID on every physical copy; the duplicates screen groups
-        // them by UUID for explicit review.
 
         if (existingBook) {
           bookId = existingBook.id;

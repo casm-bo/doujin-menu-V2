@@ -6,7 +6,10 @@ import fs from "fs/promises";
 import path from "path";
 import db, { closeDbConnection } from "../db/index.js";
 import { filterLibraryPathRows } from "../utils/libraryPath.js";
-import { scanDirectory } from "./directoryHandler.js";
+import {
+  forgetBooksUnderPath,
+  scanDirectory,
+} from "./directoryHandler.js";
 import { handleGenerateThumbnail } from "./thumbnailHandler.js";
 
 // 라이브러리 뷰 설정 타입
@@ -278,26 +281,14 @@ export const handleAddLibraryFolder = async () => {
   }
 };
 
-async function markBooksOfflineInFolder(folderPath: string) {
-  const candidates = await db("Book")
-    .select("id", "path")
-    .where("path", "like", `${folderPath}%`);
-  const bookIds = filterLibraryPathRows(candidates, folderPath).map(
-    (book) => book.id,
-  );
-  if (bookIds.length > 0) {
-    await db("Book").whereIn("id", bookIds).update({ is_offline: true });
-  }
-}
-
 export const handleRemoveLibraryFolder = async (folderPath: string) => {
   const currentFolders = store.get("libraryFolders", []);
   const newFolders = currentFolders.filter((p) => p !== folderPath);
 
   try {
-    await markBooksOfflineInFolder(folderPath);
+    const removedBooks = await forgetBooksUnderPath(folderPath);
     store.set("libraryFolders", newFolders);
-    return { success: true, folders: newFolders };
+    return { success: true, folders: newFolders, removedBooks };
   } catch (error) {
     console.error(
       `[ConfigHandler] Failed to remove library folder ${folderPath} or associated books:`,
