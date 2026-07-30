@@ -422,6 +422,7 @@ export const handleGetBooks = async (
     data: formattedBooks,
     hasNextPage: (pageParam + 1) * pageSize < Number(totalBooks?.count || 0),
     nextPage: pageParam + 1,
+    totalCount: Number(totalBooks?.count || 0),
   };
 };
 

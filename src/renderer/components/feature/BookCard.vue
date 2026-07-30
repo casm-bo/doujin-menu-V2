@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Badge, LightBadge } from "@/components/ui/badge";
 import { CardContent, CardFooter, LightCard } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   ContextMenu,
   ContextMenuContent,
@@ -33,6 +34,7 @@ const props = defineProps<{
   hideTags?: boolean;
   externalImageViewerPath?: string;
   externalArchiveViewerPath?: string;
+  selected?: boolean;
 }>();
 const emit = defineEmits([
   "selectTag",
@@ -43,6 +45,8 @@ const emit = defineEmits([
   "open-book-folder",
   "show-details",
   "show-preview",
+  "toggle-select",
+  "deleted",
 ]);
 
 const router = useRouter();
@@ -190,6 +194,7 @@ const confirmDeleteBook = async () => {
   try {
     // Call the main process to delete the book
     await api.deleteBook(props.book.id);
+    emit("deleted", props.book.id);
     toast.success("책 삭제 완료", {
       description: `${props.book.title}이(가) 삭제되었습니다.`,
     });
@@ -211,6 +216,7 @@ const confirmDeleteBook = async () => {
     <ContextMenuTrigger>
       <LightCard
         class="flex h-full cursor-pointer flex-col gap-0 overflow-hidden py-0 transition-shadow hover:shadow-lg"
+        :class="{ 'ring-primary ring-2': selected }"
         @click="handleCardClick"
       >
         <CardContent class="relative p-0">
@@ -223,11 +229,20 @@ const confirmDeleteBook = async () => {
           <Badge
             v-if="isOffline"
             variant="secondary"
-            class="absolute top-2 left-2 gap-1"
+            class="absolute top-2 right-2 gap-1"
           >
             <Icon icon="solar:plug-circle-bold-duotone" class="h-3 w-3" />
             오프라인
           </Badge>
+          <div
+            class="absolute top-2 left-2 z-10 flex size-8 items-center justify-center rounded bg-black/60"
+            @click.stop="emit('toggle-select')"
+          >
+            <Checkbox
+              :model-value="selected"
+              :aria-label="`${book.title} 선택`"
+            />
+          </div>
         </CardContent>
         <CardFooter class="flex-grow flex-col items-start gap-1 p-2">
           <p class="w-full truncate text-sm font-semibold" :title="book.title">

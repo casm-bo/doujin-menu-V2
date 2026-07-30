@@ -202,6 +202,7 @@ export interface IpcChannels {
       data: Book[];
       hasNextPage: boolean;
       nextPage: number;
+      totalCount: number;
     };
   };
   "get-book": {
