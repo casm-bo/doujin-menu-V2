@@ -22,4 +22,18 @@ describe("parseMediaRequestUrl", () => {
     ).toBeNull();
     expect(parseMediaRequestUrl("doujin-menu://420/0")).toBeNull();
   });
+
+  it("parses downloader cache URLs without allowing nested paths", () => {
+    expect(
+      parseMediaRequestUrl(
+        "doujin-menu://download-thumbnail/123_cover%20image.webp",
+      ),
+    ).toEqual({
+      kind: "download-thumbnail",
+      fileName: "123_cover image.webp",
+    });
+    expect(
+      parseMediaRequestUrl("doujin-menu://download-thumbnail/..%2Fsecret"),
+    ).toBeNull();
+  });
 });

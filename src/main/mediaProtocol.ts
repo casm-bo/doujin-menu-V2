@@ -1,6 +1,9 @@
 export type MediaRequest =
   | { kind: "page"; bookId: number; pageIndex: number }
-  | { kind: "thumbnail"; fileName: string };
+  | {
+      kind: "thumbnail" | "download-thumbnail";
+      fileName: string;
+    };
 
 const parseNonNegativeInteger = (value: string) => {
   if (!/^\d+$/.test(value)) return null;
@@ -23,14 +26,17 @@ export function parseMediaRequestUrl(rawUrl: string): MediaRequest | null {
         : null;
     }
 
-    if (url.hostname === "thumbnail" && segments.length === 1) {
+    if (
+      (url.hostname === "thumbnail" || url.hostname === "download-thumbnail") &&
+      segments.length === 1
+    ) {
       const fileName = decodeURIComponent(segments[0]);
       return fileName &&
         fileName !== "." &&
         fileName !== ".." &&
         !fileName.includes("/") &&
         !fileName.includes("\\")
-        ? { kind: "thumbnail", fileName }
+        ? { kind: url.hostname, fileName }
         : null;
     }
   } catch {

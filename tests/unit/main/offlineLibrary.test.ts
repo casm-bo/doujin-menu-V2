@@ -404,4 +404,98 @@ describe("오프라인 라이브러리 보존", () => {
       expect(book.is_offline).toBe(1);
     });
   });
+
+  describe("moved-book cleanup ordering", () => {
+    it("merges a missing source into an already indexed UUID destination", async () => {
+      const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "move-order-"));
+      const sourceRoot = path.join(tmpDir, "testing");
+      const destinationRoot = path.join(tmpDir, "library");
+      await fs.mkdir(sourceRoot);
+      await fs.mkdir(destinationRoot);
+
+      try {
+        const syncId = "123e4567-e89b-42d3-a456-426614174099";
+        const source = await seedBook(db, {
+          path: path.join(sourceRoot, "moved.cbz"),
+          sync_id: syncId,
+          current_page: 7,
+          is_favorite: true,
+          state_version: 3,
+        });
+        const destinationPath = path.join(destinationRoot, "moved.cbz");
+        await writeTestArchive(destinationPath);
+        const destination = await seedBook(db, {
+          path: destinationPath,
+          sync_id: syncId,
+          state_version: 0,
+        });
+        await db("BookHistory").insert({
+          book_id: source.id,
+          viewed_at: new Date().toISOString(),
+          current_page: 7,
+        });
+
+        const result = await cleanupMissingBooks(sourceRoot, new Set());
+
+        expect(result.deleted).toBe(1);
+        const copies = await db("Book").where("sync_id", syncId);
+        expect(copies).toHaveLength(1);
+        expect(copies[0]).toMatchObject({
+          id: destination.id,
+          path: destinationPath,
+          current_page: 7,
+          is_favorite: 1,
+          state_version: 3,
+        });
+        expect(
+          await db("BookHistory").where("book_id", destination.id),
+        ).toHaveLength(1);
+      } finally {
+        await fs.rm(tmpDir, { recursive: true, force: true });
+      }
+    });
+
+    it("preserves UUID state until a destination is scanned", async () => {
+      const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "move-first-"));
+      const sourceRoot = path.join(tmpDir, "testing");
+      const destinationRoot = path.join(tmpDir, "library");
+      await fs.mkdir(sourceRoot);
+      await fs.mkdir(destinationRoot);
+
+      try {
+        const syncId = "123e4567-e89b-42d3-a456-426614174100";
+        const source = await seedBook(db, {
+          path: path.join(sourceRoot, "moved.cbz"),
+          sync_id: syncId,
+          current_page: 9,
+          is_favorite: true,
+          state_version: 4,
+        });
+
+        const cleanup = await cleanupMissingBooks(sourceRoot, new Set(), true);
+        expect(cleanup.deleted).toBe(0);
+        expect(await db("Book").where("id", source.id).first()).toMatchObject({
+          is_offline: 1,
+          current_page: 9,
+        });
+
+        const destinationPath = path.join(destinationRoot, "moved.cbz");
+        await writeTestArchive(destinationPath);
+        await scanFile(destinationPath, syncId);
+
+        const copies = await db("Book").where("sync_id", syncId);
+        expect(copies).toHaveLength(1);
+        expect(copies[0]).toMatchObject({
+          id: source.id,
+          path: destinationPath,
+          current_page: 9,
+          is_favorite: 1,
+          state_version: 4,
+          is_offline: 0,
+        });
+      } finally {
+        await fs.rm(tmpDir, { recursive: true, force: true });
+      }
+    });
+  });
 });

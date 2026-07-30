@@ -23,6 +23,7 @@ import {
   registerConfigHandlers,
 } from "./handlers/configHandler.js";
 import {
+  cleanupMissingBooks,
   registerDirectoryHandlers,
   scanDirectory,
 } from "./handlers/directoryHandler.js";
@@ -364,10 +365,12 @@ app.whenReady().then(async () => {
     }
 
     try {
-      if (mediaRequest.kind === "thumbnail") {
+      if (mediaRequest.kind !== "page") {
         const thumbnailPath = path.join(
           app.getPath("userData"),
-          "thumbnails",
+          mediaRequest.kind === "thumbnail"
+            ? "thumbnails"
+            : "downloader_temp_thumbnails",
           mediaRequest.fileName,
         );
         const imageBuffer = await fs.readFile(thumbnailPath);
@@ -588,9 +591,19 @@ app.whenReady().then(async () => {
       // 스캔을 백그라운드에서 비동기로 실행 (UI 로딩을 차단하지 않음)
       void (async () => {
         try {
+          const completedScans: {
+            folderPath: string;
+            foundPaths: Set<string>;
+          }[] = [];
           for (const folderPath of libraryFolders) {
             console.log(`[Main] Auto-scanning library folder: ${folderPath}`);
-            await scanDirectory(folderPath);
+            const result = await scanDirectory(folderPath, {
+              preserveMissingSyncIds: true,
+            });
+            completedScans.push({
+              folderPath,
+              foundPaths: result.foundPaths,
+            });
 
             const books = await db("Book")
               .select("id")
@@ -600,6 +613,9 @@ app.whenReady().then(async () => {
             await Promise.all(
               books.map((book) => handleGenerateThumbnail(book.id)),
             );
+          }
+          for (const { folderPath, foundPaths } of completedScans) {
+            await cleanupMissingBooks(folderPath, foundPaths);
           }
         } catch (error) {
           console.error("[Main] Initial library scan failed:", error);

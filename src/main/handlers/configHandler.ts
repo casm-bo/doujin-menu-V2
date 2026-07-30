@@ -7,7 +7,11 @@ import knex from "knex";
 import path from "path";
 import db, { closeDbConnection } from "../db/index.js";
 import { filterLibraryPathRows } from "../utils/libraryPath.js";
-import { forgetBooksUnderPath, scanDirectory } from "./directoryHandler.js";
+import {
+  cleanupMissingBooks,
+  forgetBooksUnderPath,
+  scanDirectory,
+} from "./directoryHandler.js";
 import { handleGenerateThumbnail } from "./thumbnailHandler.js";
 
 // 라이브러리 뷰 설정 타입
@@ -258,15 +262,26 @@ export const handleVerifyLockPassword = async (password: string) => {
 export const handleRescanAllMetadata = async () => {
   try {
     const libraryFolders = store.get("libraryFolders", []);
+    const completedScans: {
+      folderPath: string;
+      foundPaths: Set<string>;
+    }[] = [];
     for (const folderPath of libraryFolders) {
       // 사용자 명시적 전체 재스캔 → 캐시 무시 (force)
-      await scanDirectory(folderPath, { force: true });
+      const result = await scanDirectory(folderPath, {
+        force: true,
+        preserveMissingSyncIds: true,
+      });
+      completedScans.push({ folderPath, foundPaths: result.foundPaths });
       const candidates = await db("Book")
         .select("id", "path")
         .whereLike("path", `${folderPath}%`)
         .and.where("cover_path", null);
       const books = filterLibraryPathRows(candidates, folderPath);
       await Promise.all(books.map((book) => handleGenerateThumbnail(book.id)));
+    }
+    for (const { folderPath, foundPaths } of completedScans) {
+      await cleanupMissingBooks(folderPath, foundPaths);
     }
     return { success: true };
   } catch (error) {
@@ -454,7 +469,7 @@ export const handleRestoreDatabase = async (
 
     await fs.rm(stagedDbPath, { force: true });
     await fs.copyFile(backupDbPath, stagedDbPath);
-    validateBackupDatabase(stagedDbPath);
+    await validateBackupDatabase(stagedDbPath);
     if (existsSync(backupConfigPath)) {
       await fs.rm(stagedConfigPath, { force: true });
       await fs.copyFile(backupConfigPath, stagedConfigPath);

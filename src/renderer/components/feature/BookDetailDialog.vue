@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { getThumbnailUrl } from "@/api";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -74,7 +75,7 @@ const searchInDownloader = (text: string, prefix: string) => {
         <!-- 커버 이미지와 기본 정보 -->
         <div class="flex gap-6">
           <img
-            :src="book.cover_path"
+            :src="getThumbnailUrl(book.cover_path)"
             alt="Book Cover"
             class="h-64 w-auto rounded-lg object-cover shadow-lg"
           />

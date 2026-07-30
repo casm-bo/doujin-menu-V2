@@ -1,6 +1,18 @@
 import crypto from "crypto";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+const { mockBackupRaw, mockBackupDestroy } = vi.hoisted(() => ({
+  mockBackupRaw: vi.fn(),
+  mockBackupDestroy: vi.fn(),
+}));
+
+vi.mock("knex", () => ({
+  default: vi.fn(() => ({
+    raw: mockBackupRaw,
+    destroy: mockBackupDestroy,
+  })),
+}));
+
 // electron-store 모킹
 const mockGet = vi.fn();
 const mockSet = vi.fn();
@@ -66,6 +78,7 @@ vi.mock("fs/promises", () => ({
 
 // directoryHandler와 thumbnailHandler 모킹
 vi.mock("../../../src/main/handlers/directoryHandler.js", () => ({
+  cleanupMissingBooks: vi.fn(),
   forgetBooksUnderPath: vi.fn(),
   scanDirectory: vi.fn(),
 }));
@@ -98,6 +111,8 @@ describe("configHandler", () => {
     vi.mocked(fs.rm).mockResolvedValue();
     vi.mocked(fs.rename).mockResolvedValue();
     vi.mocked(fs.unlink).mockResolvedValue();
+    mockBackupRaw.mockResolvedValue([{ quick_check: "ok" }]);
+    mockBackupDestroy.mockResolvedValue(undefined);
 
     // mockSet의 기본 동작 설정 (에러를 던지지 않도록)
     mockSet.mockImplementation(() => {
@@ -345,6 +360,23 @@ describe("configHandler", () => {
       expect(result.success).toBe(false);
       expect(closeDbConnection).not.toHaveBeenCalled();
       expect(app.relaunch).not.toHaveBeenCalled();
+    });
+
+    it("백업 검증이 실패하면 열린 DB를 닫지 않음", async () => {
+      vi.mocked(dialog.showOpenDialog).mockResolvedValue({
+        canceled: false,
+        filePaths: ["/backup"],
+      });
+      vi.mocked(existsSync).mockReturnValue(true);
+      mockBackupRaw.mockRejectedValueOnce(new Error("invalid backup"));
+
+      const result = await handleRestoreDatabase({
+        sender: {},
+      } as Electron.IpcMainInvokeEvent);
+
+      expect(result.success).toBe(false);
+      expect(closeDbConnection).not.toHaveBeenCalled();
+      expect(fs.rename).not.toHaveBeenCalled();
     });
 
     it("초기화가 DB 종료 후 실패하면 앱을 재시작", async () => {
