@@ -23,10 +23,7 @@ const updateError = ref("");
 const githubReleasesUrl = ref(""); // GitHub 릴리즈 URL 추가
 const isPortableVersion = ref(false); // 포터블 버전 여부 추가
 const openChangelog = ref(false);
-const handleUpdateStatus = (
-  _event: Electron.IpcRendererEvent,
-  ...args: unknown[]
-) => {
+const handleUpdateStatus = (...args: unknown[]) => {
   const data = args[0] as {
     status: string;
     info?: { version: string };
@@ -44,6 +41,7 @@ const handleUpdateStatus = (
     updateError.value = data.error;
   }
 };
+let stopUpdateStatus = () => {};
 
 const checkForUpdates = async () => {
   updateStatus.value = "checking";
@@ -113,11 +111,11 @@ const showChangelog = () => {
 
 onMounted(async () => {
   appVersion.value = await api.getAppVersion();
-  ipcRenderer.on("update-status", handleUpdateStatus);
+  stopUpdateStatus = ipcRenderer.on("update-status", handleUpdateStatus);
 });
 
 onUnmounted(() => {
-  ipcRenderer.off("update-status", handleUpdateStatus);
+  stopUpdateStatus();
 });
 </script>
 

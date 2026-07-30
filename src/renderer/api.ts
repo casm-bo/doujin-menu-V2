@@ -6,11 +6,7 @@ import type {
   UpdateCheckResult,
 } from "../types/ipc";
 
-// 타입이 지정된 IPC Renderer
-// eslint-disable-next-line @typescript-eslint/ban-ts-comment
-// @ts-ignore electron 전용 API
-export const ipcRenderer = window.require("electron")
-  .ipcRenderer as TypedIpcRenderer;
+export const ipcRenderer: TypedIpcRenderer = window.ipcRenderer;
 
 export async function getBook(bookId: number) {
   return ipcRenderer.invoke("get-book", bookId);

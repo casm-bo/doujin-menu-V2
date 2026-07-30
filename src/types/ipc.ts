@@ -871,15 +871,11 @@ export interface TypedIpcRenderer {
     ...args: IpcSendChannels[K] extends void ? [] : [IpcSendChannels[K]]
   ): void;
 
-  on(
-    channel: string,
-    listener: (event: Electron.IpcRendererEvent, ...args: unknown[]) => void,
-  ): void;
+  on(channel: string, listener: (...args: unknown[]) => void): () => void;
+}
 
-  off(
-    channel: string,
-    listener: (event: Electron.IpcRendererEvent, ...args: unknown[]) => void,
-  ): void;
-
-  removeAllListeners(channel: string): void;
+declare global {
+  interface Window {
+    ipcRenderer: TypedIpcRenderer;
+  }
 }

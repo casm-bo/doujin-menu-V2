@@ -27,6 +27,7 @@ vi.mock("electron", () => ({
   BrowserWindow: vi.fn(),
   protocol: {
     handle: vi.fn(),
+    registerSchemesAsPrivileged: vi.fn(),
   },
 }));
 
@@ -79,7 +80,11 @@ vi.mock("fs/promises", () => ({
 }));
 
 import { lstat, readdir } from "fs/promises";
-import { formatBytes } from "../../../src/main/handlers/etcHandler";
+import { shell } from "electron";
+import {
+  formatBytes,
+  openAllowedExternalUrl,
+} from "../../../src/main/handlers/etcHandler";
 
 // mock 함수 타입 캐스팅
 const mockLstat = lstat as unknown as ReturnType<typeof vi.fn>;
@@ -116,6 +121,16 @@ async function getDirSize(dirPath: string): Promise<number> {
 }
 
 describe("etcHandler", () => {
+  it("허용된 HTTPS 호스트만 외부 브라우저로 엶", async () => {
+    await expect(
+      openAllowedExternalUrl("https://github.com/casm-bo/doujin-menu-V2"),
+    ).resolves.toBe(true);
+    await expect(
+      openAllowedExternalUrl("https://github.com.evil.example/"),
+    ).resolves.toBe(false);
+    expect(shell.openExternal).toHaveBeenCalledOnce();
+  });
+
   describe("formatBytes", () => {
     it("0 바이트는 '0 Bytes'를 반환해야 함", () => {
       expect(formatBytes(0)).toBe("0 Bytes");

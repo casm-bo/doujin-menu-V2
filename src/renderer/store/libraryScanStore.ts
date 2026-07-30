@@ -47,10 +47,7 @@ export const useLibraryScanStore = defineStore("libraryScan", () => {
   });
 
   // IPC 이벤트 핸들러
-  const handleProgressUpdate = (
-    _event: Electron.IpcRendererEvent,
-    ...args: unknown[]
-  ) => {
+  const handleProgressUpdate = (...args: unknown[]) => {
     const progress = args[0] as LibraryScanProgress;
     scanProgress.value = progress;
 
@@ -64,18 +61,22 @@ export const useLibraryScanStore = defineStore("libraryScan", () => {
 
   // 초기화 시 이벤트 리스너 등록
   let isInitialized = false;
+  let stopProgressUpdate = () => {};
   const initialize = () => {
     if (isInitialized) return;
     isInitialized = true;
 
     // 스캔 진행률 이벤트 수신
-    ipcRenderer.on("library-scan-progress", handleProgressUpdate);
+    stopProgressUpdate = ipcRenderer.on(
+      "library-scan-progress",
+      handleProgressUpdate,
+    );
   };
 
   // 정리
   const cleanup = () => {
     if (!isInitialized) return;
-    ipcRenderer.off("library-scan-progress", handleProgressUpdate);
+    stopProgressUpdate();
     isInitialized = false;
   };
 

@@ -58,10 +58,7 @@ const generationProgress = ref({
   message: "",
 });
 const infoFilePattern = ref("\\((\\d+)\\)$");
-const handleInfoGenerationProgress = (
-  _event: Electron.IpcRendererEvent,
-  ...args: unknown[]
-) => {
+const handleInfoGenerationProgress = (...args: unknown[]) => {
   const progress = args[0] as {
     current: number;
     total: number;
@@ -72,6 +69,7 @@ const handleInfoGenerationProgress = (
     isGeneratingInfoFiles.value = false;
   }
 };
+let stopInfoGenerationProgress = () => {};
 
 onMounted(async () => {
   const config = await ipcRenderer.invoke("get-config");
@@ -79,11 +77,14 @@ onMounted(async () => {
   hideLibraryTags.value = config.hideLibraryTags === true;
   await loadLibraryFolders();
 
-  ipcRenderer.on("info-generation-progress", handleInfoGenerationProgress);
+  stopInfoGenerationProgress = ipcRenderer.on(
+    "info-generation-progress",
+    handleInfoGenerationProgress,
+  );
 });
 
 onUnmounted(() => {
-  ipcRenderer.off("info-generation-progress", handleInfoGenerationProgress);
+  stopInfoGenerationProgress();
 });
 
 // 라이브러리 폴더 정보 불러오기

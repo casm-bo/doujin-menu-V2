@@ -44,6 +44,7 @@ vi.mock("electron", () => ({
   BrowserWindow: vi.fn(),
   protocol: {
     handle: vi.fn(),
+    registerSchemesAsPrivileged: vi.fn(),
   },
 }));
 

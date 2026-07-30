@@ -33,6 +33,16 @@ export const handleIsWindowMaximized = (win: BrowserWindow): boolean => {
   return win.isMaximized();
 };
 
+export const isAllowedViewerRoute = (route: string): boolean => {
+  try {
+    const base = "https://doujin-menu.local";
+    const url = new URL(route, base);
+    return url.origin === base && /^\/viewer\/[1-9]\d*$/.test(url.pathname);
+  } catch {
+    return false;
+  }
+};
+
 // 메인 윈도우 닫기
 export const handleCloseWindow = (mainWindow: BrowserWindow | null) => {
   if (mainWindow && !mainWindow.isDestroyed()) mainWindow.close();
@@ -109,7 +119,7 @@ export function registerWindowHandlers(
   });
 
   ipcMain.on("open-new-window", (_event, url: string) => {
-    createViewerWindow(url);
+    if (isAllowedViewerRoute(url)) createViewerWindow(url);
   });
 
   ipcMain.handle("is-new-window", (event) => {

@@ -214,10 +214,7 @@ const syncQueueToStatuses = () => {
   });
 };
 
-const handleDownloadProgress = (
-  _event: Electron.IpcRendererEvent,
-  ...args: unknown[]
-) => {
+const handleDownloadProgress = (...args: unknown[]) => {
   const { galleryId, status, progress, error } = args[0] as {
     galleryId: number;
     status: string;
@@ -241,6 +238,8 @@ const handleDownloadProgress = (
 const handleDownloadQueueUpdated = () => {
   void downloadQueueStore.fetchQueue().then(syncQueueToStatuses);
 };
+let stopDownloadProgress = () => {};
+let stopDownloadQueueUpdated = () => {};
 
 onMounted(() => {
   // 다운로드 큐 store 초기화
@@ -266,10 +265,16 @@ onMounted(() => {
   }
 
   // 다운로드 진행 상황 수신
-  ipcRenderer.on("download-progress", handleDownloadProgress);
+  stopDownloadProgress = ipcRenderer.on(
+    "download-progress",
+    handleDownloadProgress,
+  );
 
   // 큐 업데이트 이벤트 수신 (큐 상태가 변경되면 downloadStatuses에 반영)
-  ipcRenderer.on("download-queue-updated", handleDownloadQueueUpdated);
+  stopDownloadQueueUpdated = ipcRenderer.on(
+    "download-queue-updated",
+    handleDownloadQueueUpdated,
+  );
 
   // 저장된 다운로드 경로 불러오기
   ipcRenderer.invoke("get-config-value", "downloadPath").then((path) => {
@@ -293,8 +298,8 @@ onUnmounted(() => {
 
   // 큐 store cleanup
   downloadQueueStore.cleanup();
-  ipcRenderer.off("download-progress", handleDownloadProgress);
-  ipcRenderer.off("download-queue-updated", handleDownloadQueueUpdated);
+  stopDownloadProgress();
+  stopDownloadQueueUpdated();
 });
 
 watch(observerTarget, (newTarget) => {

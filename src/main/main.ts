@@ -13,6 +13,7 @@ import windowStateKeeper from "electron-window-state";
 import { rmSync } from "fs";
 import fs from "fs/promises";
 import path from "path"; // path 모듈 전체 임포트
+import { fileURLToPath } from "url";
 import * as yauzl from "yauzl";
 import db, { closeDbConnection } from "./db/index.js"; // db 모듈 추가
 import "./handlers/bookHandler.js";
@@ -30,7 +31,10 @@ import {
   initializeDownloadQueue,
   registerDownloadQueueHandlers,
 } from "./handlers/downloadQueueHandler.js";
-import { registerEtcHandlers } from "./handlers/etcHandler.js";
+import {
+  openAllowedExternalUrl,
+  registerEtcHandlers,
+} from "./handlers/etcHandler.js";
 import { registerPresetHandlers } from "./handlers/presetHandler.js";
 import {
   registerSeriesCollectionHandlers,
@@ -53,6 +57,13 @@ import { naturalSort } from "./utils/index.js";
 log.initialize();
 export const console = log;
 
+protocol.registerSchemesAsPrivileged([
+  {
+    scheme: "doujin-menu",
+    privileges: { secure: true, standard: true, supportFetchAPI: true },
+  },
+]);
+
 // 앱이 중복으로 켜지지 않도록 방지
 const gotTheLock = app.requestSingleInstanceLock();
 
@@ -71,6 +82,32 @@ let isQuitting = false;
 app.on("before-quit", () => {
   isQuitting = true;
 });
+
+function restrictNavigation(win: BrowserWindow): void {
+  win.webContents.on("will-navigate", (event, targetUrl) => {
+    try {
+      const target = new URL(targetUrl);
+      const allowed =
+        process.env.NODE_ENV === "development"
+          ? target.origin === `http://localhost:${process.argv[2]}`
+          : target.protocol === "file:" &&
+            path.resolve(fileURLToPath(target)).toLowerCase() ===
+              path
+                .resolve(
+                  import.meta.dirname,
+                  "..",
+                  "..",
+                  "renderer",
+                  "index.html",
+                )
+                .toLowerCase();
+      if (allowed) return;
+    } catch {
+      // malformed navigation targets are blocked below
+    }
+    event.preventDefault();
+  });
+}
 
 function getAppIconPath(): string {
   return process.env.NODE_ENV === "development"
@@ -131,13 +168,15 @@ function createViewerWindow(fromUrl: string) {
     icon: getAppIconPath(),
     titleBarStyle: "hidden",
     webPreferences: {
-      sandbox: false,
-      nodeIntegration: true,
-      contextIsolation: false,
-      webSecurity: false,
+      preload: path.join(import.meta.dirname, "preload.cjs"),
+      sandbox: true,
+      nodeIntegration: false,
+      contextIsolation: true,
+      webSecurity: true,
     },
   });
   viewerWindow.setMenu(null);
+  restrictNavigation(viewerWindow);
 
   if (process.env.NODE_ENV === "development") {
     const rendererPort = process.argv[2];
@@ -150,7 +189,7 @@ function createViewerWindow(fromUrl: string) {
   }
 
   viewerWindow.webContents.setWindowOpenHandler((details) => {
-    shell.openExternal(details.url);
+    void openAllowedExternalUrl(details.url);
     return { action: "deny" };
   });
 
@@ -182,13 +221,15 @@ function createWindow() {
       : undefined,
     titleBarStyle: "hidden",
     webPreferences: {
-      sandbox: false,
-      nodeIntegration: true,
-      contextIsolation: false,
-      webSecurity: false,
+      preload: path.join(import.meta.dirname, "preload.cjs"),
+      sandbox: true,
+      nodeIntegration: false,
+      contextIsolation: true,
+      webSecurity: true,
     },
   });
   mainWindow.setMenu(null);
+  restrictNavigation(mainWindow);
   mainWindowState.manage(mainWindow);
 
   mainWindow.on("close", (event) => {
@@ -218,17 +259,7 @@ function createWindow() {
   }
 
   mainWindow.webContents.setWindowOpenHandler((details) => {
-    // 특정 도메인만 외부 브라우저로 열기
-    const allowedDomains = ["github.com", "www.dlsite.com", "forms.gle"];
-    if (
-      allowedDomains.some((domain) =>
-        details.url.startsWith("https://" + domain),
-      )
-    ) {
-      shell.openExternal(details.url);
-    }
-
-    // Electron 내부 창 생성 차단
+    void openAllowedExternalUrl(details.url);
     return { action: "deny" };
   });
 

@@ -17,17 +17,28 @@ import { join } from "path";
 const rootDir = join(import.meta.dirname, "..");
 const markerPath = join(rootDir, "node_modules", ".native-target");
 const target = process.argv.includes("--node") ? "node" : "electron";
+const require = createRequire(import.meta.url);
 
-// 마커 확인 — 이미 올바른 런타임이면 스킵
-try {
-  if (readFileSync(markerPath, "utf8").trim() === target) {
-    console.log(`better-sqlite3: 이미 ${target}용 (스킵)`);
+if (target === "node") {
+  try {
+    const Database = require("better-sqlite3");
+    new Database(":memory:").close();
+    writeFileSync(markerPath, target);
+    console.log("better-sqlite3: 이미 node용 (스킵)");
     process.exit(0);
+  } catch {
+    // ABI가 다르면 아래에서 Node용으로 다시 빌드
   }
-} catch {}
+} else {
+  try {
+    if (readFileSync(markerPath, "utf8").trim() === target) {
+      console.log(`better-sqlite3: 이미 ${target}용 (스킵)`);
+      process.exit(0);
+    }
+  } catch {}
+}
 
 if (target === "electron") {
-  const require = createRequire(import.meta.url);
   const { version } = require("electron/package.json");
   console.log(`Rebuilding better-sqlite3 for Electron ${version}...`);
   execSync("pnpm rebuild better-sqlite3", {

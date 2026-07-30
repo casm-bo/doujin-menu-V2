@@ -12,7 +12,7 @@ export default defineConfig({
       include: ["src/**/*.{ts,vue}"], // Include these files for coverage
       exclude: [
         "src/main/main.ts", // Electron 메인 프로세스 엔트리포인트
-        "src/main/preload.ts", // Preload 스크립트
+        "src/main/preload.cjs", // Preload 스크립트
         "src/main/updater.ts", // 업데이터
         "src/main/db/**", // DB 마이그레이션 및 설정
         "src/main/workers/**", // 워커 스레드

@@ -5,7 +5,7 @@ vi.mock("electron", () => ({
   ipcMain: { handle: vi.fn(), on: vi.fn() },
 }));
 
-const { handleIsWindowMaximized } =
+const { handleIsWindowMaximized, isAllowedViewerRoute } =
   await import("../../../src/main/handlers/windowHandler.js");
 
 describe("windowHandler", () => {
@@ -16,5 +16,11 @@ describe("windowHandler", () => {
 
     expect(handleIsWindowMaximized(win)).toBe(true);
     expect(win.isMaximized).toHaveBeenCalledOnce();
+  });
+
+  it("viewer 내부 경로만 새 창으로 허용함", () => {
+    expect(isAllowedViewerRoute("/viewer/42?filter=test")).toBe(true);
+    expect(isAllowedViewerRoute("https://example.com/viewer/42")).toBe(false);
+    expect(isAllowedViewerRoute("/settings")).toBe(false);
   });
 });

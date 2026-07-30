@@ -12,6 +12,29 @@ import { naturalSort } from "../utils/index.js";
 import { console } from "../main.js";
 import { store as configStore } from "./configHandler.js";
 
+const ALLOWED_EXTERNAL_HOSTS = new Set([
+  "forms.gle",
+  "github.com",
+  "tweakcn.com",
+  "www.dlsite.com",
+]);
+
+export async function openAllowedExternalUrl(url: string): Promise<boolean> {
+  try {
+    const parsed = new URL(url);
+    if (
+      parsed.protocol !== "https:" ||
+      !ALLOWED_EXTERNAL_HOSTS.has(parsed.hostname)
+    ) {
+      return false;
+    }
+    await shell.openExternal(parsed.toString());
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export async function getDirSize(dirPath: string): Promise<number> {
   try {
     const stats = await fs.lstat(dirPath).catch(() => null);
@@ -202,7 +225,7 @@ export function registerEtcHandlers(win: BrowserWindow) {
 
   // 외부 링크 열기
   ipcMain.on("open-external-link", (_event, url: string) => {
-    shell.openExternal(url);
+    void openAllowedExternalUrl(url);
   });
 
   // 로그 폴더 열기
