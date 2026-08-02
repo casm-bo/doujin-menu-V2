@@ -1,25 +1,6 @@
 <script setup lang="ts">
-import {
-  addPreset,
-  deletePreset,
-  getPresets,
-  ipcRenderer,
-  updatePreset,
-} from "@/api";
-import PresetFormDialog from "@/components/feature/settings/PresetFormDialog.vue";
+import { ipcRenderer } from "@/api";
 import SettingItem from "@/components/feature/settings/SettingItem.vue";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from "@/components/ui/alert-dialog";
-import { Button } from "@/components/ui/button";
 import {
   Card,
   CardContent,
@@ -35,21 +16,11 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import { useUiStore } from "@/store/uiStore";
-import { Icon } from "@iconify/vue";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/vue-query";
+import { useQueryClient } from "@tanstack/vue-query";
 import { AcceptableValue } from "reka-ui";
 import { onMounted, ref } from "vue";
 import { toast } from "vue-sonner";
-import { Preset } from "../../../../../types/ipc";
 
 const queryClient = useQueryClient();
 const saveConfig = async (key: string, value: unknown) => {
@@ -58,59 +29,6 @@ const saveConfig = async (key: string, value: unknown) => {
     toast.error("설정 저장에 실패했습니다.", { description: result.error });
   }
   queryClient.invalidateQueries({ queryKey: ["config"] });
-};
-
-// 프리셋 관리 상태
-const isPresetFormDialogOpen = ref(false);
-const editingPreset = ref<Preset | null>(null);
-
-// 프리셋 불러오기
-const { data: presets, isLoading: isLoadingPresets } = useQuery({
-  queryKey: ["presets"],
-  queryFn: getPresets,
-});
-
-// 프리셋 추가/수정 뮤테이션
-const addUpdatePresetMutation = useMutation({
-  mutationFn: async (preset: Omit<Preset, "id"> | Preset) => {
-    if ("id" in preset && preset.id) {
-      return updatePreset(preset as Preset);
-    } else {
-      return addPreset(preset);
-    }
-  },
-  onSuccess: () => {
-    queryClient.invalidateQueries({ queryKey: ["presets"] });
-    toast.success("프리셋이 성공적으로 저장되었습니다.");
-    isPresetFormDialogOpen.value = false;
-    editingPreset.value = null;
-  },
-  onError: (error) => {
-    toast.error("프리셋 저장에 실패했습니다.", { description: error.message });
-  },
-});
-
-// 프리셋 삭제 뮤테이션
-const deletePresetMutation = useMutation({
-  mutationFn: deletePreset,
-  onSuccess: () => {
-    queryClient.invalidateQueries({ queryKey: ["presets"] });
-    toast.success("프리셋이 성공적으로 삭제되었습니다.");
-  },
-  onError: (error) => {
-    toast.error("프리셋 삭제에 실패했습니다.", { description: error.message });
-  },
-});
-
-// 프리셋 다이얼로그 열기/닫기
-const openPresetDialog = (preset: Preset | null = null) => {
-  editingPreset.value = preset;
-  isPresetFormDialogOpen.value = true;
-};
-
-const closePresetDialog = () => {
-  isPresetFormDialogOpen.value = false;
-  editingPreset.value = null;
 };
 
 // 일반 설정 상태
@@ -204,106 +122,5 @@ const onScreenRotationChange = async (value: AcceptableValue) => {
       </CardContent>
     </Card>
 
-    <Card>
-      <CardHeader>
-        <CardTitle>검색 프리셋 관리</CardTitle>
-        <CardDescription
-          >자주 사용하는 검색어 조합을 저장하고 관리합니다.</CardDescription
-        >
-      </CardHeader>
-      <CardContent class="space-y-4">
-        <div class="flex justify-end">
-          <Button @click="openPresetDialog()">
-            <Icon icon="solar:add-circle-bold-duotone" class="h-5 w-5" />
-            새 프리셋 추가
-          </Button>
-        </div>
-        <div v-if="isLoadingPresets" class="text-muted-foreground text-center">
-          프리셋 불러오는 중...
-        </div>
-        <div v-else-if="presets && presets.length > 0">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>이름</TableHead>
-                <TableHead>검색어</TableHead>
-                <TableHead class="w-[100px] text-right">관리</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              <TableRow v-for="preset in presets" :key="preset.id">
-                <TableCell class="font-medium">{{ preset.name }}</TableCell>
-                <TableCell class="text-muted-foreground">{{
-                  preset.query
-                }}</TableCell>
-                <TableCell class="text-right">
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    @click="openPresetDialog(preset)"
-                  >
-                    <Icon icon="solar:pen-bold-duotone" class="h-4 w-4" />
-                  </Button>
-                  <AlertDialog>
-                    <AlertDialogTrigger as-child>
-                      <Button variant="ghost" size="icon">
-                        <Icon
-                          icon="solar:trash-bin-trash-bold-duotone"
-                          class="h-4 w-4 text-red-500"
-                        />
-                      </Button>
-                    </AlertDialogTrigger>
-                    <AlertDialogContent>
-                      <AlertDialogHeader>
-                        <AlertDialogTitle>프리셋 삭제</AlertDialogTitle>
-                        <AlertDialogDescription>
-                          '{{ preset.name }}' 프리셋을 정말로 삭제하시겠습니까?
-                          이 작업은 되돌릴 수 없습니다.
-                        </AlertDialogDescription>
-                      </AlertDialogHeader>
-                      <AlertDialogFooter>
-                        <AlertDialogCancel>취소</AlertDialogCancel>
-                        <AlertDialogAction
-                          @click="deletePresetMutation.mutate(preset.id)"
-                          >삭제</AlertDialogAction
-                        >
-                      </AlertDialogFooter>
-                    </AlertDialogContent>
-                  </AlertDialog>
-                </TableCell>
-              </TableRow>
-            </TableBody>
-          </Table>
-        </div>
-        <div v-else>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>이름</TableHead>
-                <TableHead>검색어</TableHead>
-                <TableHead class="w-[100px] text-right">관리</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              <TableRow>
-                <TableCell
-                  colspan="3"
-                  class="text-muted-foreground p-6 text-center"
-                >
-                  (없음)
-                </TableCell>
-              </TableRow>
-            </TableBody>
-          </Table>
-        </div>
-      </CardContent>
-    </Card>
-
-    <PresetFormDialog
-      :open="isPresetFormDialogOpen"
-      :editing-preset="editingPreset"
-      @update:open="closePresetDialog"
-      @save="addUpdatePresetMutation.mutate($event)"
-    />
   </div>
 </template>

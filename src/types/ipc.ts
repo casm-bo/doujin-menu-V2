@@ -343,10 +343,10 @@ export interface IpcChannels {
   "get-book-history": {
     request: { pageParam?: number; pageSize?: number };
     response: {
+      success: boolean;
       data?: BookHistory[];
       hasNextPage?: boolean;
       nextPage?: number;
-      success?: boolean;
       error?: string;
     };
   };

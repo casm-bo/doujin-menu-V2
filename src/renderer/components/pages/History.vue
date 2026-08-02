@@ -19,7 +19,7 @@ import { Button } from "@/components/ui/button";
 import { Icon } from "@iconify/vue";
 import PageHeader from "../layout/PageHeader.vue";
 import { useInfiniteQuery, useQueryClient } from "@tanstack/vue-query";
-import { computed, ref } from "vue";
+import { computed, onActivated, ref } from "vue";
 import { useRouter } from "vue-router";
 import { toast } from "vue-sonner";
 
@@ -34,10 +34,28 @@ interface HistoryItem {
 const router = useRouter();
 const queryClient = useQueryClient();
 
-const { data, fetchNextPage, hasNextPage, isFetchingNextPage, status } =
+const {
+  data,
+  error,
+  fetchNextPage,
+  hasNextPage,
+  isFetchingNextPage,
+  refetch,
+  status,
+} =
   useInfiniteQuery({
     queryKey: ["bookHistory"],
-    queryFn: ({ pageParam = 0 }) => getBookHistory({ pageParam }),
+    queryFn: async ({ pageParam = 0 }) => {
+      const result = await getBookHistory({ pageParam });
+      if (!result.success) {
+        throw new Error(String(result.error || "읽음 기록 조회 실패"));
+      }
+      return {
+        data: result.data || [],
+        hasNextPage: result.hasNextPage === true,
+        nextPage: result.nextPage ?? pageParam + 1,
+      };
+    },
     getNextPageParam: (lastPage) => {
       if (lastPage.hasNextPage) {
         return lastPage.nextPage;
@@ -45,7 +63,10 @@ const { data, fetchNextPage, hasNextPage, isFetchingNextPage, status } =
       return undefined;
     },
     initialPageParam: 0,
+    retry: false,
   });
+
+onActivated(() => void refetch());
 
 const allItems = computed<HistoryItem[]>(
   () =>
@@ -170,7 +191,10 @@ const confirmClearAll = async () => {
         v-else-if="status === 'error'"
         class="text-destructive p-4 text-center"
       >
-        <p>오류가 발생했습니다.</p>
+        <p>{{ error?.message || "오류가 발생했습니다." }}</p>
+        <Button class="mt-3" variant="outline" @click="refetch()">
+          다시 시도
+        </Button>
       </div>
       <div v-else-if="allItems.length > 0" class="space-y-2">
         <div v-for="item in allItems" :key="item.history_id">

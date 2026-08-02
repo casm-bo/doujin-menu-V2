@@ -119,7 +119,20 @@ export async function getBookHistory({
   pageParam?: number;
   pageSize?: number;
 }) {
-  return ipcRenderer.invoke("get-book-history", { pageParam, pageSize });
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      ipcRenderer.invoke("get-book-history", { pageParam, pageSize }),
+      new Promise<never>((_, reject) => {
+        timeout = setTimeout(
+          () => reject(new Error("읽음 기록 요청 시간이 초과되었습니다.")),
+          10_000,
+        );
+      }),
+    ]);
+  } finally {
+    if (timeout) clearTimeout(timeout);
+  }
 }
 
 export async function deleteBookHistory(historyId: number) {

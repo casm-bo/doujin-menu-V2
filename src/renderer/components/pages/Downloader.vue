@@ -6,7 +6,6 @@ import { Button } from "@/components/ui/button";
 import {
   Card,
   CardContent,
-  CardFooter,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
@@ -420,11 +419,27 @@ useSearchPersistence(searchQuery, "downloader-search-query");
               <span>작품 검색</span>
             </CardTitle>
           </CardHeader>
-          <CardContent>
-            <div class="grid grid-cols-1 items-end gap-4 sm:grid-cols-4">
-              <div
-                class="col-span-full flex flex-col space-y-1.5 sm:col-span-1 lg:col-span-full xl:col-span-2 2xl:col-span-1"
-              >
+          <CardContent class="space-y-4">
+            <div class="space-y-1.5">
+              <Label for="search-input">검색어</Label>
+              <SmartSearchInput
+                id="search-input"
+                v-model="searchQuery"
+                placeholder="예: artist:작가명 tag:태그명"
+                @keyup.enter="handleSearch"
+              />
+            </div>
+            <div
+              class="grid grid-cols-1 items-end gap-3 sm:grid-cols-[auto_minmax(180px,1fr)_minmax(140px,1fr)]"
+            >
+              <div class="flex flex-col space-y-1.5">
+                <Label>프리셋</Label>
+                <PresetDropdown
+                  v-model="searchQuery"
+                  @apply-preset="handleSearch"
+                />
+              </div>
+              <div class="flex flex-col space-y-1.5">
                 <Label for="language-select">언어</Label>
                 <Select
                   :model-value="downloaderLanguage"
@@ -444,16 +459,11 @@ useSearchPersistence(searchQuery, "downloader-search-query");
                   </SelectContent>
                 </Select>
               </div>
-              <div
-                class="col-span-full flex flex-col space-y-1.5 sm:col-span-3 lg:col-span-full xl:col-span-2 2xl:col-span-3"
-              >
-                <Label for="search-input">검색어</Label>
-                <SmartSearchInput
-                  id="search-input"
-                  v-model="searchQuery"
-                  placeholder="예: artist:작가명 tag:태그명"
-                  @keyup.enter="handleSearch"
-                />
+              <div class="flex flex-col space-y-1.5">
+                <Label>&nbsp;</Label>
+                <Button @click="handleSearch">
+                  <Icon icon="solar:magnifer-bold-duotone" class="h-5 w-5" />검색
+                </Button>
               </div>
             </div>
             <p class="text-muted-foreground pt-2 text-xs">
@@ -463,15 +473,6 @@ useSearchPersistence(searchQuery, "downloader-search-query");
               >)
             </p>
           </CardContent>
-          <CardFooter class="flex items-center gap-2">
-            <PresetDropdown
-              v-model="searchQuery"
-              @apply-preset="handleSearch"
-            />
-            <Button class="flex-grow" @click="handleSearch">
-              <Icon icon="solar:magnifer-bold-duotone" class="h-5 w-5" />검색
-            </Button>
-          </CardFooter>
         </Card>
       </div>
 

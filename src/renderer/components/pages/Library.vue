@@ -57,6 +57,7 @@ import {
   getPresets,
   ipcRenderer,
   openBookFolder,
+  runSeriesDetection,
   toggleBookFavorite,
 } from "../../api";
 import PresetDropdown from "../common/PresetDropdown.vue";
@@ -338,6 +339,15 @@ const deleteMutation = useMutation({
   onError: (error) => {
     toast.error(`삭제 실패: ${error.message}`);
   },
+});
+
+const seriesDetectionMutation = useMutation({
+  mutationFn: () => runSeriesDetection(),
+  onSuccess: (result) => {
+    toast.success(`시리즈 자동 생성 완료: ${result?.created_count || 0}개 생성`);
+    void queryClient.invalidateQueries({ queryKey: ["books"] });
+  },
+  onError: (error) => toast.error(`시리즈 자동 생성 실패: ${error.message}`),
 });
 
 const handleDeleteSelected = () => {
@@ -755,6 +765,18 @@ useScrollRestoration(".flex-grow.overflow-y-auto");
           </HelpDialog>
         </template>
         <template #actions>
+          <Button
+            variant="outline"
+            :disabled="seriesDetectionMutation.isPending.value"
+            @click="seriesDetectionMutation.mutate()"
+          >
+            <Icon
+              icon="solar:magic-stick-3-bold-duotone"
+              class="h-5 w-5"
+              :class="{ 'animate-spin': seriesDetectionMutation.isPending.value }"
+            />
+            시리즈 자동 생성
+          </Button>
           <Button
             variant="secondary"
             size="icon"

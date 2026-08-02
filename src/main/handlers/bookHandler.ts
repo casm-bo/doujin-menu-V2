@@ -1226,6 +1226,7 @@ export const handleGetBookHistory = async ({
     const history = await historyQuery;
 
     return {
+      success: true,
       data: history,
       hasNextPage:
         (pageParam + 1) * pageSize < Number(totalHistory?.count || 0),

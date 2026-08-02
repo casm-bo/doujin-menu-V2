@@ -39,9 +39,6 @@ import {
 import { registerPresetHandlers } from "./handlers/presetHandler.js";
 import {
   registerSeriesCollectionHandlers,
-  handleRunSeriesDetection,
-  rebuildPrefixIndex,
-  loadPrefixIndexFromData,
 } from "./handlers/seriesCollectionHandler.js";
 import { registerBrowseHandlers } from "./handlers/browseHandler.js";
 import { registerStatisticsHandlers } from "./handlers/statisticsHandler.js";
@@ -150,9 +147,6 @@ function createTray(): void {
   tray.on("click", showMainWindow);
   tray.on("double-click", showMainWindow);
 }
-
-// 최초 부팅 시 시리즈 감지를 1회만 실행했는지 추적 (새로고침 시 재실행 방지)
-let hasRunInitialSeriesDetection = false;
 
 // 최초 부팅 시 라이브러리 자동 스캔을 1회만 실행했는지 추적 (새로고침 시 재실행 방지)
 let hasRunInitialLibraryScan = false;
@@ -278,41 +272,6 @@ function createWindow() {
     mainWindow.webContents.send("window-maximized", false);
   });
 
-  // Renderer가 로드된 후 시리즈 감지 실행 (UI 차단 방지)
-  // 충분히 지연시켜 Vue 앱이 완전히 초기화된 후 실행
-  // did-finish-load는 새로고침(Ctrl+R) 시에도 발생하므로, 최초 1회만 실행되도록 가드
-  mainWindow.webContents.on("did-finish-load", () => {
-    if (hasRunInitialSeriesDetection) return;
-    hasRunInitialSeriesDetection = true;
-
-    // 3초 후에 시리즈 감지 실행 (UI가 완전히 로드된 후)
-    setTimeout(() => {
-      const seriesSettings = configStore.get("seriesDetectionSettings", {
-        minConfidence: 0.7,
-        minBooks: 2,
-      });
-
-      handleRunSeriesDetection(seriesSettings)
-        .then(async (result) => {
-          if (result.success && result.data) {
-            console.log(
-              `[Main] 시리즈 감지 완료: ${result.data.created_count}개 시리즈 생성`,
-            );
-          }
-          // 워커에서 전송한 인덱스 데이터로 복원 (DB 조회 없음)
-          if (result.success && result.data?.indexEntries) {
-            loadPrefixIndexFromData(result.data.indexEntries);
-          } else {
-            // 워커에서 인덱스 구축 실패 시 폴백으로 DB 조회
-            await rebuildPrefixIndex();
-            console.log("[Main] 접두사 인덱스 구축 완료 (폴백)");
-          }
-        })
-        .catch((err) => {
-          console.error("[Main] 시리즈 감지 실패:", err);
-        });
-    }, 3000);
-  });
 }
 
 app.whenReady().then(async () => {

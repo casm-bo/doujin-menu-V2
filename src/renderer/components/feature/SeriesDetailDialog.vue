@@ -23,6 +23,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Icon } from "@iconify/vue";
 import { useMutation, useQuery } from "@tanstack/vue-query";
 import { computed, onBeforeUnmount, ref, watch } from "vue";
+import { useRouter } from "vue-router";
 import { toast } from "vue-sonner";
 import type { SeriesCollectionWithBooks } from "../../../main/db/types";
 import type { Book } from "../../../types/ipc";
@@ -47,6 +48,17 @@ const emit = defineEmits<{
   "update:open": [value: boolean];
   updated: [];
 }>();
+const router = useRouter();
+
+const searchInDownloader = (text: string, prefix: string) => {
+  const query =
+    prefix === "tag" && (text.startsWith("male:") || text.startsWith("female:"))
+      ? text
+      : `${prefix}:${text}`;
+  localStorage.setItem("downloader-search-query", query);
+  emit("update:open", false);
+  router.push("/downloader");
+};
 
 // 편집 모드
 const isEditing = ref(false);
@@ -358,23 +370,54 @@ const excludeBookIds = computed(() => books.value.map((book) => book.id));
             />
             <div class="min-w-0 flex-1 space-y-3">
               <div class="flex items-start justify-between gap-3">
-                <h2 class="text-2xl font-bold">{{ seriesDetail?.name || series?.name }}</h2>
+                <h2
+                  class="text-2xl font-bold"
+                  @contextmenu.prevent="
+                    searchInDownloader(seriesDetail?.name || series?.name || '', 'series')
+                  "
+                >
+                  {{ seriesDetail?.name || series?.name }}
+                </h2>
                 <Button v-if="!isEditing" variant="outline" size="sm" @click="startEdit">
                   <Icon icon="solar:pen-bold-duotone" class="mr-2 h-4 w-4" />
                   이름변경
                 </Button>
               </div>
               <div v-if="seriesArtists.length" class="flex flex-wrap gap-1">
-                <Badge v-for="name in seriesArtists" :key="name" variant="outline">{{ name }}</Badge>
+                <Badge
+                  v-for="name in seriesArtists"
+                  :key="name"
+                  variant="outline"
+                  class="cursor-context-menu"
+                  @contextmenu.prevent="searchInDownloader(name, 'artist')"
+                >{{ name }}</Badge>
               </div>
               <div v-if="seriesGroups.length" class="flex flex-wrap gap-1">
-                <Badge v-for="name in seriesGroups" :key="name" variant="secondary">{{ name }}</Badge>
+                <Badge
+                  v-for="name in seriesGroups"
+                  :key="name"
+                  variant="secondary"
+                  class="cursor-context-menu"
+                  @contextmenu.prevent="searchInDownloader(name, 'group')"
+                >{{ name }}</Badge>
               </div>
               <div v-if="seriesTags.length" class="flex flex-wrap gap-1">
-                <Badge v-for="name in seriesTags" :key="name" variant="secondary">{{ name }}</Badge>
+                <Badge
+                  v-for="name in seriesTags"
+                  :key="name"
+                  variant="secondary"
+                  class="cursor-context-menu"
+                  @contextmenu.prevent="searchInDownloader(name, 'tag')"
+                >{{ name }}</Badge>
               </div>
-              <div v-if="seriesCharacters.length" class="text-muted-foreground text-xs">
-                캐릭터: {{ seriesCharacters.join(", ") }}
+              <div v-if="seriesCharacters.length" class="flex flex-wrap gap-1">
+                <Badge
+                  v-for="name in seriesCharacters"
+                  :key="name"
+                  variant="secondary"
+                  class="cursor-context-menu"
+                  @contextmenu.prevent="searchInDownloader(name, 'character')"
+                >{{ name }}</Badge>
               </div>
               <p
                 v-if="seriesDetail?.description || series?.description"
