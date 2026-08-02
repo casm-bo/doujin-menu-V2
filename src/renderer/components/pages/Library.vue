@@ -54,13 +54,11 @@ import type { SeriesCollectionWithBooks } from "../../../main/db/types";
 import {
   deleteBook,
   getRandomBook,
-  getPresets,
   ipcRenderer,
   openBookFolder,
   runSeriesDetection,
   toggleBookFavorite,
 } from "../../api";
-import PresetDropdown from "../common/PresetDropdown.vue";
 import SmartSearchInput from "../common/SmartSearchInput.vue";
 import BookCard from "../feature/BookCard.vue";
 import BookDetailDialog from "../feature/BookDetailDialog.vue";
@@ -220,15 +218,6 @@ const libraryDirectories = computed(
   () => config.value?.libraryFolders || ([] as string[]),
 );
 
-// 프리셋 데이터 (프리셋 순환 단축키용)
-const { data: presets } = useQuery({
-  queryKey: ["presets"],
-  queryFn: getPresets,
-});
-
-// 프리셋 순환 추적
-const currentPresetIndex = ref(-1);
-
 const queryKey = computed(
   () =>
     [
@@ -344,7 +333,9 @@ const deleteMutation = useMutation({
 const seriesDetectionMutation = useMutation({
   mutationFn: () => runSeriesDetection(),
   onSuccess: (result) => {
-    toast.success(`시리즈 자동 생성 완료: ${result?.created_count || 0}개 생성`);
+    toast.success(
+      `시리즈 자동 생성 완료: ${result?.created_count || 0}개 생성`,
+    );
     void queryClient.invalidateQueries({ queryKey: ["books"] });
   },
   onError: (error) => toast.error(`시리즈 자동 생성 실패: ${error.message}`),
@@ -493,19 +484,6 @@ const cycleReadStatus = () => {
   toast.info(`읽음 상태: ${labels[readStatus.value]}`);
 };
 
-// 프리셋 순환
-const cyclePreset = () => {
-  if (!presets.value || presets.value.length === 0) {
-    toast.info("저장된 프리셋이 없습니다.");
-    return;
-  }
-  currentPresetIndex.value =
-    (currentPresetIndex.value + 1) % presets.value.length;
-  const preset = presets.value[currentPresetIndex.value];
-  searchQuery.value = preset.query;
-  toast.info(`프리셋: ${preset.name}`);
-};
-
 // 라이브러리 폴더 순환 ([ / ] 키)
 const cycleLibrary = (direction: 1 | -1) => {
   const dirs = libraryDirectories.value;
@@ -620,7 +598,6 @@ useKeybindings("library", {
   },
   "library:toggle-favorite": toggleFavoriteFilter,
   "library:cycle-read-status": cycleReadStatus,
-  "library:cycle-preset": cyclePreset,
   "library:prev-library": () => cycleLibrary(-1),
   "library:next-library": () => cycleLibrary(1),
 });
@@ -680,7 +657,6 @@ useScrollRestoration(".flex-grow.overflow-y-auto");
                 <li><kbd>S</kbd>: 정렬 순서 전환 (오름차순/내림차순)</li>
                 <li><kbd>F</kbd>: 즐겨찾기 필터 토글</li>
                 <li><kbd>R</kbd>: 읽음 상태 순환 (모두→읽음→안읽음)</li>
-                <li><kbd>P</kbd>: 프리셋 순환</li>
                 <li><kbd>[</kbd> / <kbd>]</kbd>: 이전/다음 라이브러리 폴더</li>
                 <li><kbd>Ctrl</kbd>+<kbd>Wheel</kbd>: 썸네일 밀도 조절</li>
               </ul>
@@ -698,21 +674,13 @@ useScrollRestoration(".flex-grow.overflow-y-auto");
                 <li><code>artist:작가명</code>: 특정 작가로 검색합니다.</li>
                 <li><code>series:시리즈명</code>: 특정 시리즈로 검색합니다.</li>
                 <li>여러 검색어를 공백으로 구분하여 조합할 수 있습니다.</li>
-                <li>
-                  <Icon
-                    icon="solar:bookmark-bold-duotone"
-                    class="inline-block h-4 w-4 align-text-bottom"
-                  />
-                  버튼을 클릭하여 저장된 프리셋 검색어를 사용할 수 있습니다.
-                </li>
               </ul>
               <h3 class="text-foreground text-base font-semibold">
                 필터 및 정렬
               </h3>
               <ul class="list-inside list-disc">
                 <li>
-                  검색창 왼쪽의 드롭다운 메뉴를 사용하여 특정 라이브러리 폴더의
-                  책만 볼 수 있습니다.
+                  더보기 메뉴에서 특정 라이브러리 폴더의 책만 볼 수 있습니다.
                 </li>
                 <li>
                   뷰어에서 이전/다음 책으로 이동 시, 라이브러리 화면에서
@@ -773,7 +741,9 @@ useScrollRestoration(".flex-grow.overflow-y-auto");
             <Icon
               icon="solar:magic-stick-3-bold-duotone"
               class="h-5 w-5"
-              :class="{ 'animate-spin': seriesDetectionMutation.isPending.value }"
+              :class="{
+                'animate-spin': seriesDetectionMutation.isPending.value,
+              }"
             />
             시리즈 자동 생성
           </Button>
@@ -791,7 +761,7 @@ useScrollRestoration(".flex-grow.overflow-y-auto");
     <!-- 콘텐츠 -->
     <div class="flex min-h-0 flex-1 flex-col gap-4">
       <!-- 검색 및 필터 영역 -->
-      <div class="flex items-center gap-2">
+      <div class="flex flex-wrap items-center gap-2">
         <Button
           variant="outline"
           :disabled="totalCount === 0 || isSelectingAll"
@@ -822,9 +792,8 @@ useScrollRestoration(".flex-grow.overflow-y-auto");
           ref="searchInputRef"
           v-model="searchQuery"
           placeholder="제목, 작가, 태그, 시리즈로 검색"
-          class="flex-grow"
+          class="min-w-64 flex-[1_1_24rem]"
         />
-        <PresetDropdown v-model="searchQuery" />
         <DropdownMenu>
           <DropdownMenuTrigger as-child>
             <Button variant="outline">
@@ -957,11 +926,12 @@ useScrollRestoration(".flex-grow.overflow-y-auto");
           <Icon icon="solar:rocket-bold-duotone" class="h-4 w-4" />
           랜덤
         </Button>
-        <!-- 더보기 메뉴: 라이브러리 폴더 / 뷰 모드 / 썸네일 줌 -->
+        <!-- 보기 메뉴: 라이브러리 폴더 / 뷰 모드 / 썸네일 줌 -->
         <DropdownMenu>
           <DropdownMenuTrigger as-child>
-            <Button variant="outline" size="icon" aria-label="더보기">
+            <Button variant="outline">
               <Icon icon="solar:menu-dots-bold" class="h-4 w-4" />
+              보기
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" class="w-64">
