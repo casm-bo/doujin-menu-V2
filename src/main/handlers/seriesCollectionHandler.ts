@@ -514,19 +514,41 @@ export async function handleGetSeriesCollectionById(seriesId: number) {
         "Book.*",
         db.raw("GROUP_CONCAT(DISTINCT Artist.name) as artists"),
         db.raw("GROUP_CONCAT(DISTINCT Tag.name) as tags"),
+        db.raw("GROUP_CONCAT(DISTINCT `Group`.name) as groups"),
+        db.raw("GROUP_CONCAT(DISTINCT `Character`.name) as characters"),
       )
       .leftJoin("BookArtist", "Book.id", "BookArtist.book_id")
       .leftJoin("Artist", "BookArtist.artist_id", "Artist.id")
       .leftJoin("BookTag", "Book.id", "BookTag.book_id")
       .leftJoin("Tag", "BookTag.tag_id", "Tag.id")
+      .leftJoin("BookGroup", "Book.id", "BookGroup.book_id")
+      .leftJoin("Group", "BookGroup.group_id", "Group.id")
+      .leftJoin("BookCharacter", "Book.id", "BookCharacter.book_id")
+      .leftJoin("Character", "BookCharacter.character_id", "Character.id")
       .where("Book.series_collection_id", seriesId)
       .groupBy("Book.id")
       .orderBy("Book.series_order_index", "asc");
 
+    const formattedBooks = books.map((book) => ({
+      ...book,
+      artists: book.artists
+        ? book.artists.split(",").map((name: string) => ({ name }))
+        : [],
+      tags: book.tags
+        ? book.tags.split(",").map((name: string) => ({ name }))
+        : [],
+      groups: book.groups
+        ? book.groups.split(",").map((name: string) => ({ name }))
+        : [],
+      characters: book.characters
+        ? book.characters.split(",").map((name: string) => ({ name }))
+        : [],
+    }));
+
     const result: SeriesCollectionWithBooks = {
       ...collection,
-      books,
-      book_count: books.length,
+      books: formattedBooks,
+      book_count: formattedBooks.length,
     };
 
     return {
@@ -540,6 +562,19 @@ export async function handleGetSeriesCollectionById(seriesId: number) {
       error: (error as Error).message,
     };
   }
+}
+
+export async function handleToggleSeriesFavorite(seriesId: number) {
+  const series = await db("SeriesCollection").where("id", seriesId).first();
+  if (!series) return { success: false, error: "시리즈를 찾을 수 없습니다" };
+
+  const isFavorite = !series.is_favorite;
+  await db("SeriesCollection").where("id", seriesId).update({
+    is_favorite: isFavorite,
+    updated_at: db.fn.now(),
+  });
+  notifyCompanionLibraryChanged(false);
+  return { success: true, is_favorite: isFavorite };
 }
 
 /**
@@ -1116,6 +1151,9 @@ export function registerSeriesCollectionHandlers() {
   );
   ipcMain.handle("get-series-collection-by-id", (_event, seriesId) =>
     handleGetSeriesCollectionById(seriesId),
+  );
+  ipcMain.handle("toggle-series-favorite", (_event, seriesId) =>
+    handleToggleSeriesFavorite(seriesId),
   );
   ipcMain.handle("create-series-collection", (_event, data) =>
     notifyAfterSuccessfulLibraryChange(handleCreateSeriesCollection(data)),

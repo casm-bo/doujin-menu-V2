@@ -15,6 +15,8 @@ import {
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { Icon } from "@iconify/vue";
 import SettingItem from "@/components/feature/settings/SettingItem.vue";
 import { AcceptableValue } from "reka-ui";
 import { onMounted, ref } from "vue";
@@ -35,6 +37,7 @@ const createInfoTxtFile = ref(true);
 const downloadPattern = ref("%artist% - %title%");
 const compressDownload = ref(false);
 const compressFormat = ref<"cbz" | "zip">("cbz");
+const downloadPath = ref("");
 
 onMounted(async () => {
   const config = await ipcRenderer.invoke("get-config");
@@ -43,7 +46,19 @@ onMounted(async () => {
     (config.downloadPattern as string) || "%artist% - %title%";
   compressDownload.value = config.compressDownload === true;
   compressFormat.value = (config.compressFormat as "cbz" | "zip") || "cbz";
+  downloadPath.value = (config.downloadPath as string) || "";
 });
+
+const selectDownloadPath = async () => {
+  const result = await ipcRenderer.invoke("select-folder");
+  if (!result.success || !result.path) return;
+  downloadPath.value = result.path;
+  await saveConfig("downloadPath", result.path);
+};
+
+const openDownloadPath = () => {
+  if (downloadPath.value) ipcRenderer.invoke("open-folder", downloadPath.value);
+};
 
 const onCreateInfoTxtFileChange = (value: boolean) => {
   createInfoTxtFile.value = value;
@@ -73,6 +88,17 @@ const onCompressFormatChange = (value: AcceptableValue) => {
       <CardDescription>다운로드 관련 동작을 설정합니다.</CardDescription>
     </CardHeader>
     <CardContent class="space-y-6">
+      <SettingItem title="다운로드 위치" subtitle="다운로드한 작품을 저장할 폴더입니다.">
+        <div class="flex min-w-0 items-center justify-end gap-2">
+          <code class="text-muted-foreground max-w-80 truncate text-xs">{{ downloadPath || "미지정" }}</code>
+          <Button variant="outline" size="sm" @click="selectDownloadPath">
+            <Icon icon="solar:folder-open-bold-duotone" class="h-4 w-4" />변경
+          </Button>
+          <Button v-if="downloadPath" variant="outline" size="sm" @click="openDownloadPath">
+            열기
+          </Button>
+        </div>
+      </SettingItem>
       <SettingItem
         label-for="create-info-txt-file"
         title="다운로드 후 info.txt 파일 생성"

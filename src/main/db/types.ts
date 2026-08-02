@@ -10,6 +10,7 @@ export interface Book {
   last_read_at: string | null;
   current_page: number | null;
   is_favorite: boolean;
+  is_read?: boolean;
   sync_id?: string | null;
   state_version?: number;
   state_updated_at?: string | null;
@@ -29,6 +30,11 @@ export interface Book {
   language_name_local?: string | null;
   // 시리즈 그룹 관련 필드 (자동 시리즈 감지 기능)
   series_collection_id?: number | null;
+  series_collection_name?: string;
+  series_collection_description?: string | null;
+  series_book_count?: number;
+  series_read_count?: number;
+  series_is_favorite?: boolean;
   series_order_index?: number | null;
   series_state_updated_at?: number | null;
   series_collection?: SeriesCollection; // 조인 시 포함될 수 있음

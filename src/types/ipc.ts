@@ -21,6 +21,7 @@ export interface Preset {
   id: number;
   name: string;
   query: string;
+  sort_order: number;
 }
 
 export interface LicenseInfo {
@@ -52,6 +53,7 @@ export interface Book {
   cover_path?: string;
   page_count?: number;
   current_page?: number;
+  is_read?: boolean;
   is_favorite: boolean;
   is_offline?: boolean; // 라이브러리 폴더 접근 불가(외장하드 분리 등) 시 true
   last_read_at?: string;
@@ -60,6 +62,11 @@ export interface Book {
   added_at?: string;
   series_name?: string;
   series_collection_id?: number;
+  series_collection_name?: string;
+  series_collection_description?: string | null;
+  series_book_count?: number;
+  series_read_count?: number;
+  series_is_favorite?: boolean;
   series_order_index?: number;
   language_name_english?: string;
   language_name_local?: string;
@@ -301,13 +308,21 @@ export interface IpcChannels {
     request: { bookId: number; isFavorite: boolean };
     response: { success: boolean; is_favorite?: boolean; error?: unknown };
   };
+  "toggle-series-favorite": {
+    request: number;
+    response: { success: boolean; is_favorite?: boolean; error?: unknown };
+  };
+  "set-book-read": {
+    request: { bookId: number; isRead: boolean };
+    response: { success: boolean; is_read?: boolean; error?: unknown };
+  };
+  "set-series-read": {
+    request: { seriesId: number; isRead: boolean };
+    response: { success: boolean; is_read?: boolean; error?: unknown };
+  };
   "open-book-folder": {
     request: string; // bookPath
     response: { success: boolean; error?: string };
-  };
-  "add-book-history": {
-    request: number; // bookId
-    response: { success: boolean; error?: unknown };
   };
   "check-book-exists-by-hitomi-id": {
     request: number; // hitomiId
@@ -322,25 +337,6 @@ export interface IpcChannels {
     request: number; // bookId
     response: { success: boolean; error?: string };
   };
-  "get-book-history": {
-    request: { pageParam?: number; pageSize?: number };
-    response: {
-      data?: BookHistory[];
-      hasNextPage?: boolean;
-      nextPage?: number;
-      success?: boolean;
-      error?: string;
-    };
-  };
-  "delete-book-history": {
-    request: number; // historyId
-    response: { success: boolean; error?: string };
-  };
-  "clear-book-history": {
-    request: void;
-    response: { success: boolean; error?: string };
-  };
-
   // Statistics handlers
   "get-statistics": {
     request: void;
@@ -380,7 +376,7 @@ export interface IpcChannels {
     response: { success: boolean; data?: Preset[]; error?: string };
   };
   "add-preset": {
-    request: Omit<Preset, "id">;
+    request: Omit<Preset, "id" | "sort_order">;
     response: { success: boolean; data?: Preset; error?: string };
   };
   "update-preset": {

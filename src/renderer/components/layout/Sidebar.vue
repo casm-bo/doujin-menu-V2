@@ -39,22 +39,10 @@ const navSections: { label: string; items: NavItem[] }[] = [
         label: "라이브러리",
       },
       {
-        to: "/history",
-        name: "History",
-        icon: "solar:clock-circle-bold-duotone",
-        label: "읽음 기록",
-      },
-      {
         to: "/browse",
         name: "Browse",
         icon: "solar:tag-bold-duotone",
         label: "탐색",
-      },
-      {
-        to: "/series-manager",
-        name: "SeriesManager",
-        icon: "solar:library-bold-duotone",
-        label: "시리즈",
       },
     ],
   },

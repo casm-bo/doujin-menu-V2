@@ -342,6 +342,7 @@ import {
   handleGetBook,
   handleGetNextBook,
   handleGetPrevBook,
+  handleSetSeriesRead,
 } from "../../../src/main/handlers/bookHandler.js";
 import { store as configStore } from "../../../src/main/handlers/configHandler.js";
 
@@ -378,17 +379,17 @@ describe("handleGetBooks - 통합 테스트", () => {
     });
 
     it("readStatus=read → 읽은 책만", async () => {
-      await seedBook(db, { path: "/a", last_read_at: new Date("2024-01-01") });
-      await seedBook(db, { path: "/b", last_read_at: null });
+      await seedBook(db, { path: "/a", is_read: true });
+      await seedBook(db, { path: "/b", is_read: false });
 
       const ids = await getResultIds({ readStatus: "read" });
       expect(ids).toHaveLength(1);
     });
 
     it("readStatus=unread → 안 읽은 책만", async () => {
-      await seedBook(db, { path: "/a", last_read_at: new Date("2024-01-01") });
-      await seedBook(db, { path: "/b", last_read_at: null });
-      await seedBook(db, { path: "/c", last_read_at: null });
+      await seedBook(db, { path: "/a", is_read: true });
+      await seedBook(db, { path: "/b", is_read: false });
+      await seedBook(db, { path: "/c", is_read: false });
 
       const ids = await getResultIds({ readStatus: "unread" });
       expect(ids).toHaveLength(2);
@@ -400,6 +401,39 @@ describe("handleGetBooks - 통합 테스트", () => {
 
       const ids = await getResultIds({ isFavorite: true });
       expect(ids).toHaveLength(1);
+    });
+
+    it("series uses one representative and aggregate completion", async () => {
+      const [seriesId] = await db("SeriesCollection").insert({
+        name: "Series",
+        is_favorite: true,
+      });
+      const first = await seedBook(db, {
+        path: "/series/1",
+        series_collection_id: seriesId,
+        series_order_index: 0,
+        page_count: 10,
+        current_page: 10,
+        is_read: true,
+      });
+      const second = await seedBook(db, {
+        path: "/series/2",
+        series_collection_id: seriesId,
+        series_order_index: 1,
+        page_count: 10,
+        current_page: 10,
+        is_read: true,
+      });
+
+      expect(await getResultIds({ readStatus: "read", isFavorite: true })).toEqual([
+        first.id,
+      ]);
+
+      await db("Book").where("id", second.id).update({ is_read: false });
+      expect(await getResultIds({ readStatus: "read" })).toEqual([]);
+
+      await handleSetSeriesRead({ seriesId, isRead: true });
+      expect(await getResultIds({ readStatus: "read" })).toEqual([first.id]);
     });
 
     it("libraryPath 지정 → 해당 경로의 책만", async () => {
@@ -724,19 +758,19 @@ describe("handleGetBooks - 통합 테스트", () => {
         path: "/a",
         title: "테스트",
         is_favorite: true,
-        last_read_at: new Date("2024-01-01"),
+        is_read: true,
       });
       await seedBook(db, {
         path: "/b",
         title: "테스트",
         is_favorite: true,
-        last_read_at: null,
+        is_read: false,
       });
       await seedBook(db, {
         path: "/c",
         title: "테스트",
         is_favorite: false,
-        last_read_at: new Date("2024-01-01"),
+        is_read: true,
       });
 
       const ids = await getResultIds({

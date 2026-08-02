@@ -58,7 +58,6 @@ const {
     class="group relative cursor-pointer overflow-hidden rounded-lg border"
     :class="{
       'opacity-50': isDownloading,
-      'bg-green-50/50': isDownloadCompleted,
       'bg-red-50/50': isDownloadFailed,
       'ring-2 ring-blue-500': selected, // 선택 시 파란색 테두리 추가
     }"
@@ -74,9 +73,9 @@ const {
       />
       <div
         v-if="isDownloadCompleted"
-        class="absolute top-2 right-2 rounded-full bg-green-500 p-1 text-white"
+        class="absolute top-2 right-2 flex h-[27px] w-[35px] items-center justify-center rounded-md bg-black/80 text-white"
       >
-        <Icon icon="solar:check-circle-bold" class="h-5 w-5" />
+        <Icon icon="solar:cloud-linear" class="h-[18px] w-[18px]" />
       </div>
     </div>
     <!-- 호버 시 배경 dim (투명 -> 불투명) -->

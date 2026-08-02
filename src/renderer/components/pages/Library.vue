@@ -50,12 +50,14 @@ import {
 import { useRoute, useRouter } from "vue-router";
 import { toast } from "vue-sonner";
 import type { Book, FilterParams } from "../../../types/ipc";
+import type { SeriesCollectionWithBooks } from "../../../main/db/types";
 import {
   deleteBook,
   getRandomBook,
   getPresets,
   ipcRenderer,
   openBookFolder,
+  runSeriesDetection,
   toggleBookFavorite,
 } from "../../api";
 import PresetDropdown from "../common/PresetDropdown.vue";
@@ -64,6 +66,7 @@ import BookCard from "../feature/BookCard.vue";
 import BookDetailDialog from "../feature/BookDetailDialog.vue";
 import BookPreviewDialog from "../feature/BookPreviewDialog.vue";
 import BookRowCard from "../feature/BookRowCard.vue";
+import SeriesDetailDialog from "../feature/SeriesDetailDialog.vue";
 import LibraryScanProgress from "../feature/LibraryScanProgress.vue";
 
 const queryClient = useQueryClient();
@@ -78,6 +81,8 @@ const searchInputRef = ref<InstanceType<typeof SmartSearchInput> | null>(null);
 const showBookDetailDialog = ref(false);
 const showBookPreviewDialog = ref(false);
 const selectedBook = ref<Book | null>(null);
+const selectedSeries = ref<SeriesCollectionWithBooks | null>(null);
+const showSeriesDetailDialog = ref(false);
 const previewBook = ref<Book | null>(null);
 
 // Filter and Sort State
@@ -336,6 +341,15 @@ const deleteMutation = useMutation({
   },
 });
 
+const seriesDetectionMutation = useMutation({
+  mutationFn: () => runSeriesDetection(),
+  onSuccess: (result) => {
+    toast.success(`시리즈 자동 생성 완료: ${result?.created_count || 0}개 생성`);
+    void queryClient.invalidateQueries({ queryKey: ["books"] });
+  },
+  onError: (error) => toast.error(`시리즈 자동 생성 실패: ${error.message}`),
+});
+
 const handleDeleteSelected = () => {
   if (selectedBookIds.value.size === 0) return;
   booksToDelete.value = [...selectedBookIds.value];
@@ -570,6 +584,24 @@ const handleShowDetails = (book: Book) => {
   showBookDetailDialog.value = true;
 };
 
+const handleShowSeries = (book: Book) => {
+  if (!book.series_collection_id) return;
+  selectedSeries.value = {
+    id: book.series_collection_id,
+    name: book.series_collection_name || book.title,
+    description: book.series_collection_description || null,
+    cover_image: book.cover_path || null,
+    is_auto_generated: false,
+    is_manually_edited: false,
+    confidence_score: 0,
+    created_at: book.added_at || "",
+    updated_at: book.added_at || "",
+    books: [],
+    book_count: Number(book.series_book_count || 0),
+  };
+  showSeriesDetailDialog.value = true;
+};
+
 const handleShowPreview = (book: Book) => {
   previewBook.value = book;
   showBookPreviewDialog.value = true;
@@ -733,6 +765,18 @@ useScrollRestoration(".flex-grow.overflow-y-auto");
           </HelpDialog>
         </template>
         <template #actions>
+          <Button
+            variant="outline"
+            :disabled="seriesDetectionMutation.isPending.value"
+            @click="seriesDetectionMutation.mutate()"
+          >
+            <Icon
+              icon="solar:magic-stick-3-bold-duotone"
+              class="h-5 w-5"
+              :class="{ 'animate-spin': seriesDetectionMutation.isPending.value }"
+            />
+            시리즈 자동 생성
+          </Button>
           <Button
             variant="secondary"
             size="icon"
@@ -1014,6 +1058,7 @@ useScrollRestoration(".flex-grow.overflow-y-auto");
           @toggle-favorite="handleToggleFavorite"
           @open-book-folder="handleOpenFolder"
           @show-details="handleShowDetails"
+          @show-series="handleShowSeries"
           @show-preview="handleShowPreview"
           @toggle-select="toggleBookSelection(book.id)"
           @deleted="handleBookDeleted"
@@ -1048,6 +1093,7 @@ useScrollRestoration(".flex-grow.overflow-y-auto");
           @toggle-favorite="handleToggleFavorite"
           @open-book-folder="handleOpenFolder"
           @show-details="handleShowDetails"
+          @show-series="handleShowSeries"
           @show-preview="handleShowPreview"
           @toggle-select="toggleBookSelection(book.id)"
           @deleted="handleBookDeleted"
@@ -1096,6 +1142,13 @@ useScrollRestoration(".flex-grow.overflow-y-auto");
       :book="selectedBook"
       :on-toggle-favorite="handleToggleFavorite"
       :on-open-folder="handleOpenFolder"
+    />
+
+    <SeriesDetailDialog
+      :open="showSeriesDetailDialog"
+      :series="selectedSeries"
+      @update:open="showSeriesDetailDialog = $event"
+      @updated="handleBooksUpdated"
     />
 
     <BookPreviewDialog

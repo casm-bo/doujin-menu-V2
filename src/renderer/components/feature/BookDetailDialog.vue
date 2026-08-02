@@ -10,6 +10,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Separator } from "@/components/ui/separator";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { usePreviewViewMode } from "@/composables/usePreviewViewMode";
 import { Icon } from "@iconify/vue";
 import { computed } from "vue";
 import { useRouter } from "vue-router";
@@ -24,6 +26,7 @@ const props = defineProps<{
 const emit = defineEmits(["update:modelValue"]);
 
 const router = useRouter();
+const { viewMode, setViewMode } = usePreviewViewMode();
 
 const open = computed({
   get: () => props.modelValue,
@@ -35,6 +38,25 @@ const displayPath = computed(() => {
   const parts = props.book.path.split(/[\\/]/);
   return parts.slice(0, -1).join("/");
 });
+
+const previewPages = computed(() =>
+  props.book
+    ? Array.from(
+        { length: props.book.page_count || 0 },
+        (_, index) => `doujin-menu://page/${props.book!.id}/${index}`,
+      )
+    : [],
+);
+
+const openReader = (page: number) => {
+  if (!props.book) return;
+  open.value = false;
+  router.push({
+    name: "Viewer",
+    params: { id: props.book.id },
+    query: { start: String(page) },
+  });
+};
 
 // 클립보드 복사 함수
 const copyToClipboard = async (text: string, prefix: string) => {
@@ -63,7 +85,9 @@ const searchInDownloader = (text: string, prefix: string) => {
 
 <template>
   <Dialog v-model:open="open">
-    <DialogContent class="max-h-[90vh] overflow-y-auto sm:max-w-[700px]">
+    <DialogContent
+      class="flex max-h-[90vh] w-[calc(100vw-2rem)] flex-col overflow-hidden sm:max-w-[900px]"
+    >
       <DialogHeader>
         <DialogTitle>상세 정보</DialogTitle>
         <DialogDescription>
@@ -71,7 +95,7 @@ const searchInDownloader = (text: string, prefix: string) => {
           우클릭 시 다운로더에서 검색
         </DialogDescription>
       </DialogHeader>
-      <div v-if="book" class="space-y-6 py-4">
+      <div v-if="book" class="min-h-0 flex-1 space-y-6 overflow-y-auto py-2 pr-2">
         <!-- 커버 이미지와 기본 정보 -->
         <div class="flex gap-6">
           <img
@@ -182,6 +206,54 @@ const searchInDownloader = (text: string, prefix: string) => {
                 {{ book.language_name_english }}
               </Badge>
             </div>
+          </div>
+        </div>
+
+        <Separator />
+
+        <div class="space-y-3">
+          <div class="flex items-center justify-between gap-3">
+            <h4 class="font-semibold">미리보기</h4>
+            <ToggleGroup
+              type="single"
+              :model-value="viewMode"
+              variant="outline"
+              size="sm"
+              @update:model-value="setViewMode"
+            >
+              <ToggleGroupItem value="scroll" aria-label="크게 보기" title="크게 보기">
+                <Icon icon="solar:gallery-wide-bold-duotone" class="h-4 w-4" />
+              </ToggleGroupItem>
+              <ToggleGroupItem value="grid" aria-label="여러 개 보기" title="여러 개 보기">
+                <Icon icon="solar:widget-5-bold-duotone" class="h-4 w-4" />
+              </ToggleGroupItem>
+            </ToggleGroup>
+          </div>
+          <div
+            v-if="viewMode === 'scroll'"
+            class="flex h-64 gap-3 overflow-x-auto rounded-md border p-2"
+          >
+            <img
+              v-for="(page, index) in previewPages"
+              :key="page"
+              :src="page"
+              :alt="`${index + 1}페이지`"
+              class="h-full w-auto shrink-0 rounded object-contain"
+              loading="lazy"
+            />
+          </div>
+          <div
+            v-else
+            class="grid max-h-80 grid-cols-3 gap-2 overflow-y-auto rounded-md border p-2 sm:grid-cols-5"
+          >
+            <img
+              v-for="(page, index) in previewPages"
+              :key="page"
+              :src="page"
+              :alt="`${index + 1}페이지`"
+              class="aspect-[3/4] w-full rounded object-cover"
+              loading="lazy"
+            />
           </div>
         </div>
 
@@ -307,6 +379,10 @@ const searchInDownloader = (text: string, prefix: string) => {
         </div>
 
         <div class="flex justify-end gap-2">
+          <Button variant="outline" @click="openReader(1)">처음부터 보기</Button>
+          <Button @click="openReader(Math.max(1, book.current_page || 1))">
+            이어서 보기
+          </Button>
           <Button variant="secondary" @click="open = false">닫기</Button>
         </div>
       </div>

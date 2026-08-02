@@ -16,11 +16,6 @@ import { naturalSort } from "../utils/index.js";
 import { filterLibraryPathRows } from "../utils/libraryPath.js";
 import { notifyCompanionLibraryChanged } from "../services/companion/companionSyncSignal.js";
 import {
-  getPrefixIndex,
-  handleAutoDetectSeriesForBook,
-  rebuildPrefixIndex,
-} from "./seriesCollectionHandler.js";
-import {
   generateThumbnailForBook,
   handleGenerateThumbnail,
 } from "./thumbnailHandler.js"; // 썸네일 생성 함수 임포트
@@ -1004,7 +999,6 @@ export async function scanDirectory(
   let totalUpdatedCount = 0;
   let totalDeletedCount = 0;
   const allBookIdsToGenerateThumbnails: number[] = [];
-  const allNewlyAddedBookIds: number[] = [];
   const claimedSyncIds = new Set<string>();
 
   // 진행률 추적을 위한 변수
@@ -1178,7 +1172,6 @@ export async function scanDirectory(
             );
             totalAddedCount += result.added;
             totalUpdatedCount += result.updated;
-            allNewlyAddedBookIds.push(...result.newBookIds);
             allBookIdsToGenerateThumbnails.push(...result.thumbnailNeeded);
             await removeThumbnailFiles(result.thumbnailRemovals);
             // 진행률 업데이트
@@ -1203,7 +1196,6 @@ export async function scanDirectory(
       );
       totalAddedCount += result.added;
       totalUpdatedCount += result.updated;
-      allNewlyAddedBookIds.push(...result.newBookIds);
       allBookIdsToGenerateThumbnails.push(...result.thumbnailNeeded);
       await removeThumbnailFiles(result.thumbnailRemovals);
     }
@@ -1280,56 +1272,7 @@ export async function scanDirectory(
       console.log(`[Main] 스캔 후 썸네일 생성 및 업데이트 완료.`);
     }
 
-    // 4단계: 시리즈 자동 감지
-    if (allNewlyAddedBookIds.length > 0) {
-      // PrefixIndex가 없으면 먼저 구축 (폴백 경로의 전체 로드 방지)
-      if (!getPrefixIndex()) {
-        console.log("[Main] PrefixIndex가 없음. 스캔 전 구축 시작...");
-        await rebuildPrefixIndex();
-        console.log("[Main] PrefixIndex 구축 완료.");
-      }
-
-      console.log(
-        `[Main] ${allNewlyAddedBookIds.length}권의 새 책 추가됨. 전체 시리즈 자동 감지 시작...`,
-      );
-
-      // 시리즈 감지 진행률 표시
-      broadcastScanProgress({
-        folderPath: directoryPath,
-        phase: "series",
-        progress: 0,
-        currentFile: "시리즈 자동 감지 중...",
-        processedCount: processedFileCount,
-        totalCount: totalFileCount,
-        addedCount: totalAddedCount,
-        updatedCount: totalUpdatedCount,
-        deletedCount: totalDeletedCount,
-      });
-
-      // 증분 시리즈 감지: 새로 추가된 책에 대해서만 개별 감지 실행
-      let seriesCreated = 0;
-      let seriesMatched = 0;
-
-      for (const bookId of allNewlyAddedBookIds) {
-        try {
-          const result = await handleAutoDetectSeriesForBook(bookId);
-          if (result.matched) {
-            if (result.action === "new_series") seriesCreated++;
-            else seriesMatched++;
-          }
-        } catch (error) {
-          console.error(`[Main] 책 ${bookId} 시리즈 감지 실패:`, error);
-        }
-      }
-
-      if (seriesCreated > 0 || seriesMatched > 0) {
-        console.log(
-          `[Main] 증분 시리즈 감지 완료: ${seriesCreated}개 새 시리즈 생성, ${seriesMatched}개 기존 시리즈에 추가`,
-        );
-      }
-    }
-
-    // 5단계: 완료
+    // 4단계: 완료 (시리즈 감지는 라이브러리의 수동 버튼에서만 실행)
     broadcastScanProgress({
       folderPath: directoryPath,
       phase: "completed",

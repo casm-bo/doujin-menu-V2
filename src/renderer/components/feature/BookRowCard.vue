@@ -17,7 +17,6 @@ import { useTagDisplay } from "@/composable/useTagDisplay";
 import { Icon } from "@iconify/vue";
 import { useQueryClient } from "@tanstack/vue-query";
 import { computed, ref, toRaw } from "vue";
-import { useRouter } from "vue-router";
 import { toast } from "vue-sonner";
 import type { Book } from "../../../types/ipc";
 
@@ -37,12 +36,12 @@ const emit = defineEmits([
   "toggle-favorite",
   "open-book-folder",
   "show-details",
+  "show-series",
   "show-preview",
   "toggle-select",
   "deleted",
 ]);
 
-const router = useRouter();
 const queryClient = useQueryClient();
 const { getTagDisplayInfo } = useTagDisplay();
 
@@ -81,7 +80,10 @@ const handleCardClick = (event: MouseEvent) => {
   if (event.ctrlKey || event.metaKey) {
     openInNewWindow();
   } else {
-    router.push(viewerLink.value);
+    emit(
+      props.book.series_collection_id ? "show-series" : "show-details",
+      props.book,
+    );
   }
 };
 

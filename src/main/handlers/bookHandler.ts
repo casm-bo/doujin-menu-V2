@@ -150,6 +150,18 @@ function buildFilteredQuery(filter: FilterParams | null) {
   const subquery = db("Book")
     .select(
       "Book.*",
+      "SeriesCollection.name as series_collection_name",
+      "SeriesCollection.description as series_collection_description",
+      "SeriesCollection.is_favorite as series_is_favorite",
+      db.raw(`(
+        SELECT COUNT(*) FROM Book AS SeriesBook
+        WHERE SeriesBook.series_collection_id = Book.series_collection_id
+      ) as series_book_count`),
+      db.raw(`(
+        SELECT COUNT(*) FROM Book AS SeriesBook
+        WHERE SeriesBook.series_collection_id = Book.series_collection_id
+          AND SeriesBook.is_read = 1
+      ) as series_read_count`),
       db.raw("GROUP_CONCAT(DISTINCT Artist.name) as artists"),
       db.raw("GROUP_CONCAT(DISTINCT Tag.name) as tags"),
       db.raw("GROUP_CONCAT(DISTINCT Series.name) as series"),
@@ -166,6 +178,11 @@ function buildFilteredQuery(filter: FilterParams | null) {
     .leftJoin("Group", "BookGroup.group_id", "Group.id")
     .leftJoin("BookCharacter", "Book.id", "BookCharacter.book_id")
     .leftJoin("Character", "BookCharacter.character_id", "Character.id")
+    .leftJoin(
+      "SeriesCollection",
+      "Book.series_collection_id",
+      "SeriesCollection.id",
+    )
     .groupBy("Book.id");
 
   const mainQuery = db(subquery.as("sub"));
@@ -343,13 +360,25 @@ function buildFilteredQuery(filter: FilterParams | null) {
   }
 
   if (readStatus === "read") {
-    mainQuery.whereNotNull("sub.last_read_at");
+    mainQuery.whereRaw(`(
+      (sub.series_collection_id IS NULL AND sub.is_read = 1)
+      OR
+      (sub.series_collection_id IS NOT NULL AND sub.series_book_count > 0 AND sub.series_read_count = sub.series_book_count)
+    )`);
   } else if (readStatus === "unread") {
-    mainQuery.whereNull("sub.last_read_at");
+    mainQuery.whereRaw(`(
+      (sub.series_collection_id IS NULL AND sub.is_read = 0)
+      OR
+      (sub.series_collection_id IS NOT NULL AND (sub.series_book_count <= 0 OR sub.series_read_count < sub.series_book_count))
+    )`);
   }
 
   if (isFavorite) {
-    mainQuery.where("sub.is_favorite", true);
+    mainQuery.whereRaw(`(
+      (sub.series_collection_id IS NULL AND sub.is_favorite = 1)
+      OR
+      (sub.series_collection_id IS NOT NULL AND sub.series_is_favorite = 1)
+    )`);
   }
 
   // 오프라인 상태 필터 (외장하드 분리 등으로 접근 불가한 책)
@@ -373,6 +402,16 @@ export const handleGetBooks = async (
   } = params;
 
   const mainQuery = buildFilteredQuery(params);
+
+  // 시리즈는 정렬 순서상 첫 책만 대표 카드로 노출합니다.
+  mainQuery.where((builder) => {
+    builder.whereNull("sub.series_collection_id").orWhereRaw(`sub.id = (
+      SELECT SeriesBook.id FROM Book AS SeriesBook
+      WHERE SeriesBook.series_collection_id = sub.series_collection_id
+      ORDER BY COALESCE(SeriesBook.series_order_index, 2147483647), SeriesBook.id
+      LIMIT 1
+    )`);
+  });
 
   // 3. 필터가 적용된 상태에서 전체 카운트 계산
   const totalCountQuery = mainQuery.clone().count("* as count").first();
@@ -618,10 +657,15 @@ export const handleUpdateBookCurrentPage = async ({
   currentPage: number;
 }) => {
   try {
+    const book = await db("Book").select("page_count").where("id", bookId).first();
+    const completed =
+      Number(book?.page_count || 0) > 0 &&
+      currentPage >= Number(book.page_count);
     const result = await new DesktopCompanionSyncService(db).applyDesktopChange(
       bookId,
       {
         currentPage,
+        ...(completed ? { isRead: true } : {}),
       },
     );
     if (result.status === "applied") notifyCompanionLibraryChanged(false);
@@ -632,6 +676,40 @@ export const handleUpdateBookCurrentPage = async ({
     console.error("Failed to update current page:", error);
     return { success: false, error };
   }
+};
+
+export const handleSetBookRead = async ({
+  bookId,
+  isRead,
+}: {
+  bookId: number;
+  isRead: boolean;
+}) => {
+  const result = await new DesktopCompanionSyncService(db).applyDesktopChange(
+    bookId,
+    { isRead },
+  );
+  if (result.status === "applied") notifyCompanionLibraryChanged(false);
+  return result.status === "not_found"
+    ? { success: false, error: "Book not found" }
+    : { success: true, is_read: isRead };
+};
+
+export const handleSetSeriesRead = async ({
+  seriesId,
+  isRead,
+}: {
+  seriesId: number;
+  isRead: boolean;
+}) => {
+  const books = await db("Book").select("id").where("series_collection_id", seriesId);
+  if (books.length === 0) return { success: false, error: "Series is empty" };
+  const sync = new DesktopCompanionSyncService(db);
+  await Promise.all(
+    books.map((book) => sync.applyDesktopChange(Number(book.id), { isRead })),
+  );
+  notifyCompanionLibraryChanged(false);
+  return { success: true, is_read: isRead };
 };
 
 export const handleGetBookCurrentPage = async (bookId: number) => {
@@ -1077,32 +1155,6 @@ export const handleOpenBookFolder = async (bookPath: string) => {
   }
 };
 
-export const handleAddBookHistory = async (bookId: number) => {
-  try {
-    // 읽음 기록 비활성화 시 건너뛰기
-    if (!configStore.get("enableReadingHistory", true)) {
-      return { success: true, skipped: true };
-    }
-
-    if (!bookId) {
-      return { success: false, error: "Book ID is required." };
-    }
-    const result = await new DesktopCompanionSyncService(db).applyDesktopChange(
-      bookId,
-      {
-        addHistory: true,
-      },
-    );
-    if (result.status === "applied") notifyCompanionLibraryChanged(false);
-    return result.status === "not_found"
-      ? { success: false, error: "Book not found" }
-      : { success: true };
-  } catch (error) {
-    console.error(`Failed to add book history for book ${bookId}:`, error);
-    return { success: false, error };
-  }
-};
-
 export const handleCheckBookExistsByHitomiId = async (hitomiId: number) => {
   try {
     if (!hitomiId) {
@@ -1118,102 +1170,6 @@ export const handleCheckBookExistsByHitomiId = async (hitomiId: number) => {
       error,
     );
     return { success: false, error };
-  }
-};
-
-export const handleGetBookHistory = async ({
-  pageParam = 0,
-  pageSize = 50,
-}: {
-  pageParam?: number;
-  pageSize?: number;
-}) => {
-  try {
-    const historyQuery = db("BookHistory")
-      .select(
-        "BookHistory.id as history_id",
-        "BookHistory.viewed_at",
-        "Book.id",
-        "Book.title",
-        "Book.cover_path",
-      )
-      .join("Book", "BookHistory.book_id", "Book.id")
-      .orderBy("BookHistory.viewed_at", "desc");
-
-    const totalCountQuery = db("BookHistory").count("* as count").first();
-    const totalHistory = await totalCountQuery;
-
-    historyQuery.offset(pageParam * pageSize).limit(pageSize);
-
-    const history = await historyQuery;
-
-    return {
-      data: history,
-      hasNextPage:
-        (pageParam + 1) * pageSize < Number(totalHistory?.count || 0),
-      nextPage: pageParam + 1,
-    };
-  } catch (error) {
-    console.error("[Main] Failed to get book history:", error);
-    return {
-      success: false,
-      error: (error as Error).message || "Unknown error",
-    };
-  }
-};
-
-export const handleDeleteBookHistory = async (historyId: number) => {
-  try {
-    await db.transaction(async (trx) => {
-      const historyEntry = await trx("BookHistory")
-        .where("id", historyId)
-        .first();
-      if (!historyEntry) {
-        return; // Or throw an error
-      }
-
-      const bookId = historyEntry.book_id;
-
-      // Delete the specific history entry
-      await trx("BookHistory").where("id", historyId).del();
-
-      // Find the new latest history entry for the book
-      const latestHistory = await trx("BookHistory")
-        .where("book_id", bookId)
-        .orderBy("viewed_at", "desc")
-        .first();
-
-      // Update the book's last_read_at
-      await trx("Book")
-        .where("id", bookId)
-        .update({
-          last_read_at: latestHistory ? latestHistory.viewed_at : null,
-        });
-    });
-
-    return { success: true };
-  } catch (error) {
-    console.error(`[Main] Failed to delete book history ${historyId}:`, error);
-    return {
-      success: false,
-      error: (error as Error).message || "Unknown error",
-    };
-  }
-};
-
-export const handleClearBookHistory = async () => {
-  try {
-    await db.transaction(async (trx) => {
-      await trx("BookHistory").del();
-      await trx("Book").update({ last_read_at: null });
-    });
-    return { success: true };
-  } catch (error) {
-    console.error("[Main] Failed to clear book history:", error);
-    return {
-      success: false,
-      error: (error as Error).message || "Unknown error",
-    };
   }
 };
 
@@ -1312,6 +1268,10 @@ export function registerBookHandlers() {
   ipcMain.handle("update-book-current-page", (_event, params) =>
     handleUpdateBookCurrentPage(params),
   );
+  ipcMain.handle("set-book-read", (_event, params) => handleSetBookRead(params));
+  ipcMain.handle("set-series-read", (_event, params) =>
+    handleSetSeriesRead(params),
+  );
   ipcMain.handle("get-book-current-page", (_event, bookId) =>
     handleGetBookCurrentPage(bookId),
   );
@@ -1333,18 +1293,8 @@ export function registerBookHandlers() {
   ipcMain.handle("open-book-folder", (_event, bookPath) =>
     handleOpenBookFolder(bookPath),
   );
-  ipcMain.handle("add-book-history", (_event, bookId) =>
-    handleAddBookHistory(bookId),
-  );
   ipcMain.handle("check-book-exists-by-hitomi-id", (_event, hitomiId) =>
     handleCheckBookExistsByHitomiId(hitomiId),
   );
   ipcMain.handle("delete-book", (_event, bookId) => handleDeleteBook(bookId));
-  ipcMain.handle("get-book-history", (_event, params) =>
-    handleGetBookHistory(params),
-  );
-  ipcMain.handle("delete-book-history", (_event, historyId) =>
-    handleDeleteBookHistory(historyId),
-  );
-  ipcMain.handle("clear-book-history", () => handleClearBookHistory());
 }

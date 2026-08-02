@@ -6,11 +6,9 @@ import { Button } from "@/components/ui/button";
 import {
   Card,
   CardContent,
-  CardFooter,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Input } from "@/components/ui/input"; // Input 컴포넌트 임포트 추가
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -59,7 +57,6 @@ import GalleryThumbnailCard from "../feature/downloader/GalleryThumbnailCard.vue
 
 // 검색어 상태
 const searchQuery = ref("");
-const offset = ref(0); // 오프셋 값 추가
 const downloaderLanguage = ref("korean");
 
 const languageOptions = [
@@ -87,9 +84,6 @@ const handleViewModeChange = (value: AcceptableValue | AcceptableValue[]) => {
   }
 };
 
-// 임시 다운로드 경로 (추후 설정과 연동)
-const downloadPath = ref(""); // 초기값은 비워둠
-
 // 각 갤러리 ID별 다운로드 상태를 저장하는 객체
 const downloadStatuses = reactive<{
   [key: number]: { status: string; progress?: number; error?: string };
@@ -113,17 +107,14 @@ const {
   isError,
   error,
 } = useInfiniteQuery({
-  queryKey: ["galleries", searchKey, offset],
+  queryKey: ["galleries", searchKey],
   queryFn: async ({ pageParam = 1 }) => {
     const finalSearchQuery =
       downloaderLanguage.value !== "all"
         ? `language:${downloaderLanguage.value} ${searchQuery.value}`
         : searchQuery.value;
 
-    const query = {
-      searchQuery: finalSearchQuery.trim(),
-      offset: offset.value, // 오프셋 값 추가
-    };
+    const query = { searchQuery: finalSearchQuery.trim(), offset: 0 };
     const result = await ipcRenderer.invoke("search-galleries", {
       query,
       page: pageParam,
@@ -276,13 +267,6 @@ onMounted(() => {
     handleDownloadQueueUpdated,
   );
 
-  // 저장된 다운로드 경로 불러오기
-  ipcRenderer.invoke("get-config-value", "downloadPath").then((path) => {
-    if (path) {
-      downloadPath.value = path as string;
-    }
-  });
-
   // 저장된 언어 설정 불러오기
   ipcRenderer.invoke("get-config-value", "downloaderLanguage").then((lang) => {
     if (lang) {
@@ -315,34 +299,6 @@ const handleSearch = async () => {
   searchKey.value++;
 };
 
-const PAGE_SIZE = 30; // Backend limit for search-galleries
-
-const handlePreviousPage = () => {
-  if (offset.value >= PAGE_SIZE) {
-    offset.value -= PAGE_SIZE;
-    handleSearch(); // Trigger search with new offset
-  } else if (offset.value > 0) {
-    offset.value = 0; // Go to the very beginning
-    handleSearch();
-  }
-};
-
-const handleNextPage = () => {
-  offset.value += PAGE_SIZE;
-  handleSearch(); // Trigger search with new offset
-};
-
-const openFolderDialog = async () => {
-  const result = await ipcRenderer.invoke("select-folder");
-  if (result.success && result.path) {
-    downloadPath.value = result.path;
-    await ipcRenderer.invoke("set-config", {
-      key: "downloadPath",
-      value: result.path,
-    });
-  }
-};
-
 const handleLanguageChange = async (lang: AcceptableValue) => {
   if (!lang) return;
   downloaderLanguage.value = lang as string;
@@ -353,12 +309,6 @@ const handleLanguageChange = async (lang: AcceptableValue) => {
   // 언어 변경 시 즉시 검색 다시 실행
   if (searchQuery.value) {
     handleSearch();
-  }
-};
-
-const openDownloadFolder = async () => {
-  if (downloadPath.value) {
-    await ipcRenderer.invoke("open-folder", downloadPath.value);
   }
 };
 
@@ -458,101 +408,38 @@ useSearchPersistence(searchQuery, "downloader-search-query");
       </template>
     </PageHeader>
 
-    <div class="grid flex-1 grid-cols-1 gap-6 overflow-y-auto lg:grid-cols-3">
+    <div class="flex flex-1 flex-col gap-6 overflow-y-auto">
       <!-- Left Column: Search & Settings -->
       <div
-        class="flex flex-col gap-6 lg:sticky lg:top-0 lg:col-span-1 lg:h-fit"
+        class="flex flex-col gap-6"
       >
-        <Card>
-          <CardHeader>
-            <CardTitle>다운로드 위치</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <!-- flex-col sm:items-center justify-between  sm:flex-row items-start -->
-            <div v-if="downloadPath" class="flex flex-col gap-4">
-              <p class="text-muted-foreground text-sm break-all">
-                <code class="font-mono">{{ downloadPath }}</code>
-              </p>
-              <div class="flex flex-row gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  class="flex-shrink-0"
-                  @click="openFolderDialog"
-                >
-                  <Icon
-                    icon="solar:folder-open-bold-duotone"
-                    class="h-4 w-4"
-                  />변경
-                </Button>
-                <Button
-                  v-if="downloadPath"
-                  variant="outline"
-                  size="sm"
-                  class="flex-shrink-0"
-                  @click="openDownloadFolder"
-                >
-                  <Icon icon="solar:folder-bold-duotone" class="h-4 w-4" />폴더
-                  열기
-                </Button>
-              </div>
-            </div>
-            <div v-else class="flex items-center justify-between">
-              <p class="text-destructive text-sm">폴더를 지정해주세요.</p>
-              <Button size="sm" @click="openFolderDialog">
-                <Icon
-                  icon="solar:folder-open-bold-duotone"
-                  class="h-4 w-4"
-                />폴더 지정
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-
         <Card>
           <CardHeader>
             <CardTitle class="flex items-center justify-between">
               <span>작품 검색</span>
             </CardTitle>
           </CardHeader>
-          <CardContent>
-            <div
-              class="mb-4 flex flex-col items-start justify-between gap-2 md:flex-row lg:flex-col"
-            >
-              <div class="flex flex-col">
-                <Label for="offset-input">시작 오프셋</Label>
-                <p class="text-muted-foreground text-sm">
-                  검색 결과를 시작할 검색 인덱스를 지정합니다.
-                </p>
-              </div>
-              <div class="flex flex-wrap gap-2">
-                <Input
-                  id="offset-input"
-                  v-model.number="offset"
-                  type="number"
-                  min="0"
-                  placeholder="0"
-                  class="w-24"
-                />
-                <Button
-                  variant="outline"
-                  size="sm"
-                  :disabled="offset === 0"
-                  @click="handlePreviousPage"
-                >
-                  <Icon icon="solar:arrow-left-bold-duotone" class="h-4 w-4" />
-                  이전
-                </Button>
-                <Button variant="outline" size="sm" @click="handleNextPage">
-                  다음
-                  <Icon icon="solar:arrow-right-bold-duotone" class="h-4 w-4" />
-                </Button>
-              </div>
+          <CardContent class="space-y-4">
+            <div class="space-y-1.5">
+              <Label for="search-input">검색어</Label>
+              <SmartSearchInput
+                id="search-input"
+                v-model="searchQuery"
+                placeholder="예: artist:작가명 tag:태그명"
+                @keyup.enter="handleSearch"
+              />
             </div>
-            <div class="grid grid-cols-1 items-end gap-4 sm:grid-cols-4">
-              <div
-                class="col-span-full flex flex-col space-y-1.5 sm:col-span-1 lg:col-span-full xl:col-span-2 2xl:col-span-1"
-              >
+            <div
+              class="grid grid-cols-1 items-end gap-3 sm:grid-cols-[minmax(280px,2fr)_minmax(120px,0.65fr)_minmax(120px,0.55fr)]"
+            >
+              <div class="flex flex-col space-y-1.5">
+                <Label>프리셋</Label>
+                <PresetDropdown
+                  v-model="searchQuery"
+                  @apply-preset="handleSearch"
+                />
+              </div>
+              <div class="flex flex-col space-y-1.5">
                 <Label for="language-select">언어</Label>
                 <Select
                   :model-value="downloaderLanguage"
@@ -572,16 +459,11 @@ useSearchPersistence(searchQuery, "downloader-search-query");
                   </SelectContent>
                 </Select>
               </div>
-              <div
-                class="col-span-full flex flex-col space-y-1.5 sm:col-span-3 lg:col-span-full xl:col-span-2 2xl:col-span-3"
-              >
-                <Label for="search-input">검색어</Label>
-                <SmartSearchInput
-                  id="search-input"
-                  v-model="searchQuery"
-                  placeholder="예: artist:작가명 tag:태그명"
-                  @keyup.enter="handleSearch"
-                />
+              <div class="flex flex-col space-y-1.5">
+                <Label>&nbsp;</Label>
+                <Button @click="handleSearch">
+                  <Icon icon="solar:magnifer-bold-duotone" class="h-5 w-5" />검색
+                </Button>
               </div>
             </div>
             <p class="text-muted-foreground pt-2 text-xs">
@@ -591,20 +473,11 @@ useSearchPersistence(searchQuery, "downloader-search-query");
               >)
             </p>
           </CardContent>
-          <CardFooter class="flex items-center gap-2">
-            <PresetDropdown
-              v-model="searchQuery"
-              @apply-preset="handleSearch"
-            />
-            <Button class="flex-grow" @click="handleSearch">
-              <Icon icon="solar:magnifer-bold-duotone" class="h-5 w-5" />검색
-            </Button>
-          </CardFooter>
         </Card>
       </div>
 
       <!-- Right Column: Search Results -->
-      <div class="flex flex-col gap-4 lg:col-span-2">
+      <div class="flex flex-col gap-4">
         <div class="flex items-center justify-between">
           <h2 class="text-lg font-semibold">검색 결과</h2>
           <div class="flex items-center gap-2">
