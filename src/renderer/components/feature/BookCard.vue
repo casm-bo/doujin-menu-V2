@@ -22,7 +22,6 @@ import {
 import { Icon } from "@iconify/vue";
 import { useQueryClient } from "@tanstack/vue-query";
 import { computed, ref, toRaw } from "vue";
-import { useRouter } from "vue-router";
 import { toast } from "vue-sonner";
 import ContextMenuSeparator from "../ui/context-menu/ContextMenuSeparator.vue";
 import { useTagDisplay } from "@/composable/useTagDisplay";
@@ -44,12 +43,12 @@ const emit = defineEmits([
   "toggle-favorite",
   "open-book-folder",
   "show-details",
+  "show-series",
   "show-preview",
   "toggle-select",
   "deleted",
 ]);
 
-const router = useRouter();
 const { getTagDisplayInfo } = useTagDisplay();
 
 const viewerLink = computed(() => ({
@@ -88,8 +87,48 @@ const handleCardClick = (event: MouseEvent) => {
     // metaKey for Command key on macOS
     openInNewWindow();
   } else {
-    router.push(viewerLink.value);
+    emit(
+      props.book.series_collection_id ? "show-series" : "show-details",
+      props.book,
+    );
   }
+};
+
+const isRead = computed(() =>
+  props.book.series_collection_id
+    ? Number(props.book.series_read_count || 0) >=
+      Number(props.book.series_book_count || 0)
+    : !!props.book.is_read,
+);
+
+const toggleRead = async () => {
+  const result = props.book.series_collection_id
+    ? await api.ipcRenderer.invoke("set-series-read", {
+        seriesId: props.book.series_collection_id,
+        isRead: !isRead.value,
+      })
+    : await api.ipcRenderer.invoke("set-book-read", {
+        bookId: props.book.id,
+        isRead: !isRead.value,
+      });
+  if (!result.success) {
+    toast.error("읽음 상태 변경에 실패했습니다.");
+    return;
+  }
+  queryClient.invalidateQueries({ queryKey: ["books"] });
+};
+
+const toggleCardFavorite = async () => {
+  if (!props.book.series_collection_id) return toggleFavorite();
+  const result = await api.ipcRenderer.invoke(
+    "toggle-series-favorite",
+    props.book.series_collection_id,
+  );
+  if (!result.success) {
+    toast.error("시리즈 즐겨찾기 변경에 실패했습니다.");
+    return;
+  }
+  queryClient.invalidateQueries({ queryKey: ["books"] });
 };
 
 const thumbnailKey = ref(0);
@@ -229,13 +268,13 @@ const confirmDeleteBook = async () => {
           <Badge
             v-if="isOffline"
             variant="secondary"
-            class="absolute top-2 right-2 gap-1"
+            class="absolute top-11 right-2 gap-1"
           >
             <Icon icon="solar:plug-circle-bold-duotone" class="h-3 w-3" />
             오프라인
           </Badge>
           <div
-            class="absolute top-2 left-2 z-10 flex size-8 items-center justify-center rounded bg-black/60"
+            class="absolute top-2 left-2 z-10 flex size-8 items-center justify-center"
             @click.stop="emit('toggle-select')"
           >
             <Checkbox
@@ -243,6 +282,39 @@ const confirmDeleteBook = async () => {
               :aria-label="`${book.title} 선택`"
             />
           </div>
+          <Icon
+            v-if="book.series_collection_id"
+            icon="solar:library-bold-duotone"
+            class="absolute bottom-2 left-2 size-7 rounded bg-black/65 p-1 text-white"
+          />
+          <div
+            v-if="isRead"
+            class="absolute top-2 right-2 rounded-md bg-black/65 px-2 py-1 text-xs font-semibold text-white"
+          >
+            읽음
+          </div>
+          <button
+            class="absolute right-2 bottom-2 flex size-8 items-center justify-center rounded-full bg-black/65 text-white"
+            :aria-label="
+              (book.series_collection_id
+                ? book.series_is_favorite
+                : book.is_favorite)
+                ? '즐겨찾기 해제'
+                : '즐겨찾기 추가'
+            "
+            @click.stop="toggleCardFavorite"
+          >
+            <Icon
+              :icon="
+                (book.series_collection_id
+                  ? book.series_is_favorite
+                  : book.is_favorite)
+                  ? 'solar:heart-bold'
+                  : 'solar:heart-outline'
+              "
+              class="size-5"
+            />
+          </button>
         </CardContent>
         <CardFooter class="flex-grow flex-col items-start gap-1 p-2">
           <p class="w-full truncate text-sm font-semibold" :title="book.title">
@@ -337,16 +409,28 @@ const confirmDeleteBook = async () => {
     </ContextMenuTrigger>
 
     <ContextMenuContent>
-      <ContextMenuItem @click="toggleFavorite">
+      <ContextMenuItem @click="toggleRead">
+        <Icon icon="solar:check-circle-bold-duotone" class="h-4 w-4" />
+        {{ isRead ? "읽지 않음으로 표시" : "읽음으로 표시" }}
+      </ContextMenuItem>
+      <ContextMenuItem @click="toggleCardFavorite">
         <Icon
           :icon="
-            book.is_favorite
+            (book.series_collection_id
+              ? book.series_is_favorite
+              : book.is_favorite)
               ? 'solar:heart-broken-line-duotone'
               : 'solar:heart-bold-duotone'
           "
           class="h-4 w-4"
         />
-        {{ book.is_favorite ? "즐겨찾기 해제" : "즐겨찾기 추가" }}
+        {{
+          (book.series_collection_id
+            ? book.series_is_favorite
+            : book.is_favorite)
+            ? "즐겨찾기 해제"
+            : "즐겨찾기 추가"
+        }}
       </ContextMenuItem>
       <ContextMenuItem @click="openBookFolder">
         <Icon icon="solar:folder-open-bold-duotone" class="h-4 w-4" />
@@ -359,14 +443,6 @@ const confirmDeleteBook = async () => {
       <ContextMenuItem v-if="hasExternalViewer" @click="openWithExternalViewer">
         <Icon icon="solar:monitor-bold-duotone" class="h-4 w-4" />
         외부 프로그램으로 열기
-      </ContextMenuItem>
-      <ContextMenuItem @click="emit('show-details', book)">
-        <Icon icon="solar:info-circle-bold-duotone" class="h-4 w-4" />
-        상세 정보
-      </ContextMenuItem>
-      <ContextMenuItem @click.stop="emit('show-preview', book)">
-        <Icon icon="solar:eye-bold-duotone" class="h-4 w-4" />
-        미리보기
       </ContextMenuItem>
       <ContextMenuItem @click.stop="handleRescanMetadata">
         <Icon

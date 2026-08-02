@@ -66,6 +66,7 @@ export interface CompanionSyncApplyResult {
 export interface DesktopBookChange {
   currentPage?: number;
   isFavorite?: boolean;
+  isRead?: boolean;
   addHistory?: boolean;
 }
 
@@ -182,6 +183,7 @@ export class DesktopCompanionSyncService {
       baseVersion: Number(book.state_version || 0),
       currentPage: change.currentPage,
       isFavorite: change.isFavorite,
+      isRead: change.isRead,
       historyEvent: change.addHistory
         ? {
             eventId: randomUUID(),

@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import {
-  addBookHistory,
   isNewWindow as apiIsNewWindow,
   closeCurrentWindow,
   deleteBook,
@@ -66,9 +65,6 @@ let stopWindowMaximized = () => {};
 const minimizeWindow = () => ipcRenderer.send("minimize-window");
 const maximizeToggleWindow = () => ipcRenderer.send("maximize-toggle-window");
 const closeWindow = () => ipcRenderer.send("close-window");
-
-// 히스토리 추가 대기 상태 (페이지를 실제로 봤을 때만 기록하기 위함)
-const pendingHistoryBookId = ref<number | null>(null);
 
 const {
   bookId,
@@ -410,23 +406,6 @@ watch(webtoonImageRef, (newRef) => {
   images.value = newRef;
 });
 
-// bookId 변경 감지 (책이 로드될 때)
-watch(bookId, (newBookId) => {
-  if (newBookId) {
-    // 히스토리 추가를 대기 상태로 설정 (페이지를 실제로 볼 때까지)
-    pendingHistoryBookId.value = newBookId;
-  }
-});
-
-// currentPage 변경 감지 (실제로 페이지를 봤을 때)
-watch(currentPage, () => {
-  if (pendingHistoryBookId.value) {
-    // 페이지를 봤으므로 히스토리 기록
-    addBookHistory(pendingHistoryBookId.value);
-    pendingHistoryBookId.value = null; // 한 번만 호출되도록 초기화
-  }
-});
-
 onMounted(async () => {
   isNewWindow.value = await apiIsNewWindow();
   // 새 창 모드일 때 최대화 상태 동기화
@@ -449,9 +428,11 @@ onMounted(async () => {
   }
 
   if (bookId) {
-    store.loadBook(bookId, filterParams);
-    // 초기 로드 시에도 대기 상태로 설정 (페이지가 로드되면 자동으로 기록됨)
-    pendingHistoryBookId.value = bookId;
+    const startPage = Number(route.query.start);
+    await store.loadBook(bookId, filterParams);
+    if (Number.isInteger(startPage) && startPage > 0) {
+      store.goToPage(startPage);
+    }
   }
 
   // 뷰어 진입 시 전체 화면 설정 확인

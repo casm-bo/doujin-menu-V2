@@ -50,12 +50,6 @@ const navSections: { label: string; items: NavItem[] }[] = [
         icon: "solar:tag-bold-duotone",
         label: "탐색",
       },
-      {
-        to: "/series-manager",
-        name: "SeriesManager",
-        icon: "solar:library-bold-duotone",
-        label: "시리즈",
-      },
     ],
   },
   {

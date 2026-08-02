@@ -146,7 +146,7 @@ watch(viewMode, () => {
 <template>
   <Dialog v-model:open="dialogOpen">
     <DialogContent
-      class="flex h-[90vh] flex-col sm:max-w-[90vw]"
+      class="flex h-[80vh] max-h-[80vh] w-[calc(100vw-2rem)] flex-col overflow-hidden sm:max-w-[820px]"
       @close-auto-focus.prevent
     >
       <DialogHeader>
@@ -157,7 +157,7 @@ watch(viewMode, () => {
           <p class="text-muted-foreground text-sm">
             작가: {{ displayArtists }}
           </p>
-          <div class="flex flex-wrap gap-1">
+          <div class="flex max-h-16 flex-wrap gap-1 overflow-y-auto">
             <Badge
               v-for="tag in displayTags"
               :key="tag.name"

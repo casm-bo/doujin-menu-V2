@@ -52,6 +52,7 @@ export interface Book {
   cover_path?: string;
   page_count?: number;
   current_page?: number;
+  is_read?: boolean;
   is_favorite: boolean;
   is_offline?: boolean; // 라이브러리 폴더 접근 불가(외장하드 분리 등) 시 true
   last_read_at?: string;
@@ -60,6 +61,11 @@ export interface Book {
   added_at?: string;
   series_name?: string;
   series_collection_id?: number;
+  series_collection_name?: string;
+  series_collection_description?: string | null;
+  series_book_count?: number;
+  series_read_count?: number;
+  series_is_favorite?: boolean;
   series_order_index?: number;
   language_name_english?: string;
   language_name_local?: string;
@@ -300,6 +306,18 @@ export interface IpcChannels {
   "toggle-book-favorite": {
     request: { bookId: number; isFavorite: boolean };
     response: { success: boolean; is_favorite?: boolean; error?: unknown };
+  };
+  "toggle-series-favorite": {
+    request: number;
+    response: { success: boolean; is_favorite?: boolean; error?: unknown };
+  };
+  "set-book-read": {
+    request: { bookId: number; isRead: boolean };
+    response: { success: boolean; is_read?: boolean; error?: unknown };
+  };
+  "set-series-read": {
+    request: { seriesId: number; isRead: boolean };
+    response: { success: boolean; is_read?: boolean; error?: unknown };
   };
   "open-book-folder": {
     request: string; // bookPath

@@ -10,20 +10,19 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import {
   Dialog,
+  DialogContent,
   DialogHeader,
-  DialogScrollContent,
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { Textarea } from "@/components/ui/textarea";
 import { Icon } from "@iconify/vue";
 import { useMutation, useQuery } from "@tanstack/vue-query";
 import { computed, onBeforeUnmount, ref, watch } from "vue";
-import { useRouter } from "vue-router";
 import { toast } from "vue-sonner";
 import type { SeriesCollectionWithBooks } from "../../../main/db/types";
 import type { Book } from "../../../types/ipc";
@@ -35,6 +34,7 @@ import {
   updateSeriesCollection,
 } from "../../api";
 import AddBookToSeriesDialog from "./AddBookToSeriesDialog.vue";
+import BookDetailDialog from "./BookDetailDialog.vue";
 import { reorderForDrop, type DropPosition } from "./seriesReorder";
 
 interface Props {
@@ -47,8 +47,6 @@ const emit = defineEmits<{
   "update:open": [value: boolean];
   updated: [];
 }>();
-
-const router = useRouter();
 
 // 편집 모드
 const isEditing = ref(false);
@@ -67,6 +65,8 @@ const draggedIndex = ref<number | null>(null);
 const dragOverIndex = ref<number | null>(null);
 const dragOverPosition = ref<DropPosition>("before");
 const books = ref<Book[]>([]);
+const selectedEpisode = ref<Book | null>(null);
+const showEpisodeDetail = ref(false);
 let reorderTimer: ReturnType<typeof setTimeout> | null = null;
 let pendingReorder: {
   seriesId: number;
@@ -228,14 +228,25 @@ const confirmRemoveBook = () => {
   showRemoveDialog.value = false;
 };
 
-// 책 클릭 - 뷰어로 이동
-const handleBookClick = (bookId: number) => {
-  router.push({
-    name: "Viewer",
-    params: { id: bookId },
-  });
-  emit("update:open", false);
+// 시리즈 팝업은 유지하고 에피소드 상세를 위에 엽니다.
+const handleBookClick = (book: Book) => {
+  selectedEpisode.value = book;
+  showEpisodeDetail.value = true;
 };
+
+const firstBook = computed(() => books.value[0] || null);
+const uniqueNames = (key: "artists" | "tags" | "groups" | "characters") =>
+  computed(() => [
+    ...new Set(
+      books.value.flatMap((book) =>
+        (book[key] || []).map((item: { name: string }) => item.name),
+      ),
+    ),
+  ]);
+const seriesArtists = uniqueNames("artists");
+const seriesTags = uniqueNames("tags");
+const seriesGroups = uniqueNames("groups");
+const seriesCharacters = uniqueNames("characters");
 
 // 썸네일 URL 생성
 const getCoverUrl = (book: Book) => {
@@ -329,73 +340,77 @@ const excludeBookIds = computed(() => books.value.map((book) => book.id));
 
 <template>
   <Dialog :open="props.open" @update:open="emit('update:open', $event)">
-    <DialogScrollContent class="max-h-[85vh] max-w-[700px]">
+    <DialogContent
+      class="flex max-h-[90vh] w-[calc(100vw-2rem)] flex-col overflow-hidden sm:max-w-[900px]"
+    >
       <DialogHeader>
         <DialogTitle>시리즈 상세</DialogTitle>
       </DialogHeader>
 
-      <ScrollArea class="max-h-[calc(85vh-120px)] min-w-0">
-        <div class="space-y-6 pr-4 pb-4">
-          <!-- 시리즈 정보 편집 -->
-          <div class="space-y-4">
-            <div class="flex items-center justify-between">
-              <h3 class="font-semibold">시리즈 정보</h3>
-              <Button
-                v-if="!isEditing"
-                variant="outline"
-                size="sm"
-                @click="startEdit"
-              >
-                <Icon icon="solar:pen-bold-duotone" class="mr-2 h-4 w-4" />
-                편집
-              </Button>
-              <div v-else class="flex gap-2">
-                <Button variant="outline" size="sm" @click="cancelEdit">
-                  취소
-                </Button>
-                <Button
-                  size="sm"
-                  :disabled="updateMutation.isPending.value"
-                  @click="saveEdit"
-                >
-                  저장
+      <div class="min-h-0 flex-1 overflow-y-auto pr-2">
+        <div class="space-y-6 pb-4">
+          <div class="flex gap-5">
+            <img
+              v-if="firstBook"
+              :src="getCoverUrl(firstBook)"
+              :alt="series?.name"
+              class="h-56 w-40 rounded-lg object-cover shadow"
+            />
+            <div class="min-w-0 flex-1 space-y-3">
+              <div class="flex items-start justify-between gap-3">
+                <h2 class="text-2xl font-bold">{{ seriesDetail?.name || series?.name }}</h2>
+                <Button v-if="!isEditing" variant="outline" size="sm" @click="startEdit">
+                  <Icon icon="solar:pen-bold-duotone" class="mr-2 h-4 w-4" />
+                  이름변경
                 </Button>
               </div>
+              <div v-if="seriesArtists.length" class="flex flex-wrap gap-1">
+                <Badge v-for="name in seriesArtists" :key="name" variant="outline">{{ name }}</Badge>
+              </div>
+              <div v-if="seriesGroups.length" class="flex flex-wrap gap-1">
+                <Badge v-for="name in seriesGroups" :key="name" variant="secondary">{{ name }}</Badge>
+              </div>
+              <div v-if="seriesTags.length" class="flex flex-wrap gap-1">
+                <Badge v-for="name in seriesTags" :key="name" variant="secondary">{{ name }}</Badge>
+              </div>
+              <div v-if="seriesCharacters.length" class="text-muted-foreground text-xs">
+                캐릭터: {{ seriesCharacters.join(", ") }}
+              </div>
+              <p
+                v-if="seriesDetail?.description || series?.description"
+                class="text-muted-foreground text-sm"
+              >
+                {{ seriesDetail?.description || series?.description }}
+              </p>
             </div>
-
-            <!-- 이름 -->
+          </div>
+          <div v-if="isEditing" class="space-y-4 rounded-lg border p-4">
             <div class="space-y-2">
               <Label for="series-name">시리즈명</Label>
               <Input
-                v-if="isEditing"
                 id="series-name"
                 v-model="editName"
                 placeholder="시리즈 이름을 입력하세요"
               />
-              <div v-else class="text-lg font-semibold">
-                {{ series?.name }}
-              </div>
             </div>
-
-            <!-- 설명 -->
             <div class="space-y-2">
               <Label for="series-description">설명</Label>
               <Textarea
-                v-if="isEditing"
                 id="series-description"
                 v-model="editDescription"
                 placeholder="시리즈 설명을 입력하세요 (선택사항)"
                 rows="3"
               />
-              <div
-                v-else-if="series?.description"
-                class="text-muted-foreground text-sm"
+            </div>
+            <div class="flex justify-end gap-2">
+              <Button variant="outline" size="sm" @click="cancelEdit">취소</Button>
+              <Button
+                size="sm"
+                :disabled="updateMutation.isPending.value"
+                @click="saveEdit"
               >
-                {{ series.description }}
-              </div>
-              <div v-else class="text-muted-foreground text-sm italic">
-                설명 없음
-              </div>
+                저장
+              </Button>
             </div>
           </div>
 
@@ -445,7 +460,7 @@ const excludeBookIds = computed(() => books.value.map((book) => book.id));
                   <!-- 썸네일 -->
                   <div
                     class="bg-muted relative h-20 w-14 shrink-0 cursor-pointer overflow-hidden rounded"
-                    @click="handleBookClick(book.id)"
+                    @click="handleBookClick(book)"
                   >
                     <img
                       v-if="getCoverUrl(book)"
@@ -472,7 +487,7 @@ const excludeBookIds = computed(() => books.value.map((book) => book.id));
                   <!-- 책 정보 (클릭 가능) -->
                   <div
                     class="min-w-0 flex-1 basis-0 cursor-pointer overflow-hidden py-0.5"
-                    @click="handleBookClick(book.id)"
+                    @click="handleBookClick(book)"
                   >
                     <div
                       class="hover:text-primary w-full truncate text-sm font-medium transition-colors"
@@ -581,9 +596,11 @@ const excludeBookIds = computed(() => books.value.map((book) => book.id));
             </div>
           </div>
         </div>
-      </ScrollArea>
-    </DialogScrollContent>
+      </div>
+    </DialogContent>
   </Dialog>
+
+  <BookDetailDialog v-model="showEpisodeDetail" :book="selectedEpisode" />
 
   <!-- 책 추가 다이얼로그 -->
   <AddBookToSeriesDialog
