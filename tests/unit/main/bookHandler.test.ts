@@ -854,6 +854,7 @@ describe("handleGetBooks - 통합 테스트", () => {
       expect(result.data).toHaveLength(2);
       expect(result.hasNextPage).toBe(true);
       expect(result.nextPage).toBe(1);
+      expect(result.totalCount).toBe(3);
     });
 
     it("pageSize=2, pageParam=1 → 마지막 1개 + hasNextPage=false", async () => {

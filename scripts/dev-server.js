@@ -16,6 +16,7 @@ let viteServer = null;
 let electronProcess = null;
 let electronProcessLocker = false;
 let rendererPort = 0;
+const DEV_RESTART_EXIT_CODE = 75;
 
 async function startRenderer() {
   viteServer = await createServer({
@@ -63,7 +64,14 @@ async function startElectron() {
     process.stderr.write(blueBright(`[electron] `) + white(data.toString())),
   );
 
-  electronProcess.on("exit", () => stop());
+  electronProcess.on("exit", (code) => {
+    electronProcess = null;
+    if (code === DEV_RESTART_EXIT_CODE) {
+      startElectron();
+      return;
+    }
+    stop();
+  });
 }
 
 function restartElectron() {

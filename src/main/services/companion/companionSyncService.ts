@@ -263,13 +263,7 @@ export class DesktopCompanionSyncService {
     const versionConflict =
       mutation.baseVersion !== undefined &&
       mutation.baseVersion !== Number(book.state_version || 0);
-    const currentModifiedAt = book.state_updated_at
-      ? Date.parse(book.state_updated_at)
-      : 0;
-    if (
-      mutation.modifiedAt !== undefined &&
-      mutation.modifiedAt <= currentModifiedAt
-    ) {
+    if (versionConflict) {
       return {
         mutationId: mutation.mutationId,
         status: "conflict",
@@ -277,10 +271,7 @@ export class DesktopCompanionSyncService {
         state: toBookState(book),
       };
     }
-    const now =
-      mutation.modifiedAt === undefined
-        ? new Date().toISOString()
-        : new Date(mutation.modifiedAt).toISOString();
+    const now = new Date().toISOString();
     const changedFields: CompanionSyncChange["changedFields"] = [];
     const update: Record<string, unknown> = {
       state_version: Number(book.state_version || 0) + 1,
@@ -398,7 +389,7 @@ export class DesktopCompanionSyncService {
     return {
       mutationId: mutation.mutationId,
       status: "applied",
-      conflict: versionConflict,
+      conflict: false,
       state,
     };
   }

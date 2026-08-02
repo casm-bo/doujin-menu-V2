@@ -6,11 +6,17 @@ import type {
   UpdateCheckResult,
 } from "../types/ipc";
 
-// 타입이 지정된 IPC Renderer
-// eslint-disable-next-line @typescript-eslint/ban-ts-comment
-// @ts-ignore electron 전용 API
-export const ipcRenderer = window.require("electron")
-  .ipcRenderer as TypedIpcRenderer;
+export const ipcRenderer: TypedIpcRenderer = window.ipcRenderer;
+
+export function getThumbnailUrl(
+  coverPath: string | null | undefined,
+  version = 0,
+) {
+  const fileName = coverPath?.split(/[/\\]/).pop();
+  if (!fileName) return "";
+  const query = version ? `?v=${version}` : "";
+  return `doujin-menu://thumbnail/${encodeURIComponent(fileName)}${query}`;
+}
 
 export async function getBook(bookId: number) {
   return ipcRenderer.invoke("get-book", bookId);
@@ -244,10 +250,6 @@ export async function checkUpdates(): Promise<UpdateCheckResult> {
   return ipcRenderer.invoke("check-for-updates");
 }
 
-export async function openGithubReleases(url: string): Promise<void> {
-  return ipcRenderer.invoke("open-github-releases", url);
-}
-
 // Download Queue API
 export async function getDownloadQueue() {
   const result = await ipcRenderer.invoke("get-download-queue");
@@ -457,27 +459,6 @@ export async function runSeriesDetection(options?: {
 }
 
 /**
- * 특정 책에 대한 시리즈 감지
- */
-export async function runSeriesDetectionForBook(
-  bookId: number,
-  options?: {
-    minConfidence?: number;
-    minBooks?: number;
-  },
-) {
-  const result = await ipcRenderer.invoke("run-series-detection-for-book", {
-    bookId,
-    options,
-  });
-  if (result.success) {
-    return result.data;
-  } else {
-    throw new Error(result.error || "책 시리즈 감지 실패");
-  }
-}
-
-/**
  * 책 추가 시 자동 시리즈 감지 및 생성
  */
 export async function autoDetectSeriesForBook(bookId: number) {
@@ -538,44 +519,6 @@ export async function reorderBooksInSeries(
     return true;
   } else {
     throw new Error(result.error || "책 순서 변경 실패");
-  }
-}
-
-/**
- * 시리즈 병합
- */
-export async function mergeSeriesCollections(
-  sourceId: number,
-  targetId: number,
-) {
-  const result = await ipcRenderer.invoke("merge-series-collections", {
-    sourceId,
-    targetId,
-  });
-  if (result.success) {
-    return true;
-  } else {
-    throw new Error(result.error || "시리즈 병합 실패");
-  }
-}
-
-/**
- * 시리즈 분할
- */
-export async function splitSeriesCollection(
-  sourceSeriesId: number,
-  bookIds: number[],
-  newSeriesName: string,
-) {
-  const result = await ipcRenderer.invoke("split-series-collection", {
-    sourceSeriesId,
-    bookIds,
-    newSeriesName,
-  });
-  if (result.success) {
-    return result.data;
-  } else {
-    throw new Error(result.error || "시리즈 분할 실패");
   }
 }
 

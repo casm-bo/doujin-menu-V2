@@ -214,6 +214,33 @@ const syncQueueToStatuses = () => {
   });
 };
 
+const handleDownloadProgress = (...args: unknown[]) => {
+  const { galleryId, status, progress, error } = args[0] as {
+    galleryId: number;
+    status: string;
+    progress?: number;
+    error?: string;
+  };
+  downloadStatuses[galleryId] = { status, progress, error };
+
+  if (status === "completed") {
+    const completedGallery = allGalleries.value.find(
+      (gallery) => gallery.id === galleryId,
+    );
+    if (completedGallery) {
+      toast.success(
+        `${completedGallery.title.display}이(가) 다운로드되었습니다.`,
+      );
+    }
+  }
+};
+
+const handleDownloadQueueUpdated = () => {
+  void downloadQueueStore.fetchQueue().then(syncQueueToStatuses);
+};
+let stopDownloadProgress = () => {};
+let stopDownloadQueueUpdated = () => {};
+
 onMounted(() => {
   // 다운로드 큐 store 초기화
   downloadQueueStore.initialize();
@@ -238,34 +265,16 @@ onMounted(() => {
   }
 
   // 다운로드 진행 상황 수신
-  ipcRenderer.on("download-progress", (_event, ...args) => {
-    const { galleryId, status, progress, error } = args[0] as {
-      galleryId: number;
-      status: string;
-      progress?: number;
-      error?: string;
-    };
-    downloadStatuses[galleryId] = { status, progress, error };
-
-    if (status === "completed") {
-      const completedGallery = allGalleries.value.find(
-        (gallery) => gallery.id === galleryId,
-      );
-      if (completedGallery) {
-        toast.success(
-          `${completedGallery.title.display}이(가) 다운로드되었습니다.`,
-        );
-      }
-    }
-  });
+  stopDownloadProgress = ipcRenderer.on(
+    "download-progress",
+    handleDownloadProgress,
+  );
 
   // 큐 업데이트 이벤트 수신 (큐 상태가 변경되면 downloadStatuses에 반영)
-  ipcRenderer.on("download-queue-updated", () => {
-    // 큐를 다시 가져와서 상태 동기화
-    downloadQueueStore.fetchQueue().then(() => {
-      syncQueueToStatuses();
-    });
-  });
+  stopDownloadQueueUpdated = ipcRenderer.on(
+    "download-queue-updated",
+    handleDownloadQueueUpdated,
+  );
 
   // 저장된 다운로드 경로 불러오기
   ipcRenderer.invoke("get-config-value", "downloadPath").then((path) => {
@@ -289,6 +298,8 @@ onUnmounted(() => {
 
   // 큐 store cleanup
   downloadQueueStore.cleanup();
+  stopDownloadProgress();
+  stopDownloadQueueUpdated();
 });
 
 watch(observerTarget, (newTarget) => {

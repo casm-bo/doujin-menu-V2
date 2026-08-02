@@ -95,7 +95,7 @@ describe("CompanionServer", () => {
     expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject({
       success: true,
-      data: { service: "doujin-menu-companion", version: 1 },
+      data: { service: "doujin-menu-companion", version: 2 },
     });
   });
 
@@ -345,9 +345,12 @@ describe("CompanionServer", () => {
     const page = { books: [], nextCursor: 50, hasMore: true };
     vi.mocked(libraryService.listBooks).mockResolvedValue(page);
 
-    const response = await fetch(`${baseUrl}/v1/library/books?limit=200&cursor=100`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
+    const response = await fetch(
+      `${baseUrl}/v1/library/books?limit=200&cursor=100`,
+      {
+        headers: { Authorization: `Bearer ${token}` },
+      },
+    );
 
     expect(response.status).toBe(200);
     expect((await response.json()).data).toEqual(page);

@@ -13,7 +13,7 @@ import {
 import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
 import { Icon } from "@iconify/vue";
-import { onMounted, ref } from "vue";
+import { onMounted, onUnmounted, ref } from "vue";
 
 const appVersion = ref("로딩 중...");
 const updateStatus = ref("idle"); // idle, checking, update-available, downloading, download-progress, update-downloaded, error, update-not-available, update-available-portable
@@ -23,6 +23,25 @@ const updateError = ref("");
 const githubReleasesUrl = ref(""); // GitHub 릴리즈 URL 추가
 const isPortableVersion = ref(false); // 포터블 버전 여부 추가
 const openChangelog = ref(false);
+const handleUpdateStatus = (...args: unknown[]) => {
+  const data = args[0] as {
+    status: string;
+    info?: { version: string };
+    progressObj?: { percent: number };
+    error?: string;
+  };
+  updateStatus.value = data.status;
+  if (data.status === "update-available" && data.info) {
+    latestVersion.value = data.info.version;
+  } else if (data.status === "download-progress" && data.progressObj) {
+    downloadProgress.value = Math.round(data.progressObj.percent);
+  } else if (data.status === "update-downloaded" && data.info) {
+    latestVersion.value = data.info.version;
+  } else if (data.status === "error" && data.error) {
+    updateError.value = data.error;
+  }
+};
+let stopUpdateStatus = () => {};
 
 const checkForUpdates = async () => {
   updateStatus.value = "checking";
@@ -92,25 +111,11 @@ const showChangelog = () => {
 
 onMounted(async () => {
   appVersion.value = await api.getAppVersion();
+  stopUpdateStatus = ipcRenderer.on("update-status", handleUpdateStatus);
+});
 
-  ipcRenderer.on("update-status", (_event, ...args) => {
-    const data = args[0] as {
-      status: string;
-      info?: { version: string };
-      progressObj?: { percent: number };
-      error?: string;
-    };
-    updateStatus.value = data.status;
-    if (data.status === "update-available" && data.info) {
-      latestVersion.value = data.info.version;
-    } else if (data.status === "download-progress" && data.progressObj) {
-      downloadProgress.value = Math.round(data.progressObj.percent);
-    } else if (data.status === "update-downloaded" && data.info) {
-      latestVersion.value = data.info.version;
-    } else if (data.status === "error" && data.error) {
-      updateError.value = data.error;
-    }
-  });
+onUnmounted(() => {
+  stopUpdateStatus();
 });
 </script>
 

@@ -57,6 +57,10 @@ const queryClient = useQueryClient();
 
 const isNewWindow = ref(false);
 const isMaximized = ref(false);
+const handleWindowMaximized = (...args: unknown[]) => {
+  isMaximized.value = args[0] as boolean;
+};
+let stopWindowMaximized = () => {};
 
 // 새 창 모드용 윈도우 제어
 const minimizeWindow = () => ipcRenderer.send("minimize-window");
@@ -427,9 +431,10 @@ onMounted(async () => {
   isNewWindow.value = await apiIsNewWindow();
   // 새 창 모드일 때 최대화 상태 동기화
   isMaximized.value = await ipcRenderer.invoke("get-window-maximized-state");
-  ipcRenderer.on("window-maximized", (_event, ...args) => {
-    isMaximized.value = args[0] as boolean;
-  });
+  stopWindowMaximized = ipcRenderer.on(
+    "window-maximized",
+    handleWindowMaximized,
+  );
   store.loadViewerSettings();
   const bookId = Number(route.params.id);
   const filter = route.query.filter;
@@ -476,7 +481,7 @@ onUnmounted(() => {
   store.cleanup();
   store.webtoonScrollRef = null; // ref 제거
   ipcRenderer.send("set-fullscreen-window", false);
-  ipcRenderer.removeAllListeners("window-maximized");
+  stopWindowMaximized();
   if (cursorHideTimer !== null) {
     clearTimeout(cursorHideTimer);
   }

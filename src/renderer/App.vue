@@ -47,7 +47,7 @@ onMounted(async () => {
     uiStore.setLocked(true);
   }
 
-  ipcRenderer.on("update-status", (_event, ...args) => {
+  ipcRenderer.on("update-status", (...args) => {
     const { status, info, error } = args[0] as {
       status: string;
       info?: { version: string };

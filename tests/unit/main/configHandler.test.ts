@@ -1,6 +1,18 @@
 import crypto from "crypto";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+const { mockBackupRaw, mockBackupDestroy } = vi.hoisted(() => ({
+  mockBackupRaw: vi.fn(),
+  mockBackupDestroy: vi.fn(),
+}));
+
+vi.mock("knex", () => ({
+  default: vi.fn(() => ({
+    raw: mockBackupRaw,
+    destroy: mockBackupDestroy,
+  })),
+}));
+
 // electron-store 모킹
 const mockGet = vi.fn();
 const mockSet = vi.fn();
@@ -25,6 +37,7 @@ vi.mock("electron-store", () => ({
 vi.mock("electron", () => ({
   app: {
     getPath: vi.fn(() => "/mock/user/data"),
+    exit: vi.fn(),
     relaunch: vi.fn(),
     quit: vi.fn(),
   },
@@ -55,14 +68,18 @@ vi.mock("fs/promises", () => ({
     copyFile: vi.fn(),
     unlink: vi.fn(),
     rm: vi.fn(),
+    rename: vi.fn(),
   },
   copyFile: vi.fn(),
   unlink: vi.fn(),
   rm: vi.fn(),
+  rename: vi.fn(),
 }));
 
 // directoryHandler와 thumbnailHandler 모킹
 vi.mock("../../../src/main/handlers/directoryHandler.js", () => ({
+  cleanupMissingBooks: vi.fn(),
+  forgetBooksUnderPath: vi.fn(),
   scanDirectory: vi.fn(),
 }));
 
@@ -78,11 +95,24 @@ const {
   handleSetLockPassword,
   handleVerifyLockPassword,
   handleClearLockPassword,
+  handleRestoreDatabase,
+  handleResetAllData,
+  restartApp,
 } = await import("../../../src/main/handlers/configHandler.js");
+const { app, dialog } = await import("electron");
+const { existsSync } = await import("fs");
+const { default: fs } = await import("fs/promises");
+const { closeDbConnection } = await import("../../../src/main/db/index.js");
 
 describe("configHandler", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(fs.copyFile).mockResolvedValue();
+    vi.mocked(fs.rm).mockResolvedValue();
+    vi.mocked(fs.rename).mockResolvedValue();
+    vi.mocked(fs.unlink).mockResolvedValue();
+    mockBackupRaw.mockResolvedValue([{ quick_check: "ok" }]);
+    mockBackupDestroy.mockResolvedValue(undefined);
 
     // mockSet의 기본 동작 설정 (에러를 던지지 않도록)
     mockSet.mockImplementation(() => {
@@ -93,6 +123,14 @@ describe("configHandler", () => {
     mockDelete.mockImplementation(() => {
       // 아무것도 안함 (성공)
     });
+  });
+
+  it("개발 모드 재시작은 개발 서버가 처리할 종료 코드를 사용함", () => {
+    restartApp(true);
+
+    expect(app.exit).toHaveBeenCalledWith(75);
+    expect(app.relaunch).not.toHaveBeenCalled();
+    expect(app.quit).not.toHaveBeenCalled();
   });
 
   describe("handleGetConfig", () => {
@@ -303,6 +341,57 @@ describe("configHandler", () => {
         // 10번 모두 다른 salt가 생성되어야 함
         expect(salts.size).toBe(10);
       });
+    });
+  });
+
+  describe("데이터 교체 실패 안전성", () => {
+    it("백업 준비가 실패하면 열린 DB를 닫지 않음", async () => {
+      vi.mocked(dialog.showOpenDialog).mockResolvedValue({
+        canceled: false,
+        filePaths: ["/backup"],
+      });
+      vi.mocked(existsSync).mockReturnValue(true);
+      vi.mocked(fs.copyFile).mockRejectedValueOnce(new Error("copy failed"));
+
+      const result = await handleRestoreDatabase({
+        sender: {},
+      } as Electron.IpcMainInvokeEvent);
+
+      expect(result.success).toBe(false);
+      expect(closeDbConnection).not.toHaveBeenCalled();
+      expect(app.relaunch).not.toHaveBeenCalled();
+    });
+
+    it("백업 검증이 실패하면 열린 DB를 닫지 않음", async () => {
+      vi.mocked(dialog.showOpenDialog).mockResolvedValue({
+        canceled: false,
+        filePaths: ["/backup"],
+      });
+      vi.mocked(existsSync).mockReturnValue(true);
+      mockBackupRaw.mockRejectedValueOnce(new Error("invalid backup"));
+
+      const result = await handleRestoreDatabase({
+        sender: {},
+      } as Electron.IpcMainInvokeEvent);
+
+      expect(result.success).toBe(false);
+      expect(closeDbConnection).not.toHaveBeenCalled();
+      expect(fs.rename).not.toHaveBeenCalled();
+    });
+
+    it("초기화가 DB 종료 후 실패하면 앱을 재시작", async () => {
+      vi.useFakeTimers();
+      vi.mocked(closeDbConnection).mockResolvedValue();
+      vi.mocked(existsSync).mockReturnValue(true);
+      vi.mocked(fs.unlink).mockRejectedValueOnce(new Error("unlink failed"));
+
+      const result = await handleResetAllData();
+      vi.runAllTimers();
+
+      expect(result.success).toBe(false);
+      expect(app.relaunch).toHaveBeenCalled();
+      expect(app.quit).toHaveBeenCalled();
+      vi.useRealTimers();
     });
   });
 });

@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { useTagDisplay } from "@/composable/useTagDisplay";
 import { Icon } from "@iconify/vue";
 import { useQueryClient } from "@tanstack/vue-query";
@@ -24,6 +25,7 @@ const props = defineProps<{
   book: Book;
   queryKey: readonly unknown[];
   hideTags?: boolean;
+  selected?: boolean;
 }>();
 const emit = defineEmits([
   "selectTag",
@@ -36,6 +38,8 @@ const emit = defineEmits([
   "open-book-folder",
   "show-details",
   "show-preview",
+  "toggle-select",
+  "deleted",
 ]);
 
 const router = useRouter();
@@ -84,10 +88,7 @@ const handleCardClick = (event: MouseEvent) => {
 const thumbnailKey = ref(0);
 
 const coverUrl = computed(() => {
-  if (!props.book.cover_path) return "";
-  return thumbnailKey.value
-    ? `file://${props.book.cover_path}?v=${thumbnailKey.value}`
-    : `file://${props.book.cover_path}`;
+  return api.getThumbnailUrl(props.book.cover_path, thumbnailKey.value);
 });
 
 const validArtists = computed(() => {
@@ -148,6 +149,7 @@ const handleDeleteBook = async () => {
 const confirmDeleteBook = async () => {
   try {
     await api.deleteBook(props.book.id);
+    emit("deleted", props.book.id);
     toast.success("책 삭제 완료", {
       description: `${props.book.title}이(가) 삭제되었습니다.`,
     });
@@ -167,8 +169,15 @@ const confirmDeleteBook = async () => {
 <template>
   <div
     class="hover:bg-muted/50 flex cursor-pointer items-center border-b p-2 transition-colors"
+    :class="{ 'border-primary bg-accent/40': selected }"
     @click="handleCardClick"
   >
+    <Checkbox
+      :model-value="selected"
+      :aria-label="`${book.title} 선택`"
+      class="mr-3"
+      @click.stop="emit('toggle-select')"
+    />
     <div class="relative mr-4 h-64 w-48 flex-shrink-0 overflow-hidden">
       <img
         :src="coverUrl"

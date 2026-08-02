@@ -4,7 +4,6 @@ import { filenamifyPath } from "filenamify";
 import { createWriteStream } from "fs";
 import fs from "fs/promises";
 import path from "path";
-import { pathToFileURL } from "url";
 import { console } from "../main.js";
 import { hitomiService } from "../services/hitomi/hitomiService.js";
 import { formatDownloadFolderName } from "../utils/index.js";
@@ -433,7 +432,10 @@ export const handleDownloadTempThumbnail = async ({
     // 파일이 이미 존재하면 바로 경로를 반환
     try {
       await fs.access(filePath);
-      return { success: true, data: pathToFileURL(filePath).href };
+      return {
+        success: true,
+        data: `doujin-menu://download-thumbnail/${encodeURIComponent(fileName)}`,
+      };
     } catch {
       // 파일이 없으면 다운로드 계속
     }
@@ -453,7 +455,10 @@ export const handleDownloadTempThumbnail = async ({
     const arrayBuffer = await res.arrayBuffer();
     await fs.writeFile(filePath, Buffer.from(arrayBuffer));
 
-    return { success: true, data: pathToFileURL(filePath).href };
+    return {
+      success: true,
+      data: `doujin-menu://download-thumbnail/${encodeURIComponent(fileName)}`,
+    };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     console.error(`Error downloading temp thumbnail for ${url}:`, error);
@@ -476,10 +481,6 @@ export async function registerDownloaderHandlers() {
   // 갤러리 이미지 URL 목록 조회 핸들러
   ipcMain.handle("get-gallery-image-urls", (_event, galleryId) =>
     handleGetGalleryImageUrls(galleryId),
-  );
-  // 작품 다운로드 핸들러
-  ipcMain.handle("download-gallery", (event, params) =>
-    handleDownloadGallery(event, params),
   );
   // 임시 썸네일 다운로드 핸들러
   ipcMain.handle("download-temp-thumbnail", (_event, params) =>

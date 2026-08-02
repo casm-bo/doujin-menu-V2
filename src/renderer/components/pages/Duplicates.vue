@@ -1,5 +1,9 @@
 <script setup lang="ts">
-import { deleteDuplicateBooks, getDuplicateGroups } from "@/api";
+import {
+  deleteDuplicateBooks,
+  getDuplicateGroups,
+  getThumbnailUrl,
+} from "@/api";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -43,9 +47,7 @@ const isPermanentDialogOpen = ref(false);
 
 // 커버 이미지 URL (없으면 placeholder)
 const getCoverUrl = (coverPath: string | null) => {
-  return coverPath
-    ? `file://${coverPath}`
-    : "https://via.placeholder.com/256x384";
+  return getThumbnailUrl(coverPath) || "https://via.placeholder.com/256x384";
 };
 
 // 매치 타입 라벨
@@ -162,9 +164,7 @@ const confirmPermanent = () => performDelete(true);
           <!-- 그룹 헤더 (전체 선택 경고를 같은 줄에 표시해 본문 레이아웃 시프팅 방지) -->
           <div class="mb-3 flex items-center gap-2">
             <Badge
-              :variant="
-                group.matchType === 'title' ? 'secondary' : 'default'
-              "
+              :variant="group.matchType === 'title' ? 'secondary' : 'default'"
             >
               {{ getMatchTypeLabel(group.matchType) }}
             </Badge>

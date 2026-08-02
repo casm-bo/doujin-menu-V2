@@ -1,10 +1,19 @@
 import chalk from "chalk";
 import { rmSync } from "fs";
+import { execFileSync } from "child_process";
 import { join } from "path";
 import { build } from "vite";
 import { buildLicenseInfo } from "./license.js";
 import compileTs from "./private/tsc.js";
 const { blueBright, greenBright, redBright } = chalk;
+
+execFileSync(
+  process.execPath,
+  [join(import.meta.dirname, "rebuild-native.js")],
+  {
+    stdio: "inherit",
+  },
+);
 
 function buildRenderer() {
   return build({

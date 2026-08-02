@@ -116,7 +116,7 @@ describe("DesktopCompanionSyncService", () => {
     expect(rows).toHaveLength(1);
   });
 
-  it("reports a version conflict while applying the latest received value", async () => {
+  it("keeps server state when the client base version is stale", async () => {
     const book = await seedBook(db, { page_count: 20 });
     const stored = await db("Book").where("id", book.id).first();
     await service.applyMutations("desktop", [
@@ -138,13 +138,13 @@ describe("DesktopCompanionSyncService", () => {
     ]);
 
     expect(result.results[0]).toMatchObject({
-      status: "applied",
+      status: "conflict",
       conflict: true,
-      state: { currentPage: 8, version: 2 },
+      state: { currentPage: 2, version: 1 },
     });
   });
 
-  it("keeps the desktop state when a mobile mutation is older", async () => {
+  it("accepts a current-version mutation even when the mobile clock is behind", async () => {
     const book = await seedBook(db, {
       page_count: 20,
       current_page: 6,
@@ -163,16 +163,16 @@ describe("DesktopCompanionSyncService", () => {
     ]);
 
     expect(result.results[0]).toMatchObject({
-      status: "conflict",
-      conflict: true,
-      state: { currentPage: 6 },
+      status: "applied",
+      conflict: false,
+      state: { currentPage: 2, version: 1 },
     });
     expect((await db("Book").where("id", book.id).first()).current_page).toBe(
-      6,
+      2,
     );
   });
 
-  it("applies a newer mobile state even when its base version is stale", async () => {
+  it("rejects a stale-version mutation even when the mobile clock is ahead", async () => {
     const book = await seedBook(db, {
       page_count: 20,
       current_page: 3,
@@ -193,12 +193,12 @@ describe("DesktopCompanionSyncService", () => {
     ]);
 
     expect(result.results[0]).toMatchObject({
-      status: "applied",
+      status: "conflict",
       conflict: true,
       state: {
-        currentPage: 9,
-        version: 5,
-        updatedAt: "2026-07-20T13:00:00.000Z",
+        currentPage: 3,
+        version: 4,
+        updatedAt: "2026-07-20T12:00:00.000Z",
       },
     });
   });
@@ -215,7 +215,7 @@ describe("DesktopCompanionSyncService", () => {
       {
         mutationId: "all-state-1",
         bookSyncId: stored.sync_id,
-        baseVersion: 0,
+        baseVersion: stored.state_version,
         currentPage: 5,
         isFavorite: true,
         isRead: true,

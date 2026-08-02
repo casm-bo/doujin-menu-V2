@@ -13,6 +13,7 @@ import windowStateKeeper from "electron-window-state";
 import { rmSync } from "fs";
 import fs from "fs/promises";
 import path from "path"; // path 모듈 전체 임포트
+import { fileURLToPath } from "url";
 import * as yauzl from "yauzl";
 import db, { closeDbConnection } from "./db/index.js"; // db 모듈 추가
 import "./handlers/bookHandler.js";
@@ -22,6 +23,7 @@ import {
   registerConfigHandlers,
 } from "./handlers/configHandler.js";
 import {
+  cleanupMissingBooks,
   registerDirectoryHandlers,
   scanDirectory,
 } from "./handlers/directoryHandler.js";
@@ -30,7 +32,10 @@ import {
   initializeDownloadQueue,
   registerDownloadQueueHandlers,
 } from "./handlers/downloadQueueHandler.js";
-import { registerEtcHandlers } from "./handlers/etcHandler.js";
+import {
+  openAllowedExternalUrl,
+  registerEtcHandlers,
+} from "./handlers/etcHandler.js";
 import { registerPresetHandlers } from "./handlers/presetHandler.js";
 import {
   registerSeriesCollectionHandlers,
@@ -49,9 +54,22 @@ import { registerWindowHandlers } from "./handlers/windowHandler.js";
 import { registerCompanionHandlers } from "./handlers/companionHandler.js";
 import { registerUpdaterHandlers } from "./updater.js";
 import { naturalSort } from "./utils/index.js";
+import { parseMediaRequestUrl } from "./mediaProtocol.js";
 
 log.initialize();
 export const console = log;
+
+protocol.registerSchemesAsPrivileged([
+  {
+    scheme: "doujin-menu",
+    privileges: {
+      secure: true,
+      standard: true,
+      supportFetchAPI: true,
+      corsEnabled: true,
+    },
+  },
+]);
 
 // 앱이 중복으로 켜지지 않도록 방지
 const gotTheLock = app.requestSingleInstanceLock();
@@ -71,6 +89,32 @@ let isQuitting = false;
 app.on("before-quit", () => {
   isQuitting = true;
 });
+
+function restrictNavigation(win: BrowserWindow): void {
+  win.webContents.on("will-navigate", (event, targetUrl) => {
+    try {
+      const target = new URL(targetUrl);
+      const allowed =
+        process.env.NODE_ENV === "development"
+          ? target.origin === `http://localhost:${process.argv[2]}`
+          : target.protocol === "file:" &&
+            path.resolve(fileURLToPath(target)).toLowerCase() ===
+              path
+                .resolve(
+                  import.meta.dirname,
+                  "..",
+                  "..",
+                  "renderer",
+                  "index.html",
+                )
+                .toLowerCase();
+      if (allowed) return;
+    } catch {
+      // malformed navigation targets are blocked below
+    }
+    event.preventDefault();
+  });
+}
 
 function getAppIconPath(): string {
   return process.env.NODE_ENV === "development"
@@ -131,13 +175,15 @@ function createViewerWindow(fromUrl: string) {
     icon: getAppIconPath(),
     titleBarStyle: "hidden",
     webPreferences: {
-      sandbox: false,
-      nodeIntegration: true,
-      contextIsolation: false,
-      webSecurity: false,
+      preload: path.join(import.meta.dirname, "preload.cjs"),
+      sandbox: true,
+      nodeIntegration: false,
+      contextIsolation: true,
+      webSecurity: true,
     },
   });
   viewerWindow.setMenu(null);
+  restrictNavigation(viewerWindow);
 
   if (process.env.NODE_ENV === "development") {
     const rendererPort = process.argv[2];
@@ -150,11 +196,17 @@ function createViewerWindow(fromUrl: string) {
   }
 
   viewerWindow.webContents.setWindowOpenHandler((details) => {
-    shell.openExternal(details.url);
+    void openAllowedExternalUrl(details.url);
     return { action: "deny" };
   });
 
   viewerWindows.add(viewerWindow);
+  viewerWindow.on("maximize", () => {
+    viewerWindow.webContents.send("window-maximized", true);
+  });
+  viewerWindow.on("unmaximize", () => {
+    viewerWindow.webContents.send("window-maximized", false);
+  });
   viewerWindow.on("closed", () => {
     viewerWindows.delete(viewerWindow);
   });
@@ -176,13 +228,15 @@ function createWindow() {
       : undefined,
     titleBarStyle: "hidden",
     webPreferences: {
-      sandbox: false,
-      nodeIntegration: true,
-      contextIsolation: false,
-      webSecurity: false,
+      preload: path.join(import.meta.dirname, "preload.cjs"),
+      sandbox: true,
+      nodeIntegration: false,
+      contextIsolation: true,
+      webSecurity: true,
     },
   });
   mainWindow.setMenu(null);
+  restrictNavigation(mainWindow);
   mainWindowState.manage(mainWindow);
 
   mainWindow.on("close", (event) => {
@@ -212,17 +266,7 @@ function createWindow() {
   }
 
   mainWindow.webContents.setWindowOpenHandler((details) => {
-    // 특정 도메인만 외부 브라우저로 열기
-    const allowedDomains = ["github.com", "www.dlsite.com", "forms.gle"];
-    if (
-      allowedDomains.some((domain) =>
-        details.url.startsWith("https://" + domain),
-      )
-    ) {
-      shell.openExternal(details.url);
-    }
-
-    // Electron 내부 창 생성 차단
+    void openAllowedExternalUrl(details.url);
     return { action: "deny" };
   });
 
@@ -315,15 +359,29 @@ app.whenReady().then(async () => {
 
   // 커스텀 프로토콜 등록
   protocol.handle("doujin-menu", async (request) => {
-    const url = new URL(request.url);
-    const bookId = parseInt(url.hostname); // URL의 호스트 부분을 bookId로 사용
-    const pageIndex = parseInt(url.pathname.substring(1)); // URL의 경로 부분을 페이지 인덱스로 사용 (선행 / 제거)
-
-    if (isNaN(bookId) || isNaN(pageIndex)) {
+    const mediaRequest = parseMediaRequestUrl(request.url);
+    if (!mediaRequest) {
       return new Response("Invalid URL", { status: 400 });
     }
 
     try {
+      if (mediaRequest.kind !== "page") {
+        const thumbnailPath = path.join(
+          app.getPath("userData"),
+          mediaRequest.kind === "thumbnail"
+            ? "thumbnails"
+            : "downloader_temp_thumbnails",
+          mediaRequest.fileName,
+        );
+        const imageBuffer = await fs.readFile(thumbnailPath);
+        const mimeType = `image/${path.extname(thumbnailPath).substring(1)}`;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        return new Response(imageBuffer as any, {
+          headers: { "Content-Type": mimeType },
+        });
+      }
+
+      const { bookId, pageIndex } = mediaRequest;
       const book = await db("Book").where("id", bookId).first();
 
       if (!book || !book.path) {
@@ -478,11 +536,6 @@ app.whenReady().then(async () => {
     }
   });
 
-  // 현재 창 최대화 상태 요청 핸들러
-  ipcMain.handle("get-window-maximized-state", () => {
-    return mainWindow?.isMaximized() || false;
-  });
-
   session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
     callback({
       responseHeaders: {
@@ -536,24 +589,42 @@ app.whenReady().then(async () => {
       hasRunInitialLibraryScan = true;
 
       // 스캔을 백그라운드에서 비동기로 실행 (UI 로딩을 차단하지 않음)
-      Promise.resolve().then(async () => {
-        for (const folderPath of libraryFolders) {
-          console.log(`[Main] Auto-scanning library folder: ${folderPath}`);
-          await scanDirectory(folderPath);
+      void (async () => {
+        try {
+          const completedScans: {
+            folderPath: string;
+            foundPaths: Set<string>;
+          }[] = [];
+          for (const folderPath of libraryFolders) {
+            console.log(`[Main] Auto-scanning library folder: ${folderPath}`);
+            const result = await scanDirectory(folderPath, {
+              preserveMissingSyncIds: true,
+            });
+            completedScans.push({
+              folderPath,
+              foundPaths: result.foundPaths,
+            });
 
-          const books = await db("Book")
-            .select("id")
-            .whereLike("path", `${folderPath}%`)
-            .and.where("cover_path", null);
+            const books = await db("Book")
+              .select("id")
+              .whereLike("path", `${folderPath}%`)
+              .and.where("cover_path", null);
 
-          await Promise.all(
-            books.map((book) => handleGenerateThumbnail(book.id)),
-          );
+            await Promise.all(
+              books.map((book) => handleGenerateThumbnail(book.id)),
+            );
+          }
+          for (const { folderPath, foundPaths } of completedScans) {
+            await cleanupMissingBooks(folderPath, foundPaths);
+          }
+        } catch (error) {
+          console.error("[Main] Initial library scan failed:", error);
+        } finally {
+          if (!mainWindow.isDestroyed()) {
+            mainWindow.webContents.send("library-scan-completed");
+          }
         }
-
-        // 스캔 완료 후 UI에 알림
-        mainWindow.webContents.send("library-scan-completed");
-      });
+      })();
     });
   }
 });

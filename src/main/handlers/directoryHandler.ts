@@ -186,7 +186,7 @@ export async function extractCoverFromZip(
 export async function extractInfoTxtAndImageCountFromZip(
   zipPath: string,
 ): Promise<{ infoTxt: string | null; imageCount: number }> {
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     let imageCount = 0;
     let infoTxt: string | null = null;
     let infoFound = false; // info.txt 엔트리를 발견했는지 여부
@@ -216,7 +216,7 @@ export async function extractInfoTxtAndImageCountFromZip(
     yauzl.open(zipPath, { lazyEntries: true }, (err, zipfile) => {
       if (err) {
         console.error(`[Main] ZIP 파일 열기 오류 ${zipPath}:`, err);
-        return resolve({ infoTxt: null, imageCount: 0 });
+        return reject(err);
       }
       openedZipfile = zipfile;
 
@@ -281,7 +281,7 @@ export async function extractInfoTxtAndImageCountFromZip(
           } catch {
             // 이미 닫혀 있는 경우 무시
           }
-          resolve({ infoTxt, imageCount });
+          reject(zipErr);
         }
       });
 
@@ -289,27 +289,6 @@ export async function extractInfoTxtAndImageCountFromZip(
     });
   });
 }
-
-export const handleAddBooksFromDirectory = async () => {
-  const { filePaths } = await dialog.showOpenDialog({
-    properties: ["openDirectory"],
-  });
-
-  if (!filePaths || filePaths.length === 0) {
-    return;
-  }
-
-  const directoryPath = filePaths[0];
-  const { added, updated, deleted } = await scanDirectory(directoryPath);
-  const books = await db("Book")
-    .select("id")
-    .whereLike("path", `${directoryPath}%`)
-    .and.where("cover_path", null);
-  await Promise.all(books.map((book) => handleGenerateThumbnail(book.id)));
-  console.log(
-    `[Main] ${directoryPath}에 대한 초기 스캔 완료: 추가 ${added}, 업데이트 ${updated}, 삭제 ${deleted}`,
-  );
-};
 
 export const handleSelectFolder = async () => {
   const { filePaths } = await dialog.showOpenDialog({
@@ -460,6 +439,111 @@ async function processBookItem(
 }
 
 // 청크 단위로 책을 처리하여 DB에 저장하는 헬퍼 함수
+type ExistingScanBook = Pick<
+  Book,
+  "id" | "path" | "cover_path" | "sync_id" | "is_offline" | "state_version"
+>;
+
+async function deleteBookRecords(
+  trx: Knex.Transaction,
+  books: Pick<Book, "id">[],
+) {
+  const bookIds = books.map((book) => book.id);
+  if (bookIds.length === 0) return;
+
+  for (const table of [
+    "BookArtist",
+    "BookTag",
+    "BookSeries",
+    "BookGroup",
+    "BookCharacter",
+    "BookHistory",
+    "CompanionSyncChange",
+  ]) {
+    await trx(table).whereIn("book_id", bookIds).del();
+  }
+  await trx("Book").whereIn("id", bookIds).del();
+}
+
+async function removeThumbnailFiles(
+  books: Pick<Book, "cover_path">[],
+): Promise<void> {
+  await Promise.all(
+    books
+      .map((book) => book.cover_path)
+      .filter((coverPath): coverPath is string => Boolean(coverPath))
+      .map((coverPath) =>
+        fs.unlink(coverPath).catch((error) => {
+          console.error(`[Main] 썸네일 파일 삭제 실패 ${coverPath}:`, error);
+        }),
+      ),
+  );
+}
+
+async function isMissingOnReachableStorage(bookPath: string) {
+  if (await isPathAccessible(bookPath)) return false;
+  return isPathAccessible(path.parse(bookPath).root);
+}
+
+async function resolveExistingBookForScan(
+  trx: Knex.Transaction,
+  candidates: ExistingScanBook[],
+  bookPath: string,
+  syncId: string | null | undefined,
+  thumbnailRemovals: Pick<Book, "cover_path">[],
+) {
+  const existingByPath = candidates.find((book) => book.path === bookPath);
+  if (!syncId) return existingByPath;
+
+  const sameIdentity = candidates.filter(
+    (book) => book.sync_id === syncId && book.path !== bookPath,
+  );
+  const staleCopies: ExistingScanBook[] = [];
+  for (const candidate of sameIdentity) {
+    if (await isMissingOnReachableStorage(candidate.path)) {
+      staleCopies.push(candidate);
+    }
+  }
+
+  if (!existingByPath) {
+    return staleCopies.reduce<ExistingScanBook | undefined>(
+      (best, candidate) =>
+        !best ||
+        Number(candidate.state_version || 0) > Number(best.state_version || 0)
+          ? candidate
+          : best,
+      undefined,
+    );
+  }
+  if (staleCopies.length === 0) return existingByPath;
+
+  const keep = staleCopies.reduce(
+    (best, candidate) =>
+      Number(candidate.state_version || 0) > Number(best.state_version || 0)
+        ? candidate
+        : best,
+    existingByPath,
+  );
+  const remove = [existingByPath, ...staleCopies].filter(
+    (candidate) => candidate.id !== keep.id,
+  );
+  const removeIds = remove.map((candidate) => candidate.id);
+
+  await trx("BookHistory").whereIn("book_id", removeIds).update({
+    book_id: keep.id,
+  });
+  await trx("CompanionSyncChange").whereIn("book_id", removeIds).update({
+    book_id: keep.id,
+  });
+  await deleteBookRecords(trx, remove);
+  thumbnailRemovals.push(...remove);
+  for (const removed of remove) {
+    const index = candidates.findIndex((book) => book.id === removed.id);
+    if (index >= 0) candidates.splice(index, 1);
+  }
+  return keep;
+}
+
 async function processBatchInTransaction(
   batch: ProcessedBook[],
   trx: Knex.Transaction,
@@ -469,11 +553,13 @@ async function processBatchInTransaction(
   updated: number;
   newBookIds: number[];
   thumbnailNeeded: number[];
+  thumbnailRemovals: Pick<Book, "cover_path">[];
 }> {
   let addedCount = 0;
   let updatedCount = 0;
   const newBookIds: number[] = [];
   const thumbnailNeeded: number[] = [];
+  const thumbnailRemovals: Pick<Book, "cover_path">[] = [];
 
   deduplicateBookSyncIds(batch, claimedSyncIds);
 
@@ -481,8 +567,15 @@ async function processBatchInTransaction(
   const batchSyncIds = batch
     .map((p) => p.bookData.sync_id)
     .filter((id): id is string => Boolean(id));
-  const existingBooksInBatch = await trx("Book")
-    .select("id", "path", "cover_path", "sync_id", "is_offline")
+  const existingBooksInBatch: ExistingScanBook[] = await trx("Book")
+    .select(
+      "id",
+      "path",
+      "cover_path",
+      "sync_id",
+      "is_offline",
+      "state_version",
+    )
     .where((query) => {
       query.whereIn("path", batchPaths);
       if (batchSyncIds.length > 0) query.orWhereIn("sync_id", batchSyncIds);
@@ -490,21 +583,13 @@ async function processBatchInTransaction(
 
   for (const processedBook of batch) {
     const { bookData, infoMetadata } = processedBook;
-    const existingByPath = existingBooksInBatch.find(
-      (book) => book.path === bookData.path,
+    const existingBook = await resolveExistingBookForScan(
+      trx,
+      existingBooksInBatch,
+      bookData.path,
+      bookData.sync_id,
+      thumbnailRemovals,
     );
-    const existingBySyncId = bookData.sync_id
-      ? existingBooksInBatch.find((book) => book.sync_id === bookData.sync_id)
-      : undefined;
-    const canRelocateBySyncId =
-      !existingByPath &&
-      existingBySyncId &&
-      (Boolean(existingBySyncId.is_offline) ||
-        !(await isPathAccessible(existingBySyncId.path)));
-    const existingBook =
-      existingByPath ?? (canRelocateBySyncId ? existingBySyncId : undefined);
-    // Keep the UUID on every physical copy. Duplicate cleanup is an explicit
-    // desktop action and the UUID identifies the shared logical book.
 
     let bookId: number;
     if (existingBook) {
@@ -523,6 +608,8 @@ async function processBatchInTransaction(
           file_size: bookData.file_size ?? null,
           is_offline: false,
         });
+      existingBook.path = bookData.path;
+      existingBook.is_offline = false;
       updatedCount++;
 
       // 업데이트를 위해 기존 연결 제거
@@ -547,6 +634,14 @@ async function processBatchInTransaction(
       };
       const result = await trx("Book").insert(bookToInsert);
       bookId = result[0];
+      existingBooksInBatch.push({
+        id: bookId,
+        path: bookData.path,
+        cover_path: null,
+        sync_id: cleanValue(bookData.sync_id),
+        is_offline: false,
+        state_version: 0,
+      });
       addedCount++;
       newBookIds.push(bookId);
     }
@@ -653,6 +748,7 @@ async function processBatchInTransaction(
     updated: updatedCount,
     newBookIds,
     thumbnailNeeded,
+    thumbnailRemovals,
   };
 }
 
@@ -742,6 +838,7 @@ export async function restoreBooksOnlineUnderPath(
 export async function cleanupMissingBooks(
   directoryPath: string,
   foundPaths: Set<string>,
+  preserveUnmatchedSyncIds = false,
 ): Promise<{ deleted: number; offline: boolean }> {
   if (!(await isPathAccessible(directoryPath))) {
     await markBooksOfflineUnderPath(directoryPath);
@@ -751,41 +848,129 @@ export async function cleanupMissingBooks(
     return { deleted: 0, offline: true };
   }
 
-  let deletedCount = 0;
+  const booksToDelete: Book[] = [];
+  await db.transaction(async (trx) => {
+    const candidates = await trx<Book>("Book")
+      .select("*")
+      .where("path", "like", `${directoryPath}%`);
+    const missingBooks = filterLibraryPathRows(
+      candidates,
+      directoryPath,
+    ).filter((book) => !foundPaths.has(book.path));
+
+    const missingIds = missingBooks.map((book) => book.id);
+    for (const missingBook of missingBooks) {
+      if (!missingBook.sync_id) {
+        booksToDelete.push(missingBook);
+        continue;
+      }
+
+      const copies = await trx<Book>("Book")
+        .where("sync_id", missingBook.sync_id)
+        .whereNotIn("id", missingIds)
+        .orderBy("state_version", "desc");
+      let reachableCopy: Book | undefined;
+      for (const copy of copies) {
+        if (await isPathAccessible(copy.path)) {
+          reachableCopy = copy;
+          break;
+        }
+      }
+      if (!reachableCopy) {
+        if (preserveUnmatchedSyncIds) {
+          await trx("Book")
+            .where("id", missingBook.id)
+            .update({ is_offline: true });
+        } else {
+          booksToDelete.push(missingBook);
+        }
+        continue;
+      }
+
+      const update: Record<string, unknown> = {
+        added_at: missingBook.added_at,
+      };
+      if (
+        Number(missingBook.state_version || 0) >
+        Number(reachableCopy.state_version || 0)
+      ) {
+        const missingState = missingBook as Book & {
+          is_read: boolean;
+          is_hidden: boolean;
+          custom_title: string | null;
+        };
+        Object.assign(update, {
+          current_page: missingBook.current_page,
+          is_favorite: missingBook.is_favorite,
+          last_read_at: missingBook.last_read_at,
+          state_version: missingBook.state_version || 0,
+          state_updated_at: missingBook.state_updated_at || null,
+          updated_by_device_id: missingBook.updated_by_device_id || null,
+          is_read: missingState.is_read,
+          is_hidden: missingState.is_hidden,
+          custom_title: missingState.custom_title,
+        });
+        if (
+          missingBook.series_collection_id !==
+            reachableCopy.series_collection_id ||
+          missingBook.series_order_index !== reachableCopy.series_order_index
+        ) {
+          const missingSeriesUpdatedAt = Number(
+            missingBook.series_state_updated_at || 0,
+          );
+          const reachableSeriesUpdatedAt = Number(
+            reachableCopy.series_state_updated_at || 0,
+          );
+          Object.assign(update, {
+            series_collection_id: missingBook.series_collection_id || null,
+            series_order_index: missingBook.series_order_index || null,
+            series_state_updated_at:
+              missingSeriesUpdatedAt === reachableSeriesUpdatedAt
+                ? reachableSeriesUpdatedAt + 1
+                : missingSeriesUpdatedAt,
+          });
+        }
+      }
+      await trx("Book").where("id", reachableCopy.id).update(update);
+      await trx("BookHistory")
+        .where("book_id", missingBook.id)
+        .update({ book_id: reachableCopy.id });
+      await trx("CompanionSyncChange")
+        .where("book_id", missingBook.id)
+        .update({ book_id: reachableCopy.id });
+      booksToDelete.push(missingBook);
+    }
+
+    await deleteBookRecords(trx, booksToDelete);
+  });
+  await removeThumbnailFiles(booksToDelete);
+  if (booksToDelete.length > 0) {
+    broadcastBooksUpdated();
+    notifyCompanionLibraryChanged();
+  }
+  return { deleted: booksToDelete.length, offline: false };
+}
+
+export async function forgetBooksUnderPath(directoryPath: string) {
+  let books: Pick<Book, "id" | "cover_path">[] = [];
   await db.transaction(async (trx) => {
     const candidates = await trx("Book")
       .select("id", "path", "cover_path")
       .where("path", "like", `${directoryPath}%`);
-    const existingBooksInDb = filterLibraryPathRows(candidates, directoryPath);
-
-    const booksToDelete = existingBooksInDb.filter(
-      (book) => !foundPaths.has(book.path),
-    );
-
-    for (const book of booksToDelete) {
-      await trx("BookArtist").where("book_id", book.id).del();
-      await trx("BookTag").where("book_id", book.id).del();
-      await trx("BookSeries").where("book_id", book.id).del();
-      await trx("BookGroup").where("book_id", book.id).del();
-      await trx("BookCharacter").where("book_id", book.id).del();
-      await trx("Book").where("id", book.id).del();
-      deletedCount++;
-
-      if (book.cover_path) {
-        try {
-          await fs.unlink(book.cover_path);
-        } catch (e) {
-          console.error(`[Main] 썸네일 파일 삭제 실패 ${book.cover_path}:`, e);
-        }
-      }
-    }
+    books = filterLibraryPathRows(candidates, directoryPath);
+    await deleteBookRecords(trx, books);
   });
-  return { deleted: deletedCount, offline: false };
+  await removeThumbnailFiles(books);
+  if (books.length > 0) {
+    broadcastBooksUpdated();
+    notifyCompanionLibraryChanged();
+  }
+  return books.length;
 }
 
 export async function scanDirectory(
   directoryPath: string,
-  options: { force?: boolean } = {},
+  options: { force?: boolean; preserveMissingSyncIds?: boolean } = {},
 ): Promise<{
   added: number;
   updated: number;
@@ -795,7 +980,7 @@ export async function scanDirectory(
   offline?: boolean; // 루트 접근 불가로 오프라인 처리됨
   offlineCount?: number; // 오프라인 처리된 책 수
 }> {
-  const { force = false } = options; // true면 캐시 무시 강제 재스캔 (수동 재스캔 시)
+  const { force = false, preserveMissingSyncIds = false } = options; // true면 캐시 무시 강제 재스캔 (수동 재스캔 시)
   const MAX_SCAN_DEPTH = 100;
   const CHUNK_SIZE = 100; // 메모리 최적화를 위한 청크 크기
   console.log(
@@ -929,6 +1114,7 @@ export async function scanDirectory(
       const itemPath = entryObj.path.replaceAll("/", "\\");
 
       if (itemPath.length >= MAX_PATH_LENGTH) {
+        totalFoundBookPathsInScan.add(itemPath);
         console.warn(
           `[Main] 긴 경로로 인해 파일 건너뛰기 (>${MAX_PATH_LENGTH}자): ${itemPath}`,
         );
@@ -994,6 +1180,7 @@ export async function scanDirectory(
             totalUpdatedCount += result.updated;
             allNewlyAddedBookIds.push(...result.newBookIds);
             allBookIdsToGenerateThumbnails.push(...result.thumbnailNeeded);
+            await removeThumbnailFiles(result.thumbnailRemovals);
             // 진행률 업데이트
             updateProgress("scanning");
             // 메모리 해제를 위해 청크 비우기
@@ -1003,6 +1190,7 @@ export async function scanDirectory(
           }
         }
       } catch (fileProcessError) {
+        totalFoundBookPathsInScan.add(itemPath);
         console.error(`[Main] 파일 처리 오류 ${itemPath}:`, fileProcessError);
         continue;
       }
@@ -1017,12 +1205,14 @@ export async function scanDirectory(
       totalUpdatedCount += result.updated;
       allNewlyAddedBookIds.push(...result.newBookIds);
       allBookIdsToGenerateThumbnails.push(...result.thumbnailNeeded);
+      await removeThumbnailFiles(result.thumbnailRemovals);
     }
 
     // 삭제 처리 (삭제 직전 루트 접근 재확인 포함)
     const cleanupResult = await cleanupMissingBooks(
       directoryPath,
       totalFoundBookPathsInScan,
+      preserveMissingSyncIds,
     );
     totalDeletedCount = cleanupResult.deleted;
 
@@ -1169,7 +1359,7 @@ export async function scanDirectory(
   }
 }
 
-export async function scanFile(filePath: string) {
+export async function scanFile(filePath: string, syncIdOverride?: string) {
   try {
     const stats = await fs.stat(filePath);
     const processedBook = await processBookItem(filePath, {
@@ -1180,32 +1370,32 @@ export async function scanFile(filePath: string) {
 
     if (processedBook) {
       const { bookData, infoMetadata } = processedBook;
+      if (syncIdOverride) bookData.sync_id = cleanValue(syncIdOverride);
       let bookId: number | undefined;
       let shouldGenerateThumbnail = false;
+      const thumbnailRemovals: Pick<Book, "cover_path">[] = [];
 
       await db.transaction(async (trx) => {
-        const existingCandidates = await trx("Book")
+        const existingCandidates: ExistingScanBook[] = await trx("Book")
           .where((query) => {
             query.where("path", bookData.path);
             if (bookData.sync_id) query.orWhere("sync_id", bookData.sync_id);
           })
-          .select("*");
-        const existingByPath = existingCandidates.find(
-          (book) => book.path === bookData.path,
+          .select(
+            "id",
+            "path",
+            "cover_path",
+            "sync_id",
+            "is_offline",
+            "state_version",
+          );
+        const existingBook = await resolveExistingBookForScan(
+          trx,
+          existingCandidates,
+          bookData.path,
+          bookData.sync_id,
+          thumbnailRemovals,
         );
-        const existingBySyncId = bookData.sync_id
-          ? existingCandidates.find((book) => book.sync_id === bookData.sync_id)
-          : undefined;
-        const canRelocateBySyncId =
-          !existingByPath &&
-          existingBySyncId &&
-          (Boolean(existingBySyncId.is_offline) ||
-            !(await isPathAccessible(existingBySyncId.path)));
-        const existingBook =
-          existingByPath ??
-          (canRelocateBySyncId ? existingBySyncId : undefined);
-        // Keep the UUID on every physical copy; the duplicates screen groups
-        // them by UUID for explicit review.
 
         if (existingBook) {
           bookId = existingBook.id;
@@ -1219,6 +1409,9 @@ export async function scanFile(filePath: string) {
               type: cleanValue(bookData.type),
               language_name_english: cleanValue(bookData.language_name_english),
               language_name_local: cleanValue(bookData.language_name_local),
+              ...(syncIdOverride
+                ? { sync_id: cleanValue(syncIdOverride) }
+                : {}),
               file_mtime: bookData.file_mtime ?? null,
               file_size: bookData.file_size ?? null,
               is_offline: false,
@@ -1346,6 +1539,7 @@ export async function scanFile(filePath: string) {
           }
         }
       }); // 배치 트랜잭션 종료
+      await removeThumbnailFiles(thumbnailRemovals);
 
       // 단일 파일 스캔 후 썸네일 생성 및 DB 업데이트
       if (shouldGenerateThumbnail && bookId) {
@@ -1372,7 +1566,7 @@ export const handleRescanLibraryFolder = async (folderPath: string) => {
     const { added, updated, deleted, offline } = await scanDirectory(
       folderPath,
       // 사용자 명시적 폴더 재스캔 → 캐시 무시 (force)
-      { force: true },
+      { force: true, preserveMissingSyncIds: true },
     );
 
     // 폴더 접근 불가로 오프라인 처리된 경우 썸네일 생성 생략
@@ -1434,9 +1628,6 @@ export const handleRescanBookMetadata = async (bookId: number) => {
 };
 
 export function registerDirectoryHandlers() {
-  ipcMain.handle("add-books-from-directory", (_event) =>
-    handleAddBooksFromDirectory(),
-  );
   ipcMain.handle("select-folder", (_event) => handleSelectFolder());
   ipcMain.handle("rescan-library-folder", (_event, folderPath) =>
     handleRescanLibraryFolder(folderPath),

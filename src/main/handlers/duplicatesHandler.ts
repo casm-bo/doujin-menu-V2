@@ -59,11 +59,13 @@ export const handleGetDuplicateGroups = async () => {
 
     const uuidRows: BookRow[] = await db("Book")
       .select(BOOK_COLUMNS)
+      .where("is_offline", false)
       .whereIn(
         "sync_id",
         db("Book")
           .select("sync_id")
           .whereNotNull("sync_id")
+          .where("is_offline", false)
           .groupBy("sync_id")
           .having(db.raw("count(*) > 1")),
       )
@@ -82,11 +84,13 @@ export const handleGetDuplicateGroups = async () => {
     // 1) hitomi_id 기준 중복 그룹 — 서브쿼리 1회로 중복 키와 행을 함께 가져옴
     const hitomiRows: BookRow[] = await db("Book")
       .select(BOOK_COLUMNS)
+      .where("is_offline", false)
       .whereIn(
         "hitomi_id",
         db("Book")
           .select("hitomi_id")
           .whereNotNull("hitomi_id")
+          .where("is_offline", false)
           .groupBy("hitomi_id")
           .having(db.raw("count(*) > 1")),
       )
@@ -114,11 +118,13 @@ export const handleGetDuplicateGroups = async () => {
     // 2) 제목 기준 중복 그룹 — 서브쿼리 1회, 빈 제목은 제외
     const titleRows: BookRow[] = await db("Book")
       .select(BOOK_COLUMNS)
+      .where("is_offline", false)
       .whereIn(
         "title",
         db("Book")
           .select("title")
           .where("title", "!=", "")
+          .where("is_offline", false)
           .groupBy("title")
           .having(db.raw("count(*) > 1")),
       )
@@ -139,7 +145,11 @@ export const handleGetDuplicateGroups = async () => {
         ) {
           continue;
         }
-        groups.push({ key, matchType: "title", books: remaining.map(toBookInfo) });
+        groups.push({
+          key,
+          matchType: "title",
+          books: remaining.map(toBookInfo),
+        });
       }
     }
 

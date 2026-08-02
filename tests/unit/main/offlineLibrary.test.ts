@@ -9,15 +9,19 @@ import {
   vi,
 } from "vitest";
 import type { Knex } from "knex";
+import { createWriteStream } from "fs";
 import fs from "fs/promises";
 import os from "os";
 import path from "path";
+import archiver from "archiver";
 import {
   cleanupMissingBooks,
+  forgetBooksUnderPath,
   isPathAccessible,
   markBooksOfflineUnderPath,
   restoreBooksOnlineUnderPath,
   scanDirectory,
+  scanFile,
 } from "../../../src/main/handlers/directoryHandler.js";
 
 // electron 모듈 모킹
@@ -65,6 +69,20 @@ import {
 
 let db: Knex;
 
+async function writeTestArchive(filePath: string): Promise<void> {
+  await new Promise<void>((resolve, reject) => {
+    const output = createWriteStream(filePath);
+    const archive = archiver("zip");
+    output.once("close", resolve);
+    output.once("error", reject);
+    archive.once("error", reject);
+    archive.pipe(output);
+    archive.append(Buffer.from("image"), { name: "001.jpg" });
+    archive.append("제목: Android import", { name: "info.txt" });
+    void archive.finalize();
+  });
+}
+
 describe("오프라인 라이브러리 보존", () => {
   beforeAll(async () => {
     db = await createTestDb();
@@ -83,6 +101,94 @@ describe("오프라인 라이브러리 보존", () => {
     it("Book 테이블에 is_offline 컬럼이 기본값 0으로 존재해야 함", async () => {
       const book = await seedBook(db, { path: "C:\\lib\\book1" });
       expect(book.is_offline).toBe(0);
+    });
+  });
+
+  describe("Android import identity", () => {
+    let tmpDir: string;
+
+    beforeEach(async () => {
+      tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "android-import-"));
+    });
+
+    afterEach(async () => {
+      await fs.rm(tmpDir, { recursive: true, force: true });
+    });
+
+    it("uses the authenticated sync ID when the archive has no UUID", async () => {
+      const archivePath = path.join(tmpDir, "book.cbz");
+      const syncId = "123e4567-e89b-42d3-a456-426614174000";
+      await writeTestArchive(archivePath);
+
+      await scanFile(archivePath, syncId);
+
+      const stored = await db("Book").where("path", archivePath).first();
+      expect(stored.sync_id).toBe(syncId);
+    });
+
+    it("relocates an offline copy instead of creating another logical book", async () => {
+      const archivePath = path.join(tmpDir, "restored.cbz");
+      const syncId = "123e4567-e89b-42d3-a456-426614174001";
+      const existing = await seedBook(db, {
+        path: path.join(tmpDir, "missing.cbz"),
+        sync_id: syncId,
+        is_offline: true,
+      });
+      await writeTestArchive(archivePath);
+
+      await scanFile(archivePath, syncId);
+
+      const copies = await db("Book").where("sync_id", syncId);
+      expect(copies).toHaveLength(1);
+      expect(copies[0]).toMatchObject({
+        id: existing.id,
+        path: archivePath,
+        is_offline: 0,
+      });
+    });
+
+    it("consolidates an already indexed destination with its missing UUID source", async () => {
+      const archivePath = path.join(tmpDir, "moved.cbz");
+      const syncId = "123e4567-e89b-42d3-a456-426614174002";
+      const source = await seedBook(db, {
+        path: path.join(tmpDir, "missing.cbz"),
+        sync_id: syncId,
+        current_page: 7,
+        is_favorite: true,
+        state_version: 3,
+      });
+      await writeTestArchive(archivePath);
+      await seedBook(db, {
+        path: archivePath,
+        sync_id: syncId,
+        state_version: 0,
+      });
+
+      await scanFile(archivePath, syncId);
+
+      const copies = await db("Book").where("sync_id", syncId);
+      expect(copies).toHaveLength(1);
+      expect(copies[0]).toMatchObject({
+        id: source.id,
+        path: archivePath,
+        current_page: 7,
+        is_favorite: 1,
+      });
+    });
+
+    it("keeps a UUID copy when the old storage root is unavailable", async () => {
+      const archivePath = path.join(tmpDir, "local.cbz");
+      const syncId = "123e4567-e89b-42d3-a456-426614174003";
+      await seedBook(db, {
+        path: "Z:\\offline-library\\book.cbz",
+        sync_id: syncId,
+        is_offline: true,
+      });
+      await writeTestArchive(archivePath);
+
+      await scanFile(archivePath, syncId);
+
+      expect(await db("Book").where("sync_id", syncId)).toHaveLength(2);
     });
   });
 
@@ -188,6 +294,44 @@ describe("오프라인 라이브러리 보존", () => {
       expect(books).toHaveLength(1);
       expect(books[0].path).toBe(bookDir);
     });
+
+    it("읽기 오류가 난 기존 항목은 누락으로 삭제하지 않음", async () => {
+      const archivePath = path.join(tmpDir, "broken.cbz");
+      await fs.writeFile(archivePath, "not-a-zip");
+      await seedBook(db, { path: archivePath });
+
+      const result = await scanDirectory(tmpDir);
+
+      expect(result.deleted).toBe(0);
+      expect(await db("Book").where("path", archivePath).first()).toBeDefined();
+    });
+  });
+
+  describe("forgetBooksUnderPath", () => {
+    it("실제 파일은 유지하고 앱 기록만 제거", async () => {
+      const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "forget-test-"));
+      try {
+        const bookDir = path.join(tmpDir, "book");
+        await fs.mkdir(bookDir);
+        await fs.writeFile(path.join(bookDir, "001.jpg"), "image");
+        const book = await seedBook(db, { path: bookDir });
+        await db("BookHistory").insert({
+          book_id: book.id,
+          viewed_at: new Date().toISOString(),
+        });
+
+        const removed = await forgetBooksUnderPath(tmpDir);
+
+        expect(removed).toBe(1);
+        expect(await db("Book").where("id", book.id).first()).toBeUndefined();
+        expect(await db("BookHistory").where("book_id", book.id)).toHaveLength(
+          0,
+        );
+        await expect(fs.stat(bookDir)).resolves.toBeDefined();
+      } finally {
+        await fs.rm(tmpDir, { recursive: true, force: true });
+      }
+    });
   });
 
   describe("오프라인/온라인 전환 시 UI 즉시 갱신 브로드캐스트", () => {
@@ -258,6 +402,100 @@ describe("오프라인 라이브러리 보존", () => {
       expect(result.deleted).toBe(0);
       const book = await db("Book").first();
       expect(book.is_offline).toBe(1);
+    });
+  });
+
+  describe("moved-book cleanup ordering", () => {
+    it("merges a missing source into an already indexed UUID destination", async () => {
+      const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "move-order-"));
+      const sourceRoot = path.join(tmpDir, "testing");
+      const destinationRoot = path.join(tmpDir, "library");
+      await fs.mkdir(sourceRoot);
+      await fs.mkdir(destinationRoot);
+
+      try {
+        const syncId = "123e4567-e89b-42d3-a456-426614174099";
+        const source = await seedBook(db, {
+          path: path.join(sourceRoot, "moved.cbz"),
+          sync_id: syncId,
+          current_page: 7,
+          is_favorite: true,
+          state_version: 3,
+        });
+        const destinationPath = path.join(destinationRoot, "moved.cbz");
+        await writeTestArchive(destinationPath);
+        const destination = await seedBook(db, {
+          path: destinationPath,
+          sync_id: syncId,
+          state_version: 0,
+        });
+        await db("BookHistory").insert({
+          book_id: source.id,
+          viewed_at: new Date().toISOString(),
+          current_page: 7,
+        });
+
+        const result = await cleanupMissingBooks(sourceRoot, new Set());
+
+        expect(result.deleted).toBe(1);
+        const copies = await db("Book").where("sync_id", syncId);
+        expect(copies).toHaveLength(1);
+        expect(copies[0]).toMatchObject({
+          id: destination.id,
+          path: destinationPath,
+          current_page: 7,
+          is_favorite: 1,
+          state_version: 3,
+        });
+        expect(
+          await db("BookHistory").where("book_id", destination.id),
+        ).toHaveLength(1);
+      } finally {
+        await fs.rm(tmpDir, { recursive: true, force: true });
+      }
+    });
+
+    it("preserves UUID state until a destination is scanned", async () => {
+      const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "move-first-"));
+      const sourceRoot = path.join(tmpDir, "testing");
+      const destinationRoot = path.join(tmpDir, "library");
+      await fs.mkdir(sourceRoot);
+      await fs.mkdir(destinationRoot);
+
+      try {
+        const syncId = "123e4567-e89b-42d3-a456-426614174100";
+        const source = await seedBook(db, {
+          path: path.join(sourceRoot, "moved.cbz"),
+          sync_id: syncId,
+          current_page: 9,
+          is_favorite: true,
+          state_version: 4,
+        });
+
+        const cleanup = await cleanupMissingBooks(sourceRoot, new Set(), true);
+        expect(cleanup.deleted).toBe(0);
+        expect(await db("Book").where("id", source.id).first()).toMatchObject({
+          is_offline: 1,
+          current_page: 9,
+        });
+
+        const destinationPath = path.join(destinationRoot, "moved.cbz");
+        await writeTestArchive(destinationPath);
+        await scanFile(destinationPath, syncId);
+
+        const copies = await db("Book").where("sync_id", syncId);
+        expect(copies).toHaveLength(1);
+        expect(copies[0]).toMatchObject({
+          id: source.id,
+          path: destinationPath,
+          current_page: 9,
+          is_favorite: 1,
+          state_version: 4,
+          is_offline: 0,
+        });
+      } finally {
+        await fs.rm(tmpDir, { recursive: true, force: true });
+      }
     });
   });
 });

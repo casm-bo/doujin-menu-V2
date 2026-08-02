@@ -24,8 +24,7 @@ import {
 import { Icon } from "@iconify/vue";
 import { ref, computed } from "vue";
 import { toast } from "vue-sonner";
-
-const ipcRenderer = window.require("electron").ipcRenderer;
+import { ipcRenderer } from "@/api";
 
 const store = useKeybindingStore();
 

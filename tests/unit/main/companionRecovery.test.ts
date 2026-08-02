@@ -6,10 +6,7 @@ vi.mock("../../../src/main/handlers/bookHandler.ts", () => ({
   handleDeleteBook: vi.fn(),
 }));
 
-import {
-  createTestDb,
-  seedBook,
-} from "../../../src/main/db/test-utils.js";
+import { createTestDb, seedBook } from "../../../src/main/db/test-utils.js";
 import { DesktopLibraryService } from "../../../src/main/services/companion/companionLibraryService.js";
 import { DesktopCompanionSyncService } from "../../../src/main/services/companion/companionSyncService.js";
 
@@ -53,7 +50,9 @@ describe("Android reinstall recovery", () => {
       },
     ]);
 
-    const freshClientBootstrap = await new DesktopCompanionSyncService(db).bootstrap();
+    const freshClientBootstrap = await new DesktopCompanionSyncService(
+      db,
+    ).bootstrap();
     const freshClientLibrary = await new DesktopLibraryService(db).listBooks();
 
     expect(freshClientBootstrap.books[0]).toMatchObject({

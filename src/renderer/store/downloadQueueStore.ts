@@ -145,12 +145,16 @@ export const useDownloadQueueStore = defineStore("downloadQueue", () => {
 
   // 초기화 시 이벤트 리스너 등록
   let isInitialized = false;
+  let stopQueueUpdate = () => {};
   const initialize = () => {
     if (isInitialized) return;
     isInitialized = true;
 
     // 큐 업데이트 이벤트 수신
-    ipcRenderer.on("download-queue-updated", handleQueueUpdate);
+    stopQueueUpdate = ipcRenderer.on(
+      "download-queue-updated",
+      handleQueueUpdate,
+    );
 
     // 초기 큐 로드
     fetchQueue();
@@ -159,7 +163,7 @@ export const useDownloadQueueStore = defineStore("downloadQueue", () => {
   // 정리
   const cleanup = () => {
     if (!isInitialized) return;
-    ipcRenderer.off("download-queue-updated", handleQueueUpdate);
+    stopQueueUpdate();
     isInitialized = false;
   };
 

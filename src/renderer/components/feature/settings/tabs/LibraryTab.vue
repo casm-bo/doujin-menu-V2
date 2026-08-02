@@ -1,4 +1,14 @@
 <script setup lang="ts">
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -15,7 +25,7 @@ import { Switch } from "@/components/ui/switch";
 import LibraryScanProgress from "@/components/feature/LibraryScanProgress.vue";
 import SettingItem from "@/components/feature/settings/SettingItem.vue";
 import { Icon } from "@iconify/vue";
-import { onMounted, ref } from "vue";
+import { onMounted, onUnmounted, ref } from "vue";
 import { toast } from "vue-sonner";
 import { ipcRenderer } from "@/api";
 import { useQueryClient } from "@tanstack/vue-query";
@@ -36,6 +46,7 @@ const saveConfig = async (key: string, value: unknown) => {
 };
 
 const libraryFolders = ref<LibraryFolder[]>([]);
+const folderToRemove = ref<string | null>(null);
 const prioritizeKoreanTitles = ref(false);
 const hideLibraryTags = ref(false);
 
@@ -47,6 +58,18 @@ const generationProgress = ref({
   message: "",
 });
 const infoFilePattern = ref("\\((\\d+)\\)$");
+const handleInfoGenerationProgress = (...args: unknown[]) => {
+  const progress = args[0] as {
+    current: number;
+    total: number;
+    message: string;
+  };
+  generationProgress.value = progress;
+  if (progress.current >= progress.total) {
+    isGeneratingInfoFiles.value = false;
+  }
+};
+let stopInfoGenerationProgress = () => {};
 
 onMounted(async () => {
   const config = await ipcRenderer.invoke("get-config");
@@ -54,17 +77,14 @@ onMounted(async () => {
   hideLibraryTags.value = config.hideLibraryTags === true;
   await loadLibraryFolders();
 
-  ipcRenderer.on("info-generation-progress", (_event, ...args) => {
-    const progress = args[0] as {
-      current: number;
-      total: number;
-      message: string;
-    };
-    generationProgress.value = progress;
-    if (progress.current >= progress.total) {
-      isGeneratingInfoFiles.value = false;
-    }
-  });
+  stopInfoGenerationProgress = ipcRenderer.on(
+    "info-generation-progress",
+    handleInfoGenerationProgress,
+  );
+});
+
+onUnmounted(() => {
+  stopInfoGenerationProgress();
 });
 
 // 라이브러리 폴더 정보 불러오기
@@ -101,12 +121,23 @@ const addLibraryFolder = async () => {
 };
 
 // 라이브러리 폴더 삭제
-const removeLibraryFolder = async (folderPath: string) => {
-  const result = await ipcRenderer.invoke("remove-library-folder", folderPath);
+const removeLibraryFolder = async () => {
+  if (!folderToRemove.value) return;
+  const result = await ipcRenderer.invoke(
+    "remove-library-folder",
+    folderToRemove.value,
+  );
   if (result.success) {
     await loadLibraryFolders();
-    toast.success("라이브러리 폴더가 삭제되었습니다.");
+    toast.success("라이브러리 폴더가 제거되었습니다.", {
+      description: `${result.removedBooks || 0}권의 앱 기록을 정리했습니다. 실제 파일은 삭제하지 않았습니다.`,
+    });
+  } else {
+    toast.error("라이브러리 폴더를 제거하지 못했습니다.", {
+      description: result.error,
+    });
   }
+  folderToRemove.value = null;
 };
 
 // 라이브러리 폴더 다시 스캔
@@ -256,7 +287,7 @@ const generateMissingInfoFiles = async () => {
               <Button
                 variant="ghost"
                 size="icon"
-                @click="removeLibraryFolder(folder.path)"
+                @click="folderToRemove = folder.path"
               >
                 <Icon
                   icon="solar:trash-bin-trash-bold-duotone"
@@ -274,6 +305,29 @@ const generateMissingInfoFiles = async () => {
         </Button>
       </CardFooter>
     </Card>
+
+    <AlertDialog
+      :open="folderToRemove !== null"
+      @update:open="(open) => !open && (folderToRemove = null)"
+    >
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle
+            >라이브러리 폴더를 제거하시겠습니까?</AlertDialogTitle
+          >
+          <AlertDialogDescription>
+            실제 파일은 삭제하지 않습니다. 이 경로의 책 정보, 읽기 기록,
+            즐겨찾기와 썸네일만 앱에서 제거합니다.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>취소</AlertDialogCancel>
+          <AlertDialogAction @click="removeLibraryFolder">
+            앱에서 제거
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
 
     <Card>
       <CardHeader>

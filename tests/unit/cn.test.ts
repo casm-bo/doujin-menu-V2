@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cn } from "../../src/lib/utils"; // Adjust path as needed
+import { cn } from "../../src/renderer/lib/utils";
 
 describe("cn", () => {
   it("should merge class names correctly", () => {

@@ -1,5 +1,15 @@
 <script setup lang="ts">
 import HelpDialog from "@/components/common/HelpDialog.vue";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -20,6 +30,7 @@ import { Icon } from "@iconify/vue";
 import PageHeader from "../layout/PageHeader.vue";
 import {
   useInfiniteQuery,
+  useMutation,
   useQuery,
   useQueryClient,
 } from "@tanstack/vue-query";
@@ -30,6 +41,7 @@ import {
   onActivated,
   onDeactivated,
   onMounted,
+  onUnmounted,
   ref,
   shallowRef,
   toRaw,
@@ -39,6 +51,7 @@ import { useRoute, useRouter } from "vue-router";
 import { toast } from "vue-sonner";
 import type { Book, FilterParams } from "../../../types/ipc";
 import {
+  deleteBook,
   getRandomBook,
   getPresets,
   ipcRenderer,
@@ -255,15 +268,110 @@ const {
 const books = computed(
   () => data.value?.pages.flatMap((page) => page.data) ?? [],
 );
+const totalCount = computed(() => data.value?.pages[0]?.totalCount ?? 0);
+const selectedBookIds = ref<Set<number>>(new Set());
+const selectedCount = computed(() => selectedBookIds.value.size);
+const isSelectingAll = ref(false);
+const allSelected = computed(
+  () => totalCount.value > 0 && selectedCount.value === totalCount.value,
+);
+const showDeleteDialog = ref(false);
+const booksToDelete = ref<number[]>([]);
+
+const toggleBookSelection = (bookId: number) => {
+  const next = new Set(selectedBookIds.value);
+  if (!next.delete(bookId)) next.add(bookId);
+  selectedBookIds.value = next;
+};
+
+const toggleAll = async () => {
+  if (allSelected.value) {
+    selectedBookIds.value = new Set();
+    return;
+  }
+  isSelectingAll.value = true;
+  try {
+    const result = await ipcRenderer.invoke("get-books", {
+      pageParam: 0,
+      pageSize: Math.max(totalCount.value, 1),
+      ...toRaw(queryKey.value[1]),
+    });
+    selectedBookIds.value = new Set(result.data.map((book: Book) => book.id));
+  } catch (error) {
+    toast.error(`전체 선택 실패: ${(error as Error).message}`);
+  } finally {
+    isSelectingAll.value = false;
+  }
+};
+
+watch(queryKey, () => {
+  selectedBookIds.value = new Set();
+});
+
+const deleteMutation = useMutation({
+  mutationFn: async (bookIds: number[]) => {
+    const failedIds: number[] = [];
+    for (const bookId of bookIds) {
+      try {
+        await deleteBook(bookId);
+      } catch {
+        failedIds.push(bookId);
+      }
+    }
+    return { deletedCount: bookIds.length - failedIds.length, failedIds };
+  },
+  onSuccess: ({ deletedCount, failedIds }) => {
+    if (failedIds.length > 0) {
+      toast.warning(
+        `${deletedCount}권 삭제 완료, ${failedIds.length}권 삭제 실패`,
+      );
+    } else {
+      toast.success(`${deletedCount}권을 삭제했습니다.`);
+    }
+    selectedBookIds.value = new Set(failedIds);
+    void queryClient.invalidateQueries({ queryKey: ["books"] });
+  },
+  onError: (error) => {
+    toast.error(`삭제 실패: ${error.message}`);
+  },
+});
+
+const handleDeleteSelected = () => {
+  if (selectedBookIds.value.size === 0) return;
+  booksToDelete.value = [...selectedBookIds.value];
+  showDeleteDialog.value = true;
+};
+
+const confirmDelete = () => {
+  if (booksToDelete.value.length > 0) {
+    deleteMutation.mutate([...booksToDelete.value]);
+    booksToDelete.value = [];
+  }
+  showDeleteDialog.value = false;
+};
+
+const handleBookDeleted = (bookId: number) => {
+  if (!selectedBookIds.value.has(bookId)) return;
+  const next = new Set(selectedBookIds.value);
+  next.delete(bookId);
+  selectedBookIds.value = next;
+};
+
+const handleBooksUpdated = () => {
+  void queryClient.invalidateQueries({ queryKey: ["books"] });
+};
+let stopBooksUpdated = () => {};
 
 onMounted(() => {
   // 라이브러리 스캔 Store 초기화
   const libraryScanStore = useLibraryScanStore();
   libraryScanStore.initialize();
 
-  ipcRenderer.on("books-updated", () =>
-    queryClient.invalidateQueries({ queryKey: ["books"] }),
-  );
+  stopBooksUpdated = ipcRenderer.on("books-updated", handleBooksUpdated);
+});
+
+onUnmounted(() => {
+  stopBooksUpdated();
 });
 
 // keep-alive로 캐시된 컴포넌트가 활성화될 때 쿼리 다시 불러오기
@@ -640,6 +748,32 @@ useScrollRestoration(".flex-grow.overflow-y-auto");
     <div class="flex min-h-0 flex-1 flex-col gap-4">
       <!-- 검색 및 필터 영역 -->
       <div class="flex items-center gap-2">
+        <Button
+          variant="outline"
+          :disabled="totalCount === 0 || isSelectingAll"
+          @click="toggleAll"
+        >
+          <Icon
+            :icon="
+              allSelected
+                ? 'solar:close-square-bold-duotone'
+                : 'solar:check-square-bold-duotone'
+            "
+            class="mr-2 h-4 w-4"
+          />
+          {{ allSelected ? "선택 해제" : "전체 선택" }}
+        </Button>
+        <Button
+          variant="destructive"
+          :disabled="selectedCount === 0 || deleteMutation.isPending.value"
+          @click="handleDeleteSelected"
+        >
+          <Icon
+            icon="solar:trash-bin-trash-bold-duotone"
+            class="mr-2 h-4 w-4"
+          />
+          선택 삭제 ({{ selectedCount }})
+        </Button>
         <SmartSearchInput
           ref="searchInputRef"
           v-model="searchQuery"
@@ -872,6 +1006,7 @@ useScrollRestoration(".flex-grow.overflow-y-auto");
           :hide-tags="hideLibraryTags"
           :external-image-viewer-path="config?.externalImageViewerPath"
           :external-archive-viewer-path="config?.externalArchiveViewerPath"
+          :selected="selectedBookIds.has(book.id)"
           @select-tag="toggleTag"
           @exclude-tag="excludeTag"
           @select-artist="toggleArtist"
@@ -880,6 +1015,8 @@ useScrollRestoration(".flex-grow.overflow-y-auto");
           @open-book-folder="handleOpenFolder"
           @show-details="handleShowDetails"
           @show-preview="handleShowPreview"
+          @toggle-select="toggleBookSelection(book.id)"
+          @deleted="handleBookDeleted"
         />
         <div
           v-if="hasNextPage"
@@ -903,6 +1040,7 @@ useScrollRestoration(".flex-grow.overflow-y-auto");
           :book="book"
           :query-key="queryKey"
           :hide-tags="hideLibraryTags"
+          :selected="selectedBookIds.has(book.id)"
           @select-tag="toggleTag"
           @exclude-tag="excludeTag"
           @select-artist="toggleArtist"
@@ -911,6 +1049,8 @@ useScrollRestoration(".flex-grow.overflow-y-auto");
           @open-book-folder="handleOpenFolder"
           @show-details="handleShowDetails"
           @show-preview="handleShowPreview"
+          @toggle-select="toggleBookSelection(book.id)"
+          @deleted="handleBookDeleted"
         />
         <div v-if="hasNextPage" ref="loader" class="p-4 text-center">
           <Button :disabled="isFetchingNextPage" @click="fetchNextPage">
@@ -963,5 +1103,24 @@ useScrollRestoration(".flex-grow.overflow-y-auto");
       :book="previewBook"
       @update:open="showBookPreviewDialog = $event"
     />
+
+    <AlertDialog
+      :open="showDeleteDialog"
+      @update:open="showDeleteDialog = $event"
+    >
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>책 삭제</AlertDialogTitle>
+          <AlertDialogDescription>
+            선택한 {{ booksToDelete.length }}권을 삭제하시겠습니까?
+            데이터베이스에서 제거되고 원본 파일은 휴지통으로 이동합니다.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>취소</AlertDialogCancel>
+          <AlertDialogAction @click="confirmDelete">삭제</AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   </div>
 </template>
