@@ -44,6 +44,9 @@ const emit = defineEmits([
 
 const queryClient = useQueryClient();
 const { getTagDisplayInfo } = useTagDisplay();
+const displayTitle = computed(
+  () => props.book.series_collection_name || props.book.title,
+);
 
 const viewerLink = computed(() => ({
   name: "Viewer",
@@ -176,14 +179,14 @@ const confirmDeleteBook = async () => {
   >
     <Checkbox
       :model-value="selected"
-      :aria-label="`${book.title} 선택`"
+      :aria-label="`${displayTitle} 선택`"
       class="mr-3"
       @click.stop="emit('toggle-select')"
     />
     <div class="relative mr-4 h-64 w-48 flex-shrink-0 overflow-hidden">
       <img
         :src="coverUrl"
-        :alt="book.title"
+        :alt="displayTitle"
         class="h-full w-full rounded-md object-cover transition-transform duration-300 hover:scale-110"
         :class="{ 'opacity-50 grayscale': isOffline }"
       />
@@ -204,7 +207,7 @@ const confirmDeleteBook = async () => {
     </div>
     <div class="flex flex-1 flex-col gap-2">
       <!-- 제목 -->
-      <h3 class="text-lg font-bold">{{ book.title }}</h3>
+      <h3 class="text-lg font-bold">{{ displayTitle }}</h3>
       <!-- 작가/그룹/시리즈/캐릭터/페이지 -->
       <div class="text-muted-foreground flex flex-col gap-0.5 text-sm">
         <p>
