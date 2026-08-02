@@ -33,6 +33,7 @@ interface HistoryItem {
 
 const router = useRouter();
 const queryClient = useQueryClient();
+const historyQueryKey = ["bookHistory", "bounded-ipc"] as const;
 
 const {
   data,
@@ -44,7 +45,7 @@ const {
   status,
 } =
   useInfiniteQuery({
-    queryKey: ["bookHistory"],
+    queryKey: historyQueryKey,
     queryFn: async ({ pageParam = 0 }) => {
       const result = await getBookHistory({ pageParam });
       if (!result.success) {
@@ -67,6 +68,11 @@ const {
   });
 
 onActivated(() => void refetch());
+
+const retryHistory = async () => {
+  await queryClient.cancelQueries({ queryKey: historyQueryKey });
+  await refetch();
+};
 
 const allItems = computed<HistoryItem[]>(
   () =>
@@ -186,13 +192,16 @@ const confirmClearAll = async () => {
     >
       <div v-if="status === 'pending'" class="p-4 text-center">
         <p>읽음 기록을 불러오는 중...</p>
+        <Button class="mt-3" variant="outline" @click="retryHistory">
+          다시 불러오기
+        </Button>
       </div>
       <div
         v-else-if="status === 'error'"
         class="text-destructive p-4 text-center"
       >
         <p>{{ error?.message || "오류가 발생했습니다." }}</p>
-        <Button class="mt-3" variant="outline" @click="refetch()">
+        <Button class="mt-3" variant="outline" @click="retryHistory">
           다시 시도
         </Button>
       </div>
