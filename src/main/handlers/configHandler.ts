@@ -67,7 +67,6 @@ export interface Config {
   externalImageViewerPath?: string; // 이미지 뷰어 경로
   externalArchiveViewerPath?: string; // 압축파일 뷰어 경로
   keybindingOverrides?: { actionId: string; keys: string[] }[]; // 키 바인딩 사용자 재정의
-  enableReadingHistory?: boolean; // 읽음 기록
   viewerAutoPlayInterval?: number; // 자동 재생 간격 (ms)
   viewerAutoNextBook?: boolean; // 자동 다음 책 이동
   viewerAutoNextBookMode?: "next" | "random"; // 자동 다음 책 모드
@@ -119,7 +118,6 @@ const defaults: Config = {
   viewerOpenInFullscreen: false,
   viewerHidePageNumber: false,
   viewerHideToast: false,
-  enableReadingHistory: true,
   companionEnabled: false,
   companionPort: 47831,
 };

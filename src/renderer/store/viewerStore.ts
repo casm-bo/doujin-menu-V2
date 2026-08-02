@@ -1,4 +1,4 @@
-import { addBookHistory, getBook, ipcRenderer, setWindowTitle } from "@/api";
+import { getBook, ipcRenderer, setWindowTitle } from "@/api";
 import { watchDebounced } from "@vueuse/core";
 import { defineStore } from "pinia";
 import { computed, nextTick, ref, toRaw, watch } from "vue";
@@ -719,7 +719,6 @@ export const useViewerStore = defineStore("viewer", () => {
       }
       // 책 로드 후 현재 페이지를 DB에 업데이트하여 마지막 읽은 날짜를 갱신
       await updateCurrentPageInDb();
-      await addBookHistory(_bookId);
     } catch (e) {
       error.value = (e as Error).message || "Failed to load book.";
       console.error(error.value);

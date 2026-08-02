@@ -33,7 +33,6 @@ const saveConfig = async (key: string, value: unknown) => {
 
 // 일반 설정 상태
 const autoLoadLibrary = ref(true);
-const enableReadingHistory = ref(true);
 
 // 화면 회전 설정 상태
 const uiStore = useUiStore();
@@ -42,7 +41,6 @@ const screenRotation = ref<0 | 90 | 180 | 270>(0);
 onMounted(async () => {
   const config = await ipcRenderer.invoke("get-config");
   autoLoadLibrary.value = config.autoLoadLibrary !== false;
-  enableReadingHistory.value = config.enableReadingHistory !== false;
   screenRotation.value = (config.screenRotation as 0 | 90 | 180 | 270) || 0;
 });
 
@@ -50,11 +48,6 @@ onMounted(async () => {
 const onAutoLoadChange = (value: boolean) => {
   autoLoadLibrary.value = value;
   saveConfig("autoLoadLibrary", value);
-};
-
-const onEnableReadingHistoryChange = (value: boolean) => {
-  enableReadingHistory.value = value;
-  saveConfig("enableReadingHistory", value);
 };
 
 // 화면 회전 변경 시 저장
@@ -84,18 +77,6 @@ const onScreenRotationChange = async (value: AcceptableValue) => {
             :model-value="autoLoadLibrary"
             class="justify-self-end"
             @update:model-value="onAutoLoadChange"
-          />
-        </SettingItem>
-        <SettingItem
-          label-for="enable-reading-history"
-          title="읽음 기록"
-          subtitle="책을 열람한 기록을 저장합니다."
-        >
-          <Switch
-            id="enable-reading-history"
-            :model-value="enableReadingHistory"
-            class="justify-self-end"
-            @update:model-value="onEnableReadingHistoryChange"
           />
         </SettingItem>
         <SettingItem

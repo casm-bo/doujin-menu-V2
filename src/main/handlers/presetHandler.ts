@@ -5,7 +5,10 @@ import { console } from "../main.js";
 
 export const handleGetPresets = async () => {
   try {
-    const presets = await db("presets").orderBy("name", "asc").select("*");
+    const presets = await db("presets")
+      .orderBy("sort_order", "asc")
+      .orderBy("id", "asc")
+      .select("*");
     return { success: true, data: presets };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -14,9 +17,14 @@ export const handleGetPresets = async () => {
   }
 };
 
-export const handleAddPreset = async (preset: Omit<Preset, "id">) => {
+export const handleAddPreset = async (
+  preset: Omit<Preset, "id" | "sort_order">,
+) => {
   try {
-    const [newPreset] = await db("presets").insert(preset).returning("*");
+    const lastPreset = await db("presets").max("sort_order as value").first();
+    const [newPreset] = await db("presets")
+      .insert({ ...preset, sort_order: Number(lastPreset?.value || 0) + 1 })
+      .returning("*");
     return { success: true, data: newPreset };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -27,7 +35,8 @@ export const handleAddPreset = async (preset: Omit<Preset, "id">) => {
 
 export const handleUpdatePreset = async (preset: Preset) => {
   try {
-    await db("presets").where("id", preset.id).update(preset);
+    const { id, ...changes } = preset;
+    await db("presets").where("id", id).update(changes);
     return { success: true, data: preset };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

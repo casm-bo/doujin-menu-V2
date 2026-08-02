@@ -35,11 +35,6 @@ const routes: RouteRecordRaw[] = [
         component: () => import("./components/pages/Statistics.vue"),
       },
       {
-        path: "/history",
-        name: "History",
-        component: () => import("./components/pages/History.vue"),
-      },
-      {
         path: "/series-manager",
         name: "SeriesManager",
         component: () => import("./components/pages/SeriesManager.vue"),

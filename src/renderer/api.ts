@@ -112,54 +112,6 @@ export function openNewWindow(url: string) {
   ipcRenderer.send("open-new-window", url);
 }
 
-export async function getBookHistory({
-  pageParam = 0,
-  pageSize = 50,
-}: {
-  pageParam?: number;
-  pageSize?: number;
-}) {
-  let timeout: ReturnType<typeof setTimeout> | undefined;
-  try {
-    return await Promise.race([
-      ipcRenderer.invoke("get-book-history", { pageParam, pageSize }),
-      new Promise<never>((_, reject) => {
-        timeout = setTimeout(
-          () => reject(new Error("읽음 기록 요청 시간이 초과되었습니다.")),
-          10_000,
-        );
-      }),
-    ]);
-  } finally {
-    if (timeout) clearTimeout(timeout);
-  }
-}
-
-export async function deleteBookHistory(historyId: number) {
-  const result = await ipcRenderer.invoke("delete-book-history", historyId);
-  if (result.success) {
-    return true;
-  } else {
-    throw new Error(result.error || "Failed to delete book history");
-  }
-}
-
-export async function clearBookHistory() {
-  const result = await ipcRenderer.invoke("clear-book-history");
-  if (result.success) {
-    return true;
-  } else {
-    throw new Error(result.error || "Failed to clear book history");
-  }
-}
-
-export async function addBookHistory(bookId: number) {
-  const result = await ipcRenderer.invoke("add-book-history", bookId);
-  if (!result.success) {
-    console.error("Failed to add book history:", result.error);
-  }
-}
-
 // Preset API
 export async function getPresets(): Promise<Preset[]> {
   const result = await ipcRenderer.invoke("get-presets");
@@ -170,7 +122,9 @@ export async function getPresets(): Promise<Preset[]> {
   }
 }
 
-export async function addPreset(preset: Omit<Preset, "id">): Promise<Preset> {
+export async function addPreset(
+  preset: Omit<Preset, "id" | "sort_order">,
+): Promise<Preset> {
   const result = await ipcRenderer.invoke("add-preset", preset);
   if (result.success && result.data) {
     return result.data;

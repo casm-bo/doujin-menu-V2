@@ -9,6 +9,8 @@ const mockReturning = vi.fn();
 const mockWhere = vi.fn();
 const mockUpdate = vi.fn();
 const mockDel = vi.fn();
+const mockMax = vi.fn();
+const mockFirst = vi.fn();
 
 const mockDb = vi.fn(() => ({
   select: mockSelect,
@@ -17,6 +19,7 @@ const mockDb = vi.fn(() => ({
   where: mockWhere,
   update: mockUpdate,
   del: mockDel,
+  max: mockMax,
 }));
 
 vi.mock("../../../src/main/db/index.js", () => ({
@@ -108,40 +111,39 @@ describe("presetHandler", () => {
   });
 
   describe("handleGetPresets", () => {
-    it("모든 프리셋을 이름 순으로 정렬하여 반환해야 함", async () => {
+    it("모든 프리셋을 저장된 순서대로 반환해야 함", async () => {
       const mockPresets: Preset[] = [
         {
           id: 1,
           name: "프리셋 A",
           query: "artist:작가1",
+          sort_order: 1,
         },
         {
           id: 2,
           name: "프리셋 B",
           query: "tag:태그1",
+          sort_order: 2,
         },
       ];
 
       // 체이닝된 메서드 모킹
-      mockOrderBy.mockReturnValue({
-        select: vi.fn().mockResolvedValue(mockPresets),
-      });
-      mockSelect.mockReturnValue({ orderBy: mockOrderBy });
+      const select = vi.fn().mockResolvedValue(mockPresets);
+      mockOrderBy.mockReturnValue({ orderBy: mockOrderBy, select });
 
       const result = await handleGetPresets();
 
       expect(result.success).toBe(true);
       expect(result.data).toEqual(mockPresets);
       expect(mockDb).toHaveBeenCalledWith("presets");
-      expect(mockOrderBy).toHaveBeenCalledWith("name", "asc");
+      expect(mockOrderBy).toHaveBeenNthCalledWith(1, "sort_order", "asc");
+      expect(mockOrderBy).toHaveBeenNthCalledWith(2, "id", "asc");
     });
 
     it("DB 오류 시 에러를 반환해야 함", async () => {
       const errorMessage = "Database connection failed";
-      mockOrderBy.mockReturnValue({
-        select: vi.fn().mockRejectedValue(new Error(errorMessage)),
-      });
-      mockSelect.mockReturnValue({ orderBy: mockOrderBy });
+      const select = vi.fn().mockRejectedValue(new Error(errorMessage));
+      mockOrderBy.mockReturnValue({ orderBy: mockOrderBy, select });
 
       const result = await handleGetPresets();
 
@@ -152,28 +154,30 @@ describe("presetHandler", () => {
 
   describe("handleAddPreset", () => {
     it("새 프리셋을 추가하고 반환해야 함", async () => {
-      const newPreset: Omit<Preset, "id"> = {
+      const newPreset: Omit<Preset, "id" | "sort_order"> = {
         name: "새 프리셋",
         query: "type:만화",
       };
 
-      const addedPreset: Preset = { id: 3, ...newPreset };
+      const addedPreset: Preset = { id: 3, sort_order: 3, ...newPreset };
 
       // 체이닝된 메서드 모킹
       mockReturning.mockResolvedValue([addedPreset]);
       mockInsert.mockReturnValue({ returning: mockReturning });
+      mockFirst.mockResolvedValue({ value: 2 });
+      mockMax.mockReturnValue({ first: mockFirst });
 
       const result = await handleAddPreset(newPreset);
 
       expect(result.success).toBe(true);
       expect(result.data).toEqual(addedPreset);
       expect(mockDb).toHaveBeenCalledWith("presets");
-      expect(mockInsert).toHaveBeenCalledWith(newPreset);
+      expect(mockInsert).toHaveBeenCalledWith({ ...newPreset, sort_order: 3 });
       expect(mockReturning).toHaveBeenCalledWith("*");
     });
 
     it("DB 오류 시 에러를 반환해야 함", async () => {
-      const newPreset: Omit<Preset, "id"> = {
+      const newPreset: Omit<Preset, "id" | "sort_order"> = {
         name: "새 프리셋",
         query: "type:만화",
       };
@@ -181,6 +185,8 @@ describe("presetHandler", () => {
       const errorMessage = "Constraint violation";
       mockReturning.mockRejectedValue(new Error(errorMessage));
       mockInsert.mockReturnValue({ returning: mockReturning });
+      mockFirst.mockResolvedValue({ value: 0 });
+      mockMax.mockReturnValue({ first: mockFirst });
 
       const result = await handleAddPreset(newPreset);
 
@@ -195,6 +201,7 @@ describe("presetHandler", () => {
         id: 1,
         name: "수정된 프리셋",
         query: "artist:수정된작가",
+        sort_order: 1,
       };
 
       // 체이닝된 메서드 모킹
@@ -207,7 +214,11 @@ describe("presetHandler", () => {
       expect(result.data).toEqual(updatedPreset);
       expect(mockDb).toHaveBeenCalledWith("presets");
       expect(mockWhere).toHaveBeenCalledWith("id", updatedPreset.id);
-      expect(mockUpdate).toHaveBeenCalledWith(updatedPreset);
+      expect(mockUpdate).toHaveBeenCalledWith({
+        name: updatedPreset.name,
+        query: updatedPreset.query,
+        sort_order: updatedPreset.sort_order,
+      });
     });
 
     it("DB 오류 시 에러를 반환해야 함", async () => {
@@ -215,6 +226,7 @@ describe("presetHandler", () => {
         id: 1,
         name: "수정된 프리셋",
         query: "artist:수정된작가",
+        sort_order: 1,
       };
 
       const errorMessage = "Preset not found";

@@ -1,7 +1,6 @@
 const { contextBridge, ipcRenderer } = require("electron");
 
 const invokeChannels = new Set([
-  "add-book-history",
   "add-book-to-series",
   "add-library-folder",
   "add-preset",
@@ -10,14 +9,12 @@ const invokeChannels = new Set([
   "backup-database",
   "check-book-exists-by-hitomi-id",
   "check-for-updates",
-  "clear-book-history",
   "clear-completed-downloads",
   "clear-lock-password",
   "clear-temp-files",
   "create-companion-pairing-code",
   "create-series-collection",
   "delete-book",
-  "delete-book-history",
   "delete-duplicate-books",
   "delete-preset",
   "delete-series-collection",
@@ -30,7 +27,6 @@ const invokeChannels = new Set([
   "get-artists-with-count",
   "get-book",
   "get-book-current-page",
-  "get-book-history",
   "get-book-page-paths",
   "get-books",
   "get-characters",

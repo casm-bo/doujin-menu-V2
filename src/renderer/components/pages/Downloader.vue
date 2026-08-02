@@ -430,7 +430,7 @@ useSearchPersistence(searchQuery, "downloader-search-query");
               />
             </div>
             <div
-              class="grid grid-cols-1 items-end gap-3 sm:grid-cols-[auto_minmax(180px,1fr)_minmax(140px,1fr)]"
+              class="grid grid-cols-1 items-end gap-3 sm:grid-cols-[minmax(280px,2fr)_minmax(120px,0.65fr)_minmax(120px,0.55fr)]"
             >
               <div class="flex flex-col space-y-1.5">
                 <Label>프리셋</Label>

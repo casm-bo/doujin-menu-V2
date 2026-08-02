@@ -87,7 +87,7 @@ onMounted(async () => {
     >
       <router-view v-slot="{ Component }">
         <keep-alive
-          :include="['Library', 'Downloader', 'History', 'SeriesManager']"
+          :include="['Library', 'Downloader', 'SeriesManager']"
         >
           <component :is="Component" />
         </keep-alive>

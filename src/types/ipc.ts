@@ -21,6 +21,7 @@ export interface Preset {
   id: number;
   name: string;
   query: string;
+  sort_order: number;
 }
 
 export interface LicenseInfo {
@@ -323,10 +324,6 @@ export interface IpcChannels {
     request: string; // bookPath
     response: { success: boolean; error?: string };
   };
-  "add-book-history": {
-    request: number; // bookId
-    response: { success: boolean; error?: unknown };
-  };
   "check-book-exists-by-hitomi-id": {
     request: number; // hitomiId
     response: {
@@ -340,25 +337,6 @@ export interface IpcChannels {
     request: number; // bookId
     response: { success: boolean; error?: string };
   };
-  "get-book-history": {
-    request: { pageParam?: number; pageSize?: number };
-    response: {
-      success: boolean;
-      data?: BookHistory[];
-      hasNextPage?: boolean;
-      nextPage?: number;
-      error?: string;
-    };
-  };
-  "delete-book-history": {
-    request: number; // historyId
-    response: { success: boolean; error?: string };
-  };
-  "clear-book-history": {
-    request: void;
-    response: { success: boolean; error?: string };
-  };
-
   // Statistics handlers
   "get-statistics": {
     request: void;
@@ -398,7 +376,7 @@ export interface IpcChannels {
     response: { success: boolean; data?: Preset[]; error?: string };
   };
   "add-preset": {
-    request: Omit<Preset, "id">;
+    request: Omit<Preset, "id" | "sort_order">;
     response: { success: boolean; data?: Preset; error?: string };
   };
   "update-preset": {
