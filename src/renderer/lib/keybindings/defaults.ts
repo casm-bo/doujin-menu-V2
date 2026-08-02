@@ -245,12 +245,6 @@ export const defaultActions: ActionDefinition[] = [
     defaultKeys: ["r"],
   },
   {
-    id: "library:cycle-preset",
-    description: "프리셋 순환",
-    context: "library",
-    defaultKeys: ["p"],
-  },
-  {
     id: "library:prev-library",
     description: "이전 라이브러리 폴더",
     context: "library",

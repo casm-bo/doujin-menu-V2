@@ -50,6 +50,9 @@ const emit = defineEmits([
 ]);
 
 const { getTagDisplayInfo } = useTagDisplay();
+const displayTitle = computed(
+  () => props.book.series_collection_name || props.book.title,
+);
 
 const viewerLink = computed(() => ({
   name: "Viewer",
@@ -261,7 +264,7 @@ const confirmDeleteBook = async () => {
         <CardContent class="relative p-0">
           <img
             :src="coverUrl"
-            :alt="book.title"
+            :alt="displayTitle"
             class="aspect-[2/3] h-auto w-full object-cover"
             :class="{ 'opacity-50 grayscale': isOffline }"
           />
@@ -279,7 +282,7 @@ const confirmDeleteBook = async () => {
           >
             <Checkbox
               :model-value="selected"
-              :aria-label="`${book.title} 선택`"
+              :aria-label="`${displayTitle} 선택`"
             />
           </div>
           <Icon
@@ -296,9 +299,11 @@ const confirmDeleteBook = async () => {
           <button
             class="absolute right-2 bottom-2 flex size-8 items-center justify-center rounded-full bg-black/65 text-white"
             :aria-label="
-              (book.series_collection_id
-                ? book.series_is_favorite
-                : book.is_favorite)
+              (
+                book.series_collection_id
+                  ? book.series_is_favorite
+                  : book.is_favorite
+              )
                 ? '즐겨찾기 해제'
                 : '즐겨찾기 추가'
             "
@@ -306,9 +311,11 @@ const confirmDeleteBook = async () => {
           >
             <Icon
               :icon="
-                (book.series_collection_id
-                  ? book.series_is_favorite
-                  : book.is_favorite)
+                (
+                  book.series_collection_id
+                    ? book.series_is_favorite
+                    : book.is_favorite
+                )
                   ? 'solar:heart-bold'
                   : 'solar:heart-outline'
               "
@@ -317,8 +324,11 @@ const confirmDeleteBook = async () => {
           </button>
         </CardContent>
         <CardFooter class="flex-grow flex-col items-start gap-1 p-2">
-          <p class="w-full truncate text-sm font-semibold" :title="book.title">
-            {{ book.title }}
+          <p
+            class="w-full truncate text-sm font-semibold"
+            :title="displayTitle"
+          >
+            {{ displayTitle }}
           </p>
           <!-- 작가/그룹 정보 -->
           <p
@@ -416,18 +426,22 @@ const confirmDeleteBook = async () => {
       <ContextMenuItem @click="toggleCardFavorite">
         <Icon
           :icon="
-            (book.series_collection_id
-              ? book.series_is_favorite
-              : book.is_favorite)
+            (
+              book.series_collection_id
+                ? book.series_is_favorite
+                : book.is_favorite
+            )
               ? 'solar:heart-broken-line-duotone'
               : 'solar:heart-bold-duotone'
           "
           class="h-4 w-4"
         />
         {{
-          (book.series_collection_id
-            ? book.series_is_favorite
-            : book.is_favorite)
+          (
+            book.series_collection_id
+              ? book.series_is_favorite
+              : book.is_favorite
+          )
             ? "즐겨찾기 해제"
             : "즐겨찾기 추가"
         }}
