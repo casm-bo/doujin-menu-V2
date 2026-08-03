@@ -9,7 +9,6 @@ import {
   useForwardPropsEmits,
 } from "reka-ui"
 import { cn } from "@/lib/utils"
-import { preventBackgroundDialogEscape } from "@/lib/dialogEscape"
 
 defineOptions({
   inheritAttrs: false,
@@ -47,7 +46,6 @@ const forwarded = useForwardPropsEmits(delegatedProps, emits)
           props.class,
         )
       "
-      @escape-key-down="preventBackgroundDialogEscape"
     >
       <slot />
     </AlertDialogContent>

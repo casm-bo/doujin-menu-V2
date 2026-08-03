@@ -71,7 +71,6 @@ const previewPages = computed(() =>
 
 const openReader = (page: number) => {
   if (!book.value) return;
-  open.value = false;
   router.push({
     name: "Viewer",
     params: { id: book.value.id },
@@ -133,11 +132,11 @@ const saveMetadata = async () => {
       hitomi_id: draft.value.hitomi_id[0] || null,
       type: draft.value.type[0] || null,
       language_name_local: draft.value.language[0] || null,
-      artists: draft.value.artists,
-      tags: draft.value.tags,
-      series: draft.value.series,
-      groups: draft.value.groups,
-      characters: draft.value.characters,
+      artists: [...draft.value.artists],
+      tags: [...draft.value.tags],
+      series: [...draft.value.series],
+      groups: [...draft.value.groups],
+      characters: [...draft.value.characters],
     });
     detailBook.value = await getBook(book.value.id);
     isEditing.value = false;

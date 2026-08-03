@@ -17,8 +17,6 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import { Icon } from "@iconify/vue";
 import { useMutation, useQuery } from "@tanstack/vue-query";
 import { computed, onBeforeUnmount, ref, watch } from "vue";
@@ -65,7 +63,6 @@ const searchInDownloader = (text: string, prefix: string) => {
 // 편집 모드
 const isEditing = ref(false);
 const editName = ref("");
-const editDescription = ref("");
 
 // 책 추가 다이얼로그
 const showAddBookDialog = ref(false);
@@ -119,13 +116,8 @@ watch(
 
 // 시리즈 정보 업데이트 뮤테이션
 const updateMutation = useMutation({
-  mutationFn: ({
-    id,
-    data,
-  }: {
-    id: number;
-    data: { name?: string; description?: string };
-  }) => updateSeriesCollection(id, data),
+  mutationFn: ({ id, data }: { id: number; data: { name?: string } }) =>
+    updateSeriesCollection(id, data),
   onSuccess: () => {
     toast.success("시리즈 정보가 업데이트되었습니다");
     isEditing.value = false;
@@ -206,7 +198,6 @@ watch(
   (newSeries) => {
     if (newSeries) {
       editName.value = newSeries.name;
-      editDescription.value = newSeries.description || "";
     }
   },
   { immediate: true },
@@ -215,27 +206,26 @@ watch(
 // 편집 시작
 const startEdit = () => {
   isEditing.value = true;
-  editName.value = props.series?.name || "";
-  editDescription.value = props.series?.description || "";
+  editName.value = seriesDetail.value?.name || props.series?.name || "";
 };
 
 // 편집 취소
 const cancelEdit = () => {
   isEditing.value = false;
-  editName.value = props.series?.name || "";
-  editDescription.value = props.series?.description || "";
+  editName.value = seriesDetail.value?.name || props.series?.name || "";
 };
 
 // 저장
 const saveEdit = () => {
   if (!props.series) return;
+  if (!editName.value.trim()) {
+    toast.error("시리즈 제목을 입력해주세요");
+    return;
+  }
 
   updateMutation.mutate({
     id: props.series.id,
-    data: {
-      name: editName.value,
-      description: editDescription.value || undefined,
-    },
+    data: { name: editName.value.trim() },
   });
 };
 
@@ -264,7 +254,6 @@ const firstBook = computed(() => books.value[0] || null);
 const resumeTarget = computed(() => getSeriesResumeTarget(books.value));
 const openReader = (book: Book | null, page: number) => {
   if (!book) return;
-  emit("update:open", false);
   router.push({
     name: "Viewer",
     params: { id: book.id },
@@ -414,7 +403,14 @@ const excludeBookIds = computed(() => books.value.map((book) => book.id));
             />
             <div class="flex min-w-0 flex-1 flex-col gap-3">
               <div class="flex items-start justify-between gap-3">
+                <Input
+                  v-if="isEditing"
+                  v-model="editName"
+                  class="h-auto flex-1 py-2 text-xl font-bold"
+                  aria-label="시리즈 제목"
+                />
                 <h2
+                  v-else
                   class="text-2xl font-bold"
                   @contextmenu.prevent="
                     searchInDownloader(
@@ -425,12 +421,25 @@ const excludeBookIds = computed(() => books.value.map((book) => book.id));
                 >
                   {{ seriesDetail?.name || series?.name }}
                 </h2>
-                <div v-if="!isEditing" class="flex gap-2">
-                  <Button variant="outline" size="sm" @click="startEdit">
+                <div class="flex shrink-0 gap-2">
+                  <template v-if="isEditing">
+                    <Button variant="outline" size="sm" @click="cancelEdit">
+                      취소
+                    </Button>
+                    <Button
+                      size="sm"
+                      :disabled="updateMutation.isPending.value"
+                      @click="saveEdit"
+                    >
+                      저장
+                    </Button>
+                  </template>
+                  <Button v-else variant="outline" size="sm" @click="startEdit">
                     <Icon icon="solar:pen-bold-duotone" class="mr-2 h-4 w-4" />
-                    이름변경
+                    편집
                   </Button>
                   <Button
+                    v-if="!isEditing"
                     variant="destructive"
                     size="sm"
                     @click="showDeleteSeriesDialog = true"
@@ -517,38 +526,6 @@ const excludeBookIds = computed(() => books.value.map((book) => book.id));
               </div>
             </div>
           </div>
-          <div v-if="isEditing" class="space-y-4 rounded-lg border p-4">
-            <div class="space-y-2">
-              <Label for="series-name">시리즈명</Label>
-              <Input
-                id="series-name"
-                v-model="editName"
-                placeholder="시리즈 이름을 입력하세요"
-              />
-            </div>
-            <div class="space-y-2">
-              <Label for="series-description">설명</Label>
-              <Textarea
-                id="series-description"
-                v-model="editDescription"
-                placeholder="시리즈 설명을 입력하세요 (선택사항)"
-                rows="3"
-              />
-            </div>
-            <div class="flex justify-end gap-2">
-              <Button variant="outline" size="sm" @click="cancelEdit"
-                >취소</Button
-              >
-              <Button
-                size="sm"
-                :disabled="updateMutation.isPending.value"
-                @click="saveEdit"
-              >
-                저장
-              </Button>
-            </div>
-          </div>
-
           <!-- 소속 책 목록 -->
           <div class="space-y-4">
             <div class="flex items-center justify-between">
