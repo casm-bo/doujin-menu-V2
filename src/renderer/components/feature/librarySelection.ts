@@ -21,3 +21,15 @@ export function selectBookRange(
     ...[...selected].filter((id) => !ordered.has(id)),
   ]);
 }
+
+export function rectanglesIntersect(
+  first: Pick<DOMRect, "left" | "right" | "top" | "bottom">,
+  second: Pick<DOMRect, "left" | "right" | "top" | "bottom">,
+) {
+  return (
+    first.left <= second.right &&
+    first.right >= second.left &&
+    first.top <= second.bottom &&
+    first.bottom >= second.top
+  );
+}

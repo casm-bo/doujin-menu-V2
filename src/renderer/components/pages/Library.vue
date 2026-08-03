@@ -68,7 +68,10 @@ import BookRowCard from "../feature/BookRowCard.vue";
 import CreateSeriesDialog from "../feature/CreateSeriesDialog.vue";
 import SeriesDetailDialog from "../feature/SeriesDetailDialog.vue";
 import LibraryScanProgress from "../feature/LibraryScanProgress.vue";
-import { selectBookRange } from "../feature/librarySelection";
+import {
+  rectanglesIntersect,
+  selectBookRange,
+} from "../feature/librarySelection";
 
 const queryClient = useQueryClient();
 
@@ -297,12 +300,18 @@ const selectionAnchorId = ref<number | null>(null);
 const dragSelection = ref<{
   startX: number;
   startY: number;
-  anchorId: number;
   base: Set<number>;
+  surface: HTMLElement;
 } | null>(null);
 const isDraggingSelection = ref(false);
 const suppressSelectionClick = ref(false);
 const dragCursor = ref({ x: 0, y: 0 });
+const dragSelectionStyle = computed(() => ({
+  left: `${Math.min(dragSelection.value?.startX || 0, dragCursor.value.x)}px`,
+  top: `${Math.min(dragSelection.value?.startY || 0, dragCursor.value.y)}px`,
+  width: `${Math.abs(dragCursor.value.x - (dragSelection.value?.startX || 0))}px`,
+  height: `${Math.abs(dragCursor.value.y - (dragSelection.value?.startY || 0))}px`,
+}));
 
 const toggleBookSelection = (bookId: number, event?: MouseEvent) => {
   if (
@@ -329,15 +338,13 @@ const handleSelectionPointerDown = (event: PointerEvent) => {
   if (event.button !== 0) return;
   const target = event.target as HTMLElement;
   if (target.closest("button, input, [role='checkbox']")) return;
-  const card = target.closest<HTMLElement>("[data-book-id]");
-  const bookId = Number(card?.dataset.bookId);
-  if (!bookId) return;
   dragSelection.value = {
     startX: event.clientX,
     startY: event.clientY,
-    anchorId: bookId,
-    base: new Set(selectedBookIds.value),
+    base: event.ctrlKey ? new Set(selectedBookIds.value) : new Set(),
+    surface: event.currentTarget as HTMLElement,
   };
+  dragCursor.value = { x: event.clientX, y: event.clientY };
 };
 
 const handleSelectionPointerMove = (event: PointerEvent) => {
@@ -352,24 +359,30 @@ const handleSelectionPointerMove = (event: PointerEvent) => {
   }
   dragCursor.value = { x: event.clientX, y: event.clientY };
   event.preventDefault();
-  const card = document
-    .elementFromPoint(event.clientX, event.clientY)
-    ?.closest<HTMLElement>("[data-book-id]");
-  const targetId = Number(card?.dataset.bookId);
-  if (!targetId) return;
-  selectedBookIds.value = selectBookRange(
-    books.value.map((book) => book.id),
-    drag.anchorId,
-    targetId,
-    drag.base,
-  );
-  selectionAnchorId.value = targetId;
+  const left = Math.min(drag.startX, event.clientX);
+  const right = Math.max(drag.startX, event.clientX);
+  const top = Math.min(drag.startY, event.clientY);
+  const bottom = Math.max(drag.startY, event.clientY);
+  const next = new Set(drag.base);
+  const selectionRect = { left, right, top, bottom };
+  for (const card of Array.from(
+    drag.surface.querySelectorAll<HTMLElement>("[data-book-id]"),
+  )) {
+    const rect = card.getBoundingClientRect();
+    if (rectanglesIntersect(selectionRect, rect)) {
+      next.add(Number(card.dataset.bookId));
+    }
+  }
+  selectedBookIds.value = next;
 };
 
 const handleSelectionPointerUp = () => {
   if (isDraggingSelection.value) {
     suppressSelectionClick.value = true;
     window.setTimeout(() => (suppressSelectionClick.value = false));
+    selectionAnchorId.value =
+      books.value.find((book) => selectedBookIds.value.has(book.id))?.id ||
+      null;
   }
   dragSelection.value = null;
   isDraggingSelection.value = false;
@@ -1292,14 +1305,9 @@ useScrollRestoration(".flex-grow.overflow-y-auto");
     />
     <div
       v-if="isDraggingSelection"
-      class="bg-primary text-primary-foreground pointer-events-none fixed z-[100] animate-pulse rounded-full px-3 py-1.5 text-sm font-semibold shadow-lg"
-      :style="{
-        left: `${dragCursor.x + 14}px`,
-        top: `${dragCursor.y + 14}px`,
-      }"
-    >
-      {{ selectedCount }}개 선택 중
-    </div>
+      class="border-primary bg-primary/15 pointer-events-none fixed z-[100] border"
+      :style="dragSelectionStyle"
+    />
     <CreateSeriesDialog
       v-model:open="showCreateSeriesDialog"
       :book-ids="orderedSelectedBookIds"
