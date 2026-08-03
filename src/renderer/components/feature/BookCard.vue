@@ -282,7 +282,7 @@ const confirmDeleteBook = async () => {
             오프라인
           </Badge>
           <div
-            class="absolute top-2 left-2 z-10 flex size-8 items-center justify-center"
+            class="absolute top-2 left-2 z-10 flex size-8 items-center justify-center rounded-md transition-colors hover:bg-black/70 hover:text-white"
             @click.stop="emit('toggle-select', $event)"
           >
             <Checkbox
@@ -302,7 +302,7 @@ const confirmDeleteBook = async () => {
             읽음
           </div>
           <button
-            class="absolute right-2 bottom-2 flex size-8 items-center justify-center rounded-full bg-black/65 text-white"
+            class="absolute right-2 bottom-2 flex size-8 items-center justify-center rounded-full bg-black/65 text-white transition-colors hover:bg-black/90"
             :aria-label="
               (
                 book.series_collection_id

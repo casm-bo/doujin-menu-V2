@@ -129,6 +129,17 @@ const goToLibraryWithSearch = (name: string) => {
   const prefix = prefixMap[tab.value];
   router.push({ path: "/library", query: { schWord: `${prefix}${name}` } });
 };
+
+const goToDownloaderWithSearch = (name: string) => {
+  const prefix = prefixMap[tab.value];
+  const query =
+    tab.value === "tags" &&
+    (name.startsWith("male:") || name.startsWith("female:"))
+      ? name
+      : `${prefix}${name}`;
+  localStorage.setItem("downloader-search-query", query);
+  router.push("/downloader");
+};
 </script>
 
 <template>
@@ -218,6 +229,7 @@ const goToLibraryWithSearch = (name: string) => {
             :key="item.name"
             class="hover:bg-accent flex items-center justify-between rounded-md px-3 py-1.5 text-left text-sm transition-colors"
             @click="goToLibraryWithSearch(item.name)"
+            @contextmenu.prevent="goToDownloaderWithSearch(item.name)"
           >
             <span class="truncate">{{ item.name }}</span>
             <span class="text-muted-foreground ml-2 shrink-0 text-xs">
