@@ -5,13 +5,16 @@ import { cn } from "@/lib/utils";
 import { useUiStore } from "@/store/uiStore";
 import { storeToRefs } from "pinia";
 import { computed, onMounted, ref } from "vue";
+import { useRoute } from "vue-router";
 import AppLock from "../common/AppLock.vue";
 import ChangelogDialog from "../common/ChangelogDialog.vue";
 import Header from "./Header.vue";
 import Sidebar from "./Sidebar.vue";
 
 const uiStore = useUiStore();
+const route = useRoute();
 const { isSidebarCollapsed, screenRotation } = storeToRefs(uiStore);
+const isViewer = computed(() => route.name === "Viewer");
 
 const open = ref(false);
 
@@ -43,19 +46,23 @@ const rotationStyle = computed(() => {
 });
 
 // 레이아웃 전역 단축키 등록
-useKeybindings("layout", {
-  "layout:fullscreen": () => {
-    ipcRenderer.send("fullscreen-toggle-window");
+useKeybindings(
+  "layout",
+  {
+    "layout:fullscreen": () => {
+      ipcRenderer.send("fullscreen-toggle-window");
+    },
+    "layout:minimize": async () => {
+      // 전체화면 상태이면 전체화면 해제 후 반환
+      if (await isFullscreen()) {
+        ipcRenderer.send("set-fullscreen-window", false);
+        return;
+      }
+      ipcRenderer.send("minimize-window");
+    },
   },
-  "layout:minimize": async () => {
-    // 전체화면 상태이면 전체화면 해제 후 반환
-    if (await isFullscreen()) {
-      ipcRenderer.send("set-fullscreen-window", false);
-      return;
-    }
-    ipcRenderer.send("minimize-window");
-  },
-});
+  { enabled: () => !isViewer.value },
+);
 
 onMounted(async () => {
   const config = await ipcRenderer.invoke("get-config");
@@ -69,30 +76,38 @@ onMounted(async () => {
 <template>
   <div
     :class="
-      cn(
-        'bg-background grid grid-rows-[auto_1fr] transition-[grid-template-columns] duration-300 ease-in-out',
-        // 회전된 경우 h-full, 아니면 h-screen 사용
-        screenRotation === 90 || screenRotation === 270 ? 'h-full' : 'h-screen',
-        isSidebarCollapsed ? 'grid-cols-[4rem_1fr]' : 'grid-cols-[14rem_1fr]',
-      )
+      isViewer
+        ? 'bg-background h-screen'
+        : cn(
+            'bg-background grid grid-rows-[auto_1fr] transition-[grid-template-columns] duration-300 ease-in-out',
+            // 회전된 경우 h-full, 아니면 h-screen 사용
+            screenRotation === 90 || screenRotation === 270
+              ? 'h-full'
+              : 'h-screen',
+            isSidebarCollapsed
+              ? 'grid-cols-[4rem_1fr]'
+              : 'grid-cols-[14rem_1fr]',
+          )
     "
-    :style="rotationStyle"
+    :style="isViewer ? undefined : rotationStyle"
   >
-    <Header class="col-span-2" />
-    <Sidebar class="row-start-2" />
-    <AppLock v-if="uiStore.isLocked" />
+    <Header v-if="!isViewer" class="col-span-2" />
+    <Sidebar v-if="!isViewer" class="row-start-2" />
+    <AppLock v-if="!isViewer && uiStore.isLocked" />
     <main
-      v-else
-      class="bg-background col-start-2 row-start-2 overflow-y-auto p-6"
+      v-else-if="isViewer || !uiStore.isLocked"
+      :class="
+        isViewer
+          ? 'bg-background h-screen overflow-hidden'
+          : 'bg-background col-start-2 row-start-2 overflow-y-auto p-6'
+      "
     >
       <router-view v-slot="{ Component }">
-        <keep-alive
-          :include="['Library', 'Downloader', 'SeriesManager']"
-        >
+        <keep-alive :include="['Library', 'Downloader', 'SeriesManager']">
           <component :is="Component" />
         </keep-alive>
       </router-view>
     </main>
-    <ChangelogDialog v-model:open="open" />
+    <ChangelogDialog v-if="!isViewer" v-model:open="open" />
   </div>
 </template>

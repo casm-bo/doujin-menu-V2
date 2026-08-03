@@ -49,12 +49,12 @@ const routes: RouteRecordRaw[] = [
         name: "Duplicates",
         component: () => import("./components/pages/Duplicates.vue"),
       },
+      {
+        path: "/viewer/:id",
+        name: "Viewer",
+        component: Viewer,
+      },
     ],
-  },
-  {
-    path: "/viewer/:id",
-    name: "Viewer",
-    component: Viewer,
   },
 ];
 
