@@ -14,7 +14,7 @@ import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { usePreviewViewMode } from "@/composables/usePreviewViewMode";
 import { Icon } from "@iconify/vue";
 import { computed, ref, watch } from "vue";
-import { useRouter } from "vue-router";
+import { useRoute, useRouter } from "vue-router";
 import { toast } from "vue-sonner";
 import type { Book } from "../../../types/ipc";
 import MetadataField from "./MetadataField.vue";
@@ -22,6 +22,7 @@ import MetadataField from "./MetadataField.vue";
 const props = defineProps<{
   modelValue: boolean;
   book: Book | null;
+  suspendWhileViewing?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -30,6 +31,7 @@ const emit = defineEmits<{
 }>();
 
 const router = useRouter();
+const route = useRoute();
 const { viewMode, setViewMode } = usePreviewViewMode();
 const detailBook = ref<Book | null>(null);
 const book = computed(() => detailBook.value || props.book);
@@ -50,8 +52,12 @@ const draft = ref({
 });
 
 const open = computed({
-  get: () => props.modelValue,
-  set: (value) => emit("update:modelValue", value),
+  get: () =>
+    props.modelValue && !(props.suspendWhileViewing && route.name === "Viewer"),
+  set: (value) => {
+    if (props.suspendWhileViewing && route.name === "Viewer") return;
+    emit("update:modelValue", value);
+  },
 });
 
 const displayPath = computed(() => {

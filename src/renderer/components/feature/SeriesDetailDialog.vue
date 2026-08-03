@@ -20,7 +20,7 @@ import { Input } from "@/components/ui/input";
 import { Icon } from "@iconify/vue";
 import { useMutation, useQuery } from "@tanstack/vue-query";
 import { computed, onBeforeUnmount, ref, watch } from "vue";
-import { useRouter } from "vue-router";
+import { useRoute, useRouter } from "vue-router";
 import { toast } from "vue-sonner";
 import type { SeriesCollectionWithBooks } from "../../../main/db/types";
 import type { Book } from "../../../types/ipc";
@@ -49,6 +49,11 @@ const emit = defineEmits<{
   updated: [];
 }>();
 const router = useRouter();
+const route = useRoute();
+const dialogOpen = computed(() => props.open && route.name !== "Viewer");
+const updateDialogOpen = (value: boolean) => {
+  if (route.name !== "Viewer") emit("update:open", value);
+};
 
 const searchInDownloader = (text: string, prefix: string) => {
   const query =
@@ -384,7 +389,7 @@ const excludeBookIds = computed(() => books.value.map((book) => book.id));
 </script>
 
 <template>
-  <Dialog :open="props.open" @update:open="emit('update:open', $event)">
+  <Dialog :open="dialogOpen" @update:open="updateDialogOpen">
     <DialogContent
       class="flex max-h-[90vh] w-[calc(100vw-2rem)] flex-col overflow-hidden sm:max-w-[900px]"
     >
@@ -715,6 +720,7 @@ const excludeBookIds = computed(() => books.value.map((book) => book.id));
   <BookDetailDialog
     v-model="showEpisodeDetail"
     :book="selectedEpisode"
+    suspend-while-viewing
     @updated="handleEpisodeUpdated"
   />
 

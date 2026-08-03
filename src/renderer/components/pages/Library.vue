@@ -1299,6 +1299,7 @@ useScrollRestoration(".flex-grow.overflow-y-auto");
     <BookDetailDialog
       v-model="showBookDetailDialog"
       :book="selectedBook"
+      suspend-while-viewing
       :on-toggle-favorite="handleToggleFavorite"
       :on-open-folder="handleOpenFolder"
       @updated="handleBooksUpdated"
