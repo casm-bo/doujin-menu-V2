@@ -8,6 +8,7 @@ import { useWindowEvent } from "./useWindowEvent";
 interface UseKeybindingsOptions {
   // 스로틀 간격 (ms). 0이면 스로틀 없음.
   throttle?: number;
+  enabled?: () => boolean;
 }
 
 export function useKeybindings(
@@ -18,6 +19,8 @@ export function useKeybindings(
   const store = useKeybindingStore();
 
   const handleKeyDown = (e: KeyboardEvent) => {
+    if (options.enabled && !options.enabled()) return;
+
     // 1. 다이얼로그 열려있으면 무시 (Reka UI에 위임)
     if (hasOpenDialog()) return;
 

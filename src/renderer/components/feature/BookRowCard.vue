@@ -76,6 +76,10 @@ const openInNewWindow = () => {
 };
 
 const handleCardClick = (event: MouseEvent) => {
+  if (event.shiftKey) {
+    emit("toggle-select", event);
+    return;
+  }
   if (isOffline.value) {
     showOfflineToast();
     return;
@@ -173,15 +177,16 @@ const confirmDeleteBook = async () => {
 
 <template>
   <div
-    class="hover:bg-muted/50 flex cursor-pointer items-center border-b p-2 transition-colors"
-    :class="{ 'border-primary bg-accent/40': selected }"
+    :data-book-id="book.id"
+    class="hover:bg-muted/50 flex cursor-pointer items-center border-b p-2 transition-all duration-150"
+    :class="{ 'border-primary bg-accent/40 translate-x-1': selected }"
     @click="handleCardClick"
   >
     <Checkbox
       :model-value="selected"
       :aria-label="`${displayTitle} 선택`"
       class="mr-3"
-      @click.stop="emit('toggle-select')"
+      @click.stop="emit('toggle-select', $event)"
     />
     <div class="relative mr-4 h-64 w-48 flex-shrink-0 overflow-hidden">
       <img

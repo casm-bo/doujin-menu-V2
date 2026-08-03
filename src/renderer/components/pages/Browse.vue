@@ -5,6 +5,7 @@ import { useQuery } from "@tanstack/vue-query";
 import { Icon } from "@iconify/vue";
 import PageHeader from "../layout/PageHeader.vue";
 import { useQueryAndParams } from "@/composable/useQueryAndParams";
+import { useTagDisplay } from "@/composable/useTagDisplay";
 import {
   getArtistsWithCount,
   getTagsWithCount,
@@ -32,6 +33,7 @@ interface NameCount {
 type TabKey = "artists" | "tags" | "series" | "characters" | "groups";
 
 const router = useRouter();
+const { getTagDisplayInfo } = useTagDisplay();
 
 // URL 상태 동기화
 const tab = ref<TabKey>("artists");
@@ -125,9 +127,21 @@ const hasDigits = computed(() => {
 });
 
 // 항목 클릭 → 라이브러리 검색
-const goToLibraryWithSearch = (name: string) => {
+const getSearchQuery = (name: string) => {
   const prefix = prefixMap[tab.value];
-  router.push({ path: "/library", query: { schWord: `${prefix}${name}` } });
+  return tab.value === "tags" &&
+    (name.startsWith("male:") || name.startsWith("female:"))
+    ? name
+    : `${prefix}${name}`;
+};
+
+const goToLibraryWithSearch = (name: string) => {
+  router.push({ path: "/library", query: { schWord: getSearchQuery(name) } });
+};
+
+const goToDownloaderWithSearch = (name: string) => {
+  localStorage.setItem("downloader-search-query", getSearchQuery(name));
+  router.push("/downloader");
 };
 </script>
 
@@ -216,11 +230,21 @@ const goToLibraryWithSearch = (name: string) => {
           <button
             v-for="item in filteredItems"
             :key="item.name"
-            class="hover:bg-accent flex items-center justify-between rounded-md px-3 py-1.5 text-left text-sm transition-colors"
+            class="flex items-center justify-between text-left text-sm transition-colors"
+            :class="
+              tab === 'tags'
+                ? getTagDisplayInfo(item).className
+                : 'hover:bg-accent rounded-md px-3 py-1.5'
+            "
             @click="goToLibraryWithSearch(item.name)"
+            @contextmenu.prevent="goToDownloaderWithSearch(item.name)"
           >
-            <span class="truncate">{{ item.name }}</span>
-            <span class="text-muted-foreground ml-2 shrink-0 text-xs">
+            <span class="truncate">
+              {{
+                tab === "tags" ? getTagDisplayInfo(item).displayText : item.name
+              }}
+            </span>
+            <span class="ml-2 shrink-0 text-xs opacity-70">
               ({{ item.count }})
             </span>
           </button>

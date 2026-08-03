@@ -2,7 +2,7 @@ import { ipcMain, shell } from "electron";
 import fs from "fs/promises";
 import path from "path";
 import * as yauzl from "yauzl";
-import type { FilterParams } from "../../types/ipc.js";
+import type { EditableBookMetadata, FilterParams } from "../../types/ipc.js";
 import db from "../db/index.js";
 import { console } from "../main.js";
 import { naturalSort } from "../utils/index.js";
@@ -194,6 +194,8 @@ function buildFilteredQuery(filter: FilterParams | null) {
 
   if (seriesStatus === "series") {
     mainQuery.whereNotNull("sub.series_collection_id");
+  } else if (seriesStatus === "standalone") {
+    mainQuery.whereNull("sub.series_collection_id");
   }
 
   if (searchQuery) {
@@ -501,6 +503,65 @@ export const handleGetBook = async (bookId: number) => {
       ? book.characters.split(",").map((name: string) => ({ name }))
       : [],
   };
+};
+
+export const handleUpdateBookMetadata = async ({
+  bookId,
+  metadata,
+}: {
+  bookId: number;
+  metadata: EditableBookMetadata;
+}) => {
+  const title = metadata.title.trim();
+
+  try {
+    await db.transaction(async (trx) => {
+      if (!(await trx("Book").where("id", bookId).first())) {
+        throw new Error("책을 찾을 수 없습니다");
+      }
+      await trx("Book")
+        .where("id", bookId)
+        .update({
+          title,
+          hitomi_id: metadata.hitomi_id?.trim() || null,
+          type: metadata.type?.trim() || null,
+          language_name_local: metadata.language_name_local?.trim() || null,
+        });
+
+      const relations = [
+        ["Artist", "BookArtist", "artist_id", metadata.artists],
+        ["Tag", "BookTag", "tag_id", metadata.tags],
+        ["Series", "BookSeries", "series_id", metadata.series],
+        ["Group", "BookGroup", "group_id", metadata.groups],
+        ["Character", "BookCharacter", "character_id", metadata.characters],
+      ] as const;
+      for (const [
+        entityTable,
+        junctionTable,
+        foreignKey,
+        values,
+      ] of relations) {
+        await trx(junctionTable).where("book_id", bookId).delete();
+        for (const name of [
+          ...new Set(values.map((value) => value.trim()).filter(Boolean)),
+        ]) {
+          let entity = await trx(entityTable).where("name", name).first();
+          if (!entity) {
+            const [id] = await trx(entityTable).insert({ name });
+            entity = { id };
+          }
+          await trx(junctionTable).insert({
+            book_id: bookId,
+            [foreignKey]: entity.id,
+          });
+        }
+      }
+    });
+    notifyCompanionLibraryChanged(false);
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: (error as Error).message };
+  }
 };
 
 export const handleGetTags = async () => {
@@ -1309,4 +1370,7 @@ export function registerBookHandlers() {
     handleCheckBookExistsByHitomiId(hitomiId),
   );
   ipcMain.handle("delete-book", (_event, bookId) => handleDeleteBook(bookId));
+  ipcMain.handle("update-book-metadata", (_event, params) =>
+    handleUpdateBookMetadata(params),
+  );
 }

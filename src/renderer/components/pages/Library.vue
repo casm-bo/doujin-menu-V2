@@ -26,6 +26,7 @@ import { useQueryAndParams } from "@/composable/useQueryAndParams";
 import { useScrollRestoration } from "@/composable/useScrollRestoration";
 import { useLibraryScanStore } from "@/store/libraryScanStore";
 import { useUiStore } from "@/store/uiStore";
+import { hasOpenDialog } from "@/lib/utils";
 import { Icon } from "@iconify/vue";
 import PageHeader from "../layout/PageHeader.vue";
 import {
@@ -67,6 +68,10 @@ import BookRowCard from "../feature/BookRowCard.vue";
 import CreateSeriesDialog from "../feature/CreateSeriesDialog.vue";
 import SeriesDetailDialog from "../feature/SeriesDetailDialog.vue";
 import LibraryScanProgress from "../feature/LibraryScanProgress.vue";
+import {
+  rectanglesIntersect,
+  selectBookRange,
+} from "../feature/librarySelection";
 
 const queryClient = useQueryClient();
 
@@ -93,8 +98,8 @@ const isFavorite = ref((route.query.isFavorite as string) || "all");
 const offlineStatus = ref<"all" | "online" | "offline">(
   (route.query.offlineStatus as "all" | "online" | "offline") || "all",
 );
-const seriesStatus = ref<"all" | "series">(
-  (route.query.seriesStatus as "all" | "series") || "all",
+const seriesStatus = ref<"all" | "series" | "standalone">(
+  (route.query.seriesStatus as "all" | "series" | "standalone") || "all",
 );
 const sortBy = ref((route.query.sortBy as string) || "added_at");
 const sortOrder = ref<"asc" | "desc">(
@@ -272,18 +277,153 @@ const books = computed(
 const totalCount = computed(() => data.value?.pages[0]?.totalCount ?? 0);
 const selectedBookIds = ref<Set<number>>(new Set());
 const selectedCount = computed(() => selectedBookIds.value.size);
+const orderedSelectedBookIds = computed(() => {
+  const visible = new Set(books.value.map((book) => book.id));
+  return [
+    ...books.value
+      .map((book) => book.id)
+      .filter((bookId) => selectedBookIds.value.has(bookId)),
+    ...[...selectedBookIds.value].filter((bookId) => !visible.has(bookId)),
+  ];
+});
 const isSelectingAll = ref(false);
 const allSelected = computed(
   () => totalCount.value > 0 && selectedCount.value === totalCount.value,
 );
 const showDeleteDialog = ref(false);
 const showCreateSeriesDialog = ref(false);
+const showSeriesConflictDialog = ref(false);
+const replaceExistingSeries = ref(false);
+const conflictingSeriesCount = ref(0);
 const booksToDelete = ref<number[]>([]);
+const selectionAnchorId = ref<number | null>(null);
+const dragSelection = ref<{
+  startX: number;
+  startY: number;
+  base: Set<number>;
+  surface: HTMLElement;
+} | null>(null);
+const isDraggingSelection = ref(false);
+const suppressSelectionClick = ref(false);
+const dragCursor = ref({ x: 0, y: 0 });
+const dragSelectionStyle = computed(() => ({
+  left: `${Math.min(dragSelection.value?.startX || 0, dragCursor.value.x)}px`,
+  top: `${Math.min(dragSelection.value?.startY || 0, dragCursor.value.y)}px`,
+  width: `${Math.abs(dragCursor.value.x - (dragSelection.value?.startX || 0))}px`,
+  height: `${Math.abs(dragCursor.value.y - (dragSelection.value?.startY || 0))}px`,
+}));
 
-const toggleBookSelection = (bookId: number) => {
-  const next = new Set(selectedBookIds.value);
-  if (!next.delete(bookId)) next.add(bookId);
+const toggleBookSelection = (bookId: number, event?: MouseEvent) => {
+  if (
+    event?.shiftKey &&
+    selectionAnchorId.value !== null &&
+    selectedBookIds.value.size > 0
+  ) {
+    selectedBookIds.value = selectBookRange(
+      books.value.map((book) => book.id),
+      selectionAnchorId.value,
+      bookId,
+      selectedBookIds.value,
+    );
+  } else {
+    const next = new Set(selectedBookIds.value);
+    if (!next.delete(bookId)) next.add(bookId);
+    selectedBookIds.value = next;
+  }
+  if (selectedBookIds.value.has(bookId)) selectionAnchorId.value = bookId;
+  else if (selectedBookIds.value.size === 0) selectionAnchorId.value = null;
+};
+
+const handleSelectionPointerDown = (event: PointerEvent) => {
+  if (event.button !== 0) return;
+  const target = event.target as HTMLElement;
+  if (target.closest("button, input, [role='checkbox']")) return;
+  dragSelection.value = {
+    startX: event.clientX,
+    startY: event.clientY,
+    base: event.ctrlKey ? new Set(selectedBookIds.value) : new Set(),
+    surface: event.currentTarget as HTMLElement,
+  };
+  dragCursor.value = { x: event.clientX, y: event.clientY };
+};
+
+const handleSelectionPointerMove = (event: PointerEvent) => {
+  const drag = dragSelection.value;
+  if (!drag) return;
+  if (!isDraggingSelection.value) {
+    if (
+      Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY) < 6
+    )
+      return;
+    isDraggingSelection.value = true;
+  }
+  dragCursor.value = { x: event.clientX, y: event.clientY };
+  event.preventDefault();
+  const left = Math.min(drag.startX, event.clientX);
+  const right = Math.max(drag.startX, event.clientX);
+  const top = Math.min(drag.startY, event.clientY);
+  const bottom = Math.max(drag.startY, event.clientY);
+  const next = new Set(drag.base);
+  const selectionRect = { left, right, top, bottom };
+  for (const card of Array.from(
+    drag.surface.querySelectorAll<HTMLElement>("[data-book-id]"),
+  )) {
+    const rect = card.getBoundingClientRect();
+    if (rectanglesIntersect(selectionRect, rect)) {
+      next.add(Number(card.dataset.bookId));
+    }
+  }
   selectedBookIds.value = next;
+};
+
+const handleSelectionPointerUp = () => {
+  if (isDraggingSelection.value) {
+    suppressSelectionClick.value = true;
+    window.setTimeout(() => (suppressSelectionClick.value = false));
+    selectionAnchorId.value =
+      books.value.find((book) => selectedBookIds.value.has(book.id))?.id ||
+      null;
+  }
+  dragSelection.value = null;
+  isDraggingSelection.value = false;
+};
+
+const suppressClickAfterDrag = (event: MouseEvent) => {
+  if (!suppressSelectionClick.value) return;
+  event.preventDefault();
+  event.stopPropagation();
+};
+
+const clearSelectionOnEscape = (event: KeyboardEvent) => {
+  if (
+    event.key !== "Escape" ||
+    selectedBookIds.value.size === 0 ||
+    hasOpenDialog()
+  )
+    return;
+  event.preventDefault();
+  event.stopImmediatePropagation();
+  selectedBookIds.value = new Set();
+  selectionAnchorId.value = null;
+};
+
+const prepareCreateSeries = async () => {
+  const selected = await Promise.all(
+    orderedSelectedBookIds.value.map((bookId) =>
+      ipcRenderer.invoke("get-book", bookId),
+    ),
+  );
+  conflictingSeriesCount.value = new Set(
+    selected.map((book) => book?.series_collection_id).filter(Boolean),
+  ).size;
+  replaceExistingSeries.value = conflictingSeriesCount.value > 0;
+  if (replaceExistingSeries.value) showSeriesConflictDialog.value = true;
+  else showCreateSeriesDialog.value = true;
+};
+
+const confirmSeriesReplacement = () => {
+  showSeriesConflictDialog.value = false;
+  showCreateSeriesDialog.value = true;
 };
 
 const toggleAll = async () => {
@@ -308,6 +448,7 @@ const toggleAll = async () => {
 
 watch(queryKey, () => {
   selectedBookIds.value = new Set();
+  selectionAnchorId.value = null;
 });
 
 const deleteMutation = useMutation({
@@ -386,10 +527,16 @@ onMounted(() => {
   libraryScanStore.initialize();
 
   stopBooksUpdated = ipcRenderer.on("books-updated", handleBooksUpdated);
+  window.addEventListener("pointermove", handleSelectionPointerMove);
+  window.addEventListener("pointerup", handleSelectionPointerUp);
+  window.addEventListener("keydown", clearSelectionOnEscape, true);
 });
 
 onUnmounted(() => {
   stopBooksUpdated();
+  window.removeEventListener("pointermove", handleSelectionPointerMove);
+  window.removeEventListener("pointerup", handleSelectionPointerUp);
+  window.removeEventListener("keydown", clearSelectionOnEscape, true);
 });
 
 // keep-alive로 캐시된 컴포넌트가 활성화될 때 쿼리 다시 불러오기
@@ -763,7 +910,7 @@ useScrollRestoration(".flex-grow.overflow-y-auto");
           <Button
             variant="outline"
             :disabled="selectedCount < 2"
-            @click="showCreateSeriesDialog = true"
+            @click="prepareCreateSeries"
           >
             <Icon icon="solar:add-circle-bold-duotone" class="h-5 w-5" />
             시리즈 추가 ({{ selectedCount }})
@@ -845,6 +992,9 @@ useScrollRestoration(".flex-grow.overflow-y-auto");
               <DropdownMenuRadioItem value="all">모두</DropdownMenuRadioItem>
               <DropdownMenuRadioItem value="series"
                 >시리즈만</DropdownMenuRadioItem
+              >
+              <DropdownMenuRadioItem value="standalone"
+                >시리즈 제외</DropdownMenuRadioItem
               >
             </DropdownMenuRadioGroup>
             <DropdownMenuSeparator />
@@ -1039,6 +1189,11 @@ useScrollRestoration(".flex-grow.overflow-y-auto");
         ref="gridRef"
         class="grid flex-grow items-start gap-3 overflow-y-auto"
         :style="gridStyle"
+        :class="{
+          'cursor-crosshair select-none': isDraggingSelection,
+        }"
+        @pointerdown="handleSelectionPointerDown"
+        @click.capture="suppressClickAfterDrag"
         @wheel="handleGridWheel"
       >
         <BookCard
@@ -1059,7 +1214,7 @@ useScrollRestoration(".flex-grow.overflow-y-auto");
           @show-details="handleShowDetails"
           @show-series="handleShowSeries"
           @show-preview="handleShowPreview"
-          @toggle-select="toggleBookSelection(book.id)"
+          @toggle-select="toggleBookSelection(book.id, $event)"
           @deleted="handleBookDeleted"
         />
         <div
@@ -1077,6 +1232,11 @@ useScrollRestoration(".flex-grow.overflow-y-auto");
       <div
         v-else-if="books.length > 0 && viewMode === 'list'"
         class="flex flex-grow flex-col overflow-y-auto"
+        :class="{
+          'cursor-crosshair select-none': isDraggingSelection,
+        }"
+        @pointerdown="handleSelectionPointerDown"
+        @click.capture="suppressClickAfterDrag"
       >
         <BookRowCard
           v-for="book in books"
@@ -1094,7 +1254,7 @@ useScrollRestoration(".flex-grow.overflow-y-auto");
           @show-details="handleShowDetails"
           @show-series="handleShowSeries"
           @show-preview="handleShowPreview"
-          @toggle-select="toggleBookSelection(book.id)"
+          @toggle-select="toggleBookSelection(book.id, $event)"
           @deleted="handleBookDeleted"
         />
         <div v-if="hasNextPage" ref="loader" class="p-4 text-center">
@@ -1139,14 +1299,44 @@ useScrollRestoration(".flex-grow.overflow-y-auto");
     <BookDetailDialog
       v-model="showBookDetailDialog"
       :book="selectedBook"
+      suspend-while-viewing
       :on-toggle-favorite="handleToggleFavorite"
       :on-open-folder="handleOpenFolder"
+      @updated="handleBooksUpdated"
+    />
+    <div
+      v-if="isDraggingSelection"
+      class="border-primary bg-primary/15 pointer-events-none fixed z-[100] border"
+      :style="dragSelectionStyle"
     />
     <CreateSeriesDialog
       v-model:open="showCreateSeriesDialog"
-      :book-ids="[...selectedBookIds]"
+      :book-ids="orderedSelectedBookIds"
+      :replace-existing-series="replaceExistingSeries"
       @created="handleSeriesCreated"
     />
+
+    <AlertDialog
+      :open="showSeriesConflictDialog"
+      @update:open="showSeriesConflictDialog = $event"
+    >
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>기존 시리즈를 해체하시겠습니까?</AlertDialogTitle>
+          <AlertDialogDescription>
+            선택한 작품이 속한 기존 시리즈 {{ conflictingSeriesCount }}개는
+            자동으로 해체·삭제됩니다. 에피소드와 실제 파일은 삭제되지 않으며,
+            선택한 순서로 새 시리즈를 만듭니다.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>취소</AlertDialogCancel>
+          <AlertDialogAction @click="confirmSeriesReplacement">
+            계속
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
 
     <SeriesDetailDialog
       :open="showSeriesDetailDialog"

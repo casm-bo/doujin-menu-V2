@@ -82,6 +82,10 @@ const openInNewWindow = () => {
 };
 
 const handleCardClick = (event: MouseEvent) => {
+  if (event.shiftKey) {
+    emit("toggle-select", event);
+    return;
+  }
   if (isOffline.value) {
     showOfflineToast();
     return;
@@ -257,8 +261,9 @@ const confirmDeleteBook = async () => {
   <ContextMenu>
     <ContextMenuTrigger>
       <LightCard
-        class="flex h-full cursor-pointer flex-col gap-0 overflow-hidden py-0 transition-shadow hover:shadow-lg"
-        :class="{ 'ring-primary ring-2': selected }"
+        :data-book-id="book.id"
+        class="flex h-full cursor-pointer flex-col gap-0 overflow-hidden py-0 transition-all duration-150 hover:shadow-lg"
+        :class="{ 'ring-primary scale-[0.98] ring-2': selected }"
         @click="handleCardClick"
       >
         <CardContent class="relative p-0">
@@ -277,8 +282,8 @@ const confirmDeleteBook = async () => {
             오프라인
           </Badge>
           <div
-            class="absolute top-2 left-2 z-10 flex size-8 items-center justify-center"
-            @click.stop="emit('toggle-select')"
+            class="absolute top-2 left-2 z-10 flex size-8 items-center justify-center rounded-md transition-colors hover:bg-black/70 hover:text-white"
+            @click.stop="emit('toggle-select', $event)"
           >
             <Checkbox
               :model-value="selected"
@@ -297,7 +302,7 @@ const confirmDeleteBook = async () => {
             읽음
           </div>
           <button
-            class="absolute right-2 bottom-2 flex size-8 items-center justify-center rounded-full bg-black/65 text-white"
+            class="absolute right-2 bottom-2 flex size-8 items-center justify-center rounded-full bg-black/65 text-white transition-colors hover:bg-black/90"
             :aria-label="
               (
                 book.series_collection_id

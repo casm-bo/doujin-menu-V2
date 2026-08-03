@@ -59,10 +59,10 @@ const {
     class="group relative cursor-pointer overflow-hidden rounded-lg border"
     :class="{
       'opacity-50': isDownloading,
-      'opacity-[0.85]': isInLibrary && !isDownloading,
       'bg-red-50/50': isDownloadFailed,
       'ring-2 ring-blue-500': selected, // 선택 시 파란색 테두리 추가
     }"
+    :style="{ opacity: isInLibrary && !isDownloading ? 0.85 : undefined }"
     @click="emit('select-gallery', gallery)"
   >
     <div class="relative aspect-3/4 h-auto w-full overflow-hidden">

@@ -585,9 +585,10 @@ export async function handleCreateSeriesCollection(data: {
   description?: string;
   cover_image?: string;
   bookIds?: number[];
+  replaceExistingSeries?: boolean;
 }) {
   try {
-    const bookIds = [...new Set(data.bookIds || [])];
+    let bookIds = [...new Set(data.bookIds || [])];
     const created = await db.transaction(async (trx) => {
       if (bookIds.length > 0) {
         const selectedBooks = await trx("Book")
@@ -596,10 +597,48 @@ export async function handleCreateSeriesCollection(data: {
         if (selectedBooks.length !== bookIds.length) {
           throw new Error("선택한 책 중 라이브러리에 없는 책이 있습니다");
         }
-        if (selectedBooks.some((book) => book.series_collection_id != null)) {
+        const selectedById = new Map(
+          selectedBooks.map((book) => [book.id, book]),
+        );
+        const existingSeriesIds = [
+          ...new Set(
+            selectedBooks
+              .map((book) => book.series_collection_id)
+              .filter((id): id is number => id != null),
+          ),
+        ];
+        if (existingSeriesIds.length > 0 && !data.replaceExistingSeries) {
           throw new Error(
             "이미 시리즈에 속한 책은 새 시리즈에 추가할 수 없습니다",
           );
+        }
+        if (existingSeriesIds.length > 0) {
+          const seriesBooks = await trx("Book")
+            .select("id", "series_collection_id", "series_order_index")
+            .whereIn("series_collection_id", existingSeriesIds)
+            .orderBy("series_order_index", "asc");
+          const booksBySeries = new Map<number, number[]>();
+          for (const book of seriesBooks) {
+            const ids = booksBySeries.get(book.series_collection_id) || [];
+            ids.push(book.id);
+            booksBySeries.set(book.series_collection_id, ids);
+          }
+          bookIds = [
+            ...new Set(
+              bookIds.flatMap((bookId) => {
+                const seriesId = selectedById.get(bookId)?.series_collection_id;
+                return seriesId
+                  ? booksBySeries.get(seriesId) || [bookId]
+                  : [bookId];
+              }),
+            ),
+          ];
+          await trx("Book")
+            .whereIn("series_collection_id", existingSeriesIds)
+            .update({ series_collection_id: null, series_order_index: null });
+          await trx("SeriesCollection")
+            .whereIn("id", existingSeriesIds)
+            .delete();
         }
       }
 

@@ -10,7 +10,6 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import {
   Dialog,
   DialogContent,
@@ -18,16 +17,15 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import { Icon } from "@iconify/vue";
 import { useMutation, useQuery } from "@tanstack/vue-query";
 import { computed, onBeforeUnmount, ref, watch } from "vue";
-import { useRouter } from "vue-router";
+import { useRoute, useRouter } from "vue-router";
 import { toast } from "vue-sonner";
 import type { SeriesCollectionWithBooks } from "../../../main/db/types";
 import type { Book } from "../../../types/ipc";
 import {
+  deleteSeriesCollection,
   getSeriesCollectionById,
   getThumbnailUrl,
   removeBookFromSeries,
@@ -36,6 +34,7 @@ import {
 } from "../../api";
 import AddBookToSeriesDialog from "./AddBookToSeriesDialog.vue";
 import BookDetailDialog from "./BookDetailDialog.vue";
+import MetadataField from "./MetadataField.vue";
 import { reorderForDrop, type DropPosition } from "./seriesReorder";
 import { getSeriesResumeTarget } from "./seriesResume";
 
@@ -50,6 +49,11 @@ const emit = defineEmits<{
   updated: [];
 }>();
 const router = useRouter();
+const route = useRoute();
+const dialogOpen = computed(() => props.open && route.name !== "Viewer");
+const updateDialogOpen = (value: boolean) => {
+  if (route.name !== "Viewer") emit("update:open", value);
+};
 
 const searchInDownloader = (text: string, prefix: string) => {
   const query =
@@ -64,13 +68,13 @@ const searchInDownloader = (text: string, prefix: string) => {
 // 편집 모드
 const isEditing = ref(false);
 const editName = ref("");
-const editDescription = ref("");
 
 // 책 추가 다이얼로그
 const showAddBookDialog = ref(false);
 
 // 책 제거 확인 다이얼로그
 const showRemoveDialog = ref(false);
+const showDeleteSeriesDialog = ref(false);
 const bookToRemove = ref<number | null>(null);
 
 // 드래그 앤 드롭 상태
@@ -117,13 +121,8 @@ watch(
 
 // 시리즈 정보 업데이트 뮤테이션
 const updateMutation = useMutation({
-  mutationFn: ({
-    id,
-    data,
-  }: {
-    id: number;
-    data: { name?: string; description?: string };
-  }) => updateSeriesCollection(id, data),
+  mutationFn: ({ id, data }: { id: number; data: { name?: string } }) =>
+    updateSeriesCollection(id, data),
   onSuccess: () => {
     toast.success("시리즈 정보가 업데이트되었습니다");
     isEditing.value = false;
@@ -146,6 +145,17 @@ const removeBookMutation = useMutation({
   onError: (error) => {
     toast.error(`제거 실패: ${error.message}`);
   },
+});
+
+const deleteSeriesMutation = useMutation({
+  mutationFn: () => deleteSeriesCollection(props.series!.id),
+  onSuccess: () => {
+    toast.success("시리즈를 삭제했습니다. 에피소드는 유지됩니다");
+    showDeleteSeriesDialog.value = false;
+    emit("update:open", false);
+    emit("updated");
+  },
+  onError: (error) => toast.error(`시리즈 삭제 실패: ${error.message}`),
 });
 
 const flushReorder = () => {
@@ -193,7 +203,6 @@ watch(
   (newSeries) => {
     if (newSeries) {
       editName.value = newSeries.name;
-      editDescription.value = newSeries.description || "";
     }
   },
   { immediate: true },
@@ -202,27 +211,26 @@ watch(
 // 편집 시작
 const startEdit = () => {
   isEditing.value = true;
-  editName.value = props.series?.name || "";
-  editDescription.value = props.series?.description || "";
+  editName.value = seriesDetail.value?.name || props.series?.name || "";
 };
 
 // 편집 취소
 const cancelEdit = () => {
   isEditing.value = false;
-  editName.value = props.series?.name || "";
-  editDescription.value = props.series?.description || "";
+  editName.value = seriesDetail.value?.name || props.series?.name || "";
 };
 
 // 저장
 const saveEdit = () => {
   if (!props.series) return;
+  if (!editName.value.trim()) {
+    toast.error("시리즈 제목을 입력해주세요");
+    return;
+  }
 
   updateMutation.mutate({
     id: props.series.id,
-    data: {
-      name: editName.value,
-      description: editDescription.value || undefined,
-    },
+    data: { name: editName.value.trim() },
   });
 };
 
@@ -251,7 +259,6 @@ const firstBook = computed(() => books.value[0] || null);
 const resumeTarget = computed(() => getSeriesResumeTarget(books.value));
 const openReader = (book: Book | null, page: number) => {
   if (!book) return;
-  emit("update:open", false);
   router.push({
     name: "Viewer",
     params: { id: book.id },
@@ -270,6 +277,26 @@ const seriesArtists = uniqueNames("artists");
 const seriesTags = uniqueNames("tags");
 const seriesGroups = uniqueNames("groups");
 const seriesCharacters = uniqueNames("characters");
+const uniqueBookValues = (key: "hitomi_id" | "type") =>
+  computed(() => [
+    ...new Set(
+      books.value.map((book) => book[key]).filter(Boolean) as string[],
+    ),
+  ]);
+const seriesHitomiIds = uniqueBookValues("hitomi_id");
+const seriesTypes = uniqueBookValues("type");
+const seriesLanguages = computed(() => [
+  ...new Set(
+    books.value
+      .map((book) => book.language_name_local || book.language_name_english)
+      .filter(Boolean) as string[],
+  ),
+]);
+
+const handleEpisodeUpdated = async () => {
+  await refetch();
+  emit("updated");
+};
 
 // 썸네일 URL 생성
 const getCoverUrl = (book: Book) => {
@@ -362,7 +389,7 @@ const excludeBookIds = computed(() => books.value.map((book) => book.id));
 </script>
 
 <template>
-  <Dialog :open="props.open" @update:open="emit('update:open', $event)">
+  <Dialog :open="dialogOpen" @update:open="updateDialogOpen">
     <DialogContent
       class="flex max-h-[90vh] w-[calc(100vw-2rem)] flex-col overflow-hidden sm:max-w-[900px]"
     >
@@ -381,7 +408,14 @@ const excludeBookIds = computed(() => books.value.map((book) => book.id));
             />
             <div class="flex min-w-0 flex-1 flex-col gap-3">
               <div class="flex items-start justify-between gap-3">
+                <Input
+                  v-if="isEditing"
+                  v-model="editName"
+                  class="h-auto flex-1 py-2 text-xl font-bold"
+                  aria-label="시리즈 제목"
+                />
                 <h2
+                  v-else
                   class="text-2xl font-bold"
                   @contextmenu.prevent="
                     searchInDownloader(
@@ -392,61 +426,90 @@ const excludeBookIds = computed(() => books.value.map((book) => book.id));
                 >
                   {{ seriesDetail?.name || series?.name }}
                 </h2>
-                <Button
-                  v-if="!isEditing"
-                  variant="outline"
-                  size="sm"
-                  @click="startEdit"
-                >
-                  <Icon icon="solar:pen-bold-duotone" class="mr-2 h-4 w-4" />
-                  이름변경
-                </Button>
+                <div class="flex shrink-0 gap-2">
+                  <template v-if="isEditing">
+                    <Button variant="outline" size="sm" @click="cancelEdit">
+                      취소
+                    </Button>
+                    <Button
+                      size="sm"
+                      :disabled="updateMutation.isPending.value"
+                      @click="saveEdit"
+                    >
+                      저장
+                    </Button>
+                  </template>
+                  <Button v-else variant="outline" size="sm" @click="startEdit">
+                    <Icon icon="solar:pen-bold-duotone" class="mr-2 h-4 w-4" />
+                    편집
+                  </Button>
+                  <Button
+                    v-if="!isEditing"
+                    variant="destructive"
+                    size="sm"
+                    @click="showDeleteSeriesDialog = true"
+                  >
+                    <Icon
+                      icon="solar:trash-bin-trash-bold-duotone"
+                      class="mr-2 h-4 w-4"
+                    />
+                    시리즈 삭제
+                  </Button>
+                </div>
               </div>
-              <div v-if="seriesArtists.length" class="flex flex-wrap gap-1">
-                <Badge
-                  v-for="name in seriesArtists"
-                  :key="name"
-                  variant="outline"
-                  class="cursor-context-menu"
-                  @contextmenu.prevent="searchInDownloader(name, 'artist')"
-                  >{{ name }}</Badge
-                >
+              <div class="grid gap-2">
+                <MetadataField
+                  label="Hitomi ID"
+                  icon="solar:hashtag-circle-bold-duotone"
+                  :values="seriesHitomiIds"
+                  @activate="searchInDownloader($event, 'id')"
+                  @search="searchInDownloader($event, 'id')"
+                />
+                <MetadataField
+                  label="작가"
+                  icon="solar:user-bold-duotone"
+                  :values="seriesArtists"
+                  @activate="searchInDownloader($event, 'artist')"
+                  @search="searchInDownloader($event, 'artist')"
+                />
+                <MetadataField
+                  label="그룹"
+                  icon="solar:users-group-rounded-bold-duotone"
+                  :values="seriesGroups"
+                  @activate="searchInDownloader($event, 'group')"
+                  @search="searchInDownloader($event, 'group')"
+                />
+                <MetadataField
+                  label="태그"
+                  icon="solar:tag-bold-duotone"
+                  :values="seriesTags"
+                  @activate="searchInDownloader($event, 'tag')"
+                  @search="searchInDownloader($event, 'tag')"
+                />
+                <MetadataField
+                  label="캐릭터"
+                  icon="solar:user-speak-bold-duotone"
+                  :values="seriesCharacters"
+                  @activate="searchInDownloader($event, 'character')"
+                  @search="searchInDownloader($event, 'character')"
+                />
+                <MetadataField
+                  label="유형"
+                  icon="solar:bookmark-bold-duotone"
+                  :values="seriesTypes"
+                  @activate="searchInDownloader($event, 'type')"
+                  @search="searchInDownloader($event, 'type')"
+                />
+                <MetadataField
+                  label="언어"
+                  icon="solar:translation-bold-duotone"
+                  :values="seriesLanguages"
+                  @activate="searchInDownloader($event, 'language')"
+                  @search="searchInDownloader($event, 'language')"
+                />
               </div>
-              <div v-if="seriesGroups.length" class="flex flex-wrap gap-1">
-                <Badge
-                  v-for="name in seriesGroups"
-                  :key="name"
-                  variant="secondary"
-                  class="cursor-context-menu"
-                  @contextmenu.prevent="searchInDownloader(name, 'group')"
-                  >{{ name }}</Badge
-                >
-              </div>
-              <div v-if="seriesTags.length" class="flex flex-wrap gap-1">
-                <Badge
-                  v-for="name in seriesTags"
-                  :key="name"
-                  variant="secondary"
-                  class="cursor-context-menu"
-                  @contextmenu.prevent="searchInDownloader(name, 'tag')"
-                  >{{ name }}</Badge
-                >
-              </div>
-              <div v-if="seriesCharacters.length" class="flex flex-wrap gap-1">
-                <Badge
-                  v-for="name in seriesCharacters"
-                  :key="name"
-                  variant="secondary"
-                  class="cursor-context-menu"
-                  @contextmenu.prevent="searchInDownloader(name, 'character')"
-                  >{{ name }}</Badge
-                >
-              </div>
-              <p
-                v-if="seriesDetail?.description || series?.description"
-                class="text-muted-foreground text-sm"
-              >
-                {{ seriesDetail?.description || series?.description }}
+              <p class="text-muted-foreground text-sm">
+                {{ seriesDetail?.description || series?.description || "N/A" }}
               </p>
               <div class="mt-auto flex justify-end gap-2">
                 <Button
@@ -468,38 +531,6 @@ const excludeBookIds = computed(() => books.value.map((book) => book.id));
               </div>
             </div>
           </div>
-          <div v-if="isEditing" class="space-y-4 rounded-lg border p-4">
-            <div class="space-y-2">
-              <Label for="series-name">시리즈명</Label>
-              <Input
-                id="series-name"
-                v-model="editName"
-                placeholder="시리즈 이름을 입력하세요"
-              />
-            </div>
-            <div class="space-y-2">
-              <Label for="series-description">설명</Label>
-              <Textarea
-                id="series-description"
-                v-model="editDescription"
-                placeholder="시리즈 설명을 입력하세요 (선택사항)"
-                rows="3"
-              />
-            </div>
-            <div class="flex justify-end gap-2">
-              <Button variant="outline" size="sm" @click="cancelEdit"
-                >취소</Button
-              >
-              <Button
-                size="sm"
-                :disabled="updateMutation.isPending.value"
-                @click="saveEdit"
-              >
-                저장
-              </Button>
-            </div>
-          </div>
-
           <!-- 소속 책 목록 -->
           <div class="space-y-4">
             <div class="flex items-center justify-between">
@@ -686,7 +717,36 @@ const excludeBookIds = computed(() => books.value.map((book) => book.id));
     </DialogContent>
   </Dialog>
 
-  <BookDetailDialog v-model="showEpisodeDetail" :book="selectedEpisode" />
+  <BookDetailDialog
+    v-model="showEpisodeDetail"
+    :book="selectedEpisode"
+    suspend-while-viewing
+    @updated="handleEpisodeUpdated"
+  />
+
+  <AlertDialog
+    :open="showDeleteSeriesDialog"
+    @update:open="showDeleteSeriesDialog = $event"
+  >
+    <AlertDialogContent>
+      <AlertDialogHeader>
+        <AlertDialogTitle>시리즈를 삭제하시겠습니까?</AlertDialogTitle>
+        <AlertDialogDescription>
+          시리즈만 삭제합니다. 안에 있던 에피소드와 실제 파일은 삭제하지
+          않습니다.
+        </AlertDialogDescription>
+      </AlertDialogHeader>
+      <AlertDialogFooter>
+        <AlertDialogCancel>취소</AlertDialogCancel>
+        <AlertDialogAction
+          :disabled="deleteSeriesMutation.isPending.value"
+          @click="deleteSeriesMutation.mutate()"
+        >
+          시리즈 삭제
+        </AlertDialogAction>
+      </AlertDialogFooter>
+    </AlertDialogContent>
+  </AlertDialog>
 
   <!-- 책 추가 다이얼로그 -->
   <AddBookToSeriesDialog

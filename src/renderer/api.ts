@@ -1,5 +1,6 @@
 import type {
   DeleteDuplicatesResult,
+  EditableBookMetadata,
   FilterParams,
   Preset,
   TypedIpcRenderer,
@@ -87,6 +88,17 @@ export async function deleteBook(bookId: number) {
   } else {
     throw new Error(result.error || "Failed to delete book");
   }
+}
+
+export async function updateBookMetadata(
+  bookId: number,
+  metadata: EditableBookMetadata,
+) {
+  const result = await ipcRenderer.invoke("update-book-metadata", {
+    bookId,
+    metadata,
+  });
+  if (!result.success) throw new Error(result.error || "메타데이터 저장 실패");
 }
 
 // 중복 책 그룹 목록 조회
@@ -365,6 +377,7 @@ export async function createSeriesCollection(data: {
   description?: string;
   cover_image?: string;
   bookIds?: number[];
+  replaceExistingSeries?: boolean;
 }) {
   const result = await ipcRenderer.invoke("create-series-collection", data);
   if (result.success) {

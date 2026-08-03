@@ -343,9 +343,13 @@ import {
   handleGetNextBook,
   handleGetPrevBook,
   handleSetSeriesRead,
+  handleUpdateBookMetadata,
 } from "../../../src/main/handlers/bookHandler.js";
 import { store as configStore } from "../../../src/main/handlers/configHandler.js";
-import { handleCreateSeriesCollection } from "../../../src/main/handlers/seriesCollectionHandler.js";
+import {
+  handleCreateSeriesCollection,
+  handleDeleteSeriesCollection,
+} from "../../../src/main/handlers/seriesCollectionHandler.js";
 
 let db: Knex;
 
@@ -364,6 +368,61 @@ describe("handleGetBooks - 통합 테스트", () => {
 
   beforeEach(async () => {
     await truncateAll(db);
+  });
+
+  it("updates editable metadata and replaces relation values", async () => {
+    const oldArtist = await seedArtist(db, "old artist");
+    const book = await seedBook(db, { path: "/editable", title: "old title" });
+    await linkBookArtist(db, book.id, oldArtist.id);
+
+    const result = await handleUpdateBookMetadata({
+      bookId: book.id,
+      metadata: {
+        title: "new title",
+        hitomi_id: "12345",
+        type: "doujinshi",
+        language_name_local: "한국어",
+        artists: ["new artist", "new artist"],
+        tags: ["tag one"],
+        series: ["source series"],
+        groups: ["group one"],
+        characters: ["character one"],
+      },
+    });
+
+    expect(result).toEqual({ success: true });
+    const updated = await handleGetBook(book.id);
+    expect(updated).toMatchObject({
+      title: "new title",
+      hitomi_id: "12345",
+      type: "doujinshi",
+      language_name_local: "한국어",
+      artists: [{ name: "new artist" }],
+      tags: [{ name: "tag one" }],
+      series: [{ name: "source series" }],
+      groups: [{ name: "group one" }],
+      characters: [{ name: "character one" }],
+    });
+
+    expect(
+      await handleUpdateBookMetadata({
+        bookId: book.id,
+        metadata: {
+          title: "",
+          hitomi_id: null,
+          type: null,
+          language_name_local: null,
+          artists: [],
+          tags: [],
+          series: [],
+          groups: [],
+          characters: [],
+        },
+      }),
+    ).toEqual({ success: true });
+    expect(await db("Book").where("id", book.id).first("title")).toEqual({
+      title: "",
+    });
   });
 
   afterAll(async () => {
@@ -387,6 +446,61 @@ describe("handleGetBooks - 통합 테스트", () => {
           .orderBy("series_order_index")
           .pluck("series_collection_id"),
       ).toEqual([result.data!.id, result.data!.id]);
+    });
+
+    it("expands a selected series in episode order at its visible position", async () => {
+      const [oldSeriesId] = await db("SeriesCollection").insert({
+        name: "Old",
+      });
+      const selected = await seedBook(db, {
+        path: "/old/selected",
+        series_collection_id: oldSeriesId,
+        series_order_index: 0,
+      });
+      const released = await seedBook(db, {
+        path: "/old/released",
+        series_collection_id: oldSeriesId,
+        series_order_index: 1,
+      });
+      const standalone = await seedBook(db, { path: "/standalone" });
+      const after = await seedBook(db, { path: "/after" });
+
+      const result = await handleCreateSeriesCollection({
+        name: "New",
+        bookIds: [standalone.id, selected.id, after.id],
+        replaceExistingSeries: true,
+      });
+
+      expect(result.success).toBe(true);
+      expect(
+        await db("SeriesCollection").where("id", oldSeriesId).first(),
+      ).toBeUndefined();
+      expect(
+        await db("Book")
+          .whereIn("id", [standalone.id, selected.id, released.id, after.id])
+          .orderBy("series_order_index")
+          .pluck("id"),
+      ).toEqual([standalone.id, selected.id, released.id, after.id]);
+    });
+
+    it("deletes only the series and releases its episodes", async () => {
+      const [seriesId] = await db("SeriesCollection").insert({
+        name: "Delete",
+      });
+      const episode = await seedBook(db, {
+        path: "/episode",
+        series_collection_id: seriesId,
+        series_order_index: 3,
+      });
+
+      expect((await handleDeleteSeriesCollection(seriesId)).success).toBe(true);
+      expect(
+        await db("SeriesCollection").where("id", seriesId).first(),
+      ).toBeUndefined();
+      expect(await db("Book").where("id", episode.id).first()).toMatchObject({
+        series_collection_id: null,
+        series_order_index: null,
+      });
     });
 
     it("필터 없으면 모든 책 반환", async () => {
@@ -473,6 +587,18 @@ describe("handleGetBooks - 통합 테스트", () => {
 
       expect(await getResultIds({ seriesStatus: "series" })).toEqual([
         first.id,
+      ]);
+    });
+
+    it("seriesStatus=standalone excludes series", async () => {
+      const [seriesId] = await db("SeriesCollection").insert({
+        name: "Series",
+      });
+      await seedBook(db, { path: "/series", series_collection_id: seriesId });
+      const standalone = await seedBook(db, { path: "/standalone" });
+
+      expect(await getResultIds({ seriesStatus: "standalone" })).toEqual([
+        standalone.id,
       ]);
     });
 

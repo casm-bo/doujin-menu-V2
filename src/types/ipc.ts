@@ -15,7 +15,7 @@ export interface FilterParams {
   sortOrder?: "asc" | "desc";
   isFavorite?: boolean;
   offlineStatus?: "all" | "online" | "offline";
-  seriesStatus?: "all" | "series";
+  seriesStatus?: "all" | "series" | "standalone";
 }
 
 export interface Preset {
@@ -77,6 +77,20 @@ export interface Book {
   groups: { name: string }[];
   characters: { name: string }[];
 }
+
+export interface EditableBookMetadata {
+  title: string;
+  hitomi_id: string | null;
+  type: string | null;
+  language_name_local: string | null;
+  artists: string[];
+  tags: string[];
+  series: string[];
+  groups: string[];
+  characters: string[];
+}
+
+export type MetadataRescanMode = "soft" | "hard";
 
 export interface BookHistory {
   history_id: number;
@@ -338,6 +352,10 @@ export interface IpcChannels {
     request: number; // bookId
     response: { success: boolean; error?: string };
   };
+  "update-book-metadata": {
+    request: { bookId: number; metadata: EditableBookMetadata };
+    response: { success: boolean; error?: string };
+  };
   // Statistics handlers
   "get-statistics": {
     request: void;
@@ -403,7 +421,7 @@ export interface IpcChannels {
     response: { success: boolean; error?: string };
   };
   "rescan-all-metadata": {
-    request: void;
+    request: MetadataRescanMode;
     response: { success: boolean; error?: string };
   };
   "add-library-folder": {
@@ -650,6 +668,7 @@ export interface IpcChannels {
       description?: string;
       cover_image?: string;
       bookIds?: number[];
+      replaceExistingSeries?: boolean;
       confidence_score?: number;
       is_auto_generated?: boolean;
       is_manually_edited?: boolean;

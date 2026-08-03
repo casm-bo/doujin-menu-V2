@@ -18,6 +18,7 @@ import { createSeriesCollection } from "../../api";
 interface Props {
   open: boolean;
   bookIds?: number[];
+  replaceExistingSeries?: boolean;
 }
 
 const props = defineProps<Props>();
@@ -33,7 +34,11 @@ const description = ref("");
 // 시리즈 생성 뮤테이션
 const createMutation = useMutation({
   mutationFn: (data: { name: string; description?: string }) =>
-    createSeriesCollection({ ...data, bookIds: props.bookIds }),
+    createSeriesCollection({
+      ...data,
+      bookIds: props.bookIds,
+      replaceExistingSeries: props.replaceExistingSeries,
+    }),
   onSuccess: () => {
     toast.success("시리즈가 생성되었습니다");
     emit("created");

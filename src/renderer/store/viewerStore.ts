@@ -19,7 +19,7 @@ export interface FilterParams {
   sortOrder?: "asc" | "desc";
   isFavorite?: boolean;
   offlineStatus?: "all" | "online" | "offline";
-  seriesStatus?: "all" | "series";
+  seriesStatus?: "all" | "series" | "standalone";
 }
 
 export const useViewerStore = defineStore("viewer", () => {
