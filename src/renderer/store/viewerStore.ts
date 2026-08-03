@@ -9,6 +9,7 @@ import {
   SORT_CYCLE,
   SORT_LABELS,
 } from "./sortCycle";
+import { clampViewerPage } from "./viewerPage";
 
 export interface FilterParams {
   searchQuery?: string;
@@ -284,9 +285,10 @@ export const useViewerStore = defineStore("viewer", () => {
   }
 
   function goToPage(page: number) {
-    if (page < 1 || page > totalPages.value) return;
+    const clampedPage = clampViewerPage(page, totalPages.value);
+    if (clampedPage === null) return;
 
-    let targetPage = page;
+    let targetPage = clampedPage;
     if (viewerDoublePageView.value && readingMode.value !== "webtoon") {
       if (viewerShowCoverAlone.value) {
         // 표지(1p)를 제외한 나머지 페이지(2p~)는 짝수 페이지로 정렬
