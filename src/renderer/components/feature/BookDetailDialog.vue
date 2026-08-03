@@ -95,7 +95,10 @@ const searchInDownloader = (text: string, prefix: string) => {
           우클릭 시 다운로더에서 검색
         </DialogDescription>
       </DialogHeader>
-      <div v-if="book" class="min-h-0 flex-1 space-y-6 overflow-y-auto py-2 pr-2">
+      <div
+        v-if="book"
+        class="min-h-0 flex-1 space-y-6 overflow-y-auto py-2 pr-2"
+      >
         <!-- 커버 이미지와 기본 정보 -->
         <div class="flex gap-6">
           <img
@@ -206,54 +209,15 @@ const searchInDownloader = (text: string, prefix: string) => {
                 {{ book.language_name_english }}
               </Badge>
             </div>
-          </div>
-        </div>
 
-        <Separator />
-
-        <div class="space-y-3">
-          <div class="flex items-center justify-between gap-3">
-            <h4 class="font-semibold">미리보기</h4>
-            <ToggleGroup
-              type="single"
-              :model-value="viewMode"
-              variant="outline"
-              size="sm"
-              @update:model-value="setViewMode"
-            >
-              <ToggleGroupItem value="scroll" aria-label="크게 보기" title="크게 보기">
-                <Icon icon="solar:gallery-wide-bold-duotone" class="h-4 w-4" />
-              </ToggleGroupItem>
-              <ToggleGroupItem value="grid" aria-label="여러 개 보기" title="여러 개 보기">
-                <Icon icon="solar:widget-5-bold-duotone" class="h-4 w-4" />
-              </ToggleGroupItem>
-            </ToggleGroup>
-          </div>
-          <div
-            v-if="viewMode === 'scroll'"
-            class="flex h-64 gap-3 overflow-x-auto rounded-md border p-2"
-          >
-            <img
-              v-for="(page, index) in previewPages"
-              :key="page"
-              :src="page"
-              :alt="`${index + 1}페이지`"
-              class="h-full w-auto shrink-0 rounded object-contain"
-              loading="lazy"
-            />
-          </div>
-          <div
-            v-else
-            class="grid max-h-80 grid-cols-3 gap-2 overflow-y-auto rounded-md border p-2 sm:grid-cols-5"
-          >
-            <img
-              v-for="(page, index) in previewPages"
-              :key="page"
-              :src="page"
-              :alt="`${index + 1}페이지`"
-              class="aspect-[3/4] w-full rounded object-cover"
-              loading="lazy"
-            />
+            <div class="mt-auto flex justify-end gap-2">
+              <Button variant="outline" @click="openReader(1)">
+                처음부터 보기
+              </Button>
+              <Button @click="openReader(Math.max(1, book.current_page || 1))">
+                이어서 보기
+              </Button>
+            </div>
           </div>
         </div>
 
@@ -378,12 +342,74 @@ const searchInDownloader = (text: string, prefix: string) => {
           </div>
         </div>
 
-        <div class="flex justify-end gap-2">
-          <Button variant="outline" @click="openReader(1)">처음부터 보기</Button>
-          <Button @click="openReader(Math.max(1, book.current_page || 1))">
-            이어서 보기
-          </Button>
-          <Button variant="secondary" @click="open = false">닫기</Button>
+        <Separator />
+
+        <div class="space-y-3">
+          <div class="flex items-center justify-between gap-3">
+            <h4 class="font-semibold">미리보기</h4>
+            <ToggleGroup
+              type="single"
+              :model-value="viewMode"
+              variant="outline"
+              size="sm"
+              @update:model-value="setViewMode"
+            >
+              <ToggleGroupItem
+                value="scroll"
+                aria-label="크게 보기"
+                title="크게 보기"
+              >
+                <Icon icon="solar:gallery-wide-bold-duotone" class="h-4 w-4" />
+              </ToggleGroupItem>
+              <ToggleGroupItem
+                value="grid"
+                aria-label="여러 개 보기"
+                title="여러 개 보기"
+              >
+                <Icon icon="solar:widget-5-bold-duotone" class="h-4 w-4" />
+              </ToggleGroupItem>
+            </ToggleGroup>
+          </div>
+          <div
+            v-if="viewMode === 'scroll'"
+            class="flex h-64 gap-3 overflow-x-auto rounded-md border p-2"
+          >
+            <button
+              v-for="(page, index) in previewPages"
+              :key="page"
+              type="button"
+              class="h-full shrink-0 cursor-pointer"
+              :title="`${index + 1}페이지부터 보기`"
+              @click="openReader(index + 1)"
+            >
+              <img
+                :src="page"
+                :alt="`${index + 1}페이지`"
+                class="h-full w-auto rounded object-contain"
+                loading="lazy"
+              />
+            </button>
+          </div>
+          <div
+            v-else
+            class="grid max-h-80 grid-cols-3 gap-2 overflow-y-auto rounded-md border p-2 sm:grid-cols-5"
+          >
+            <button
+              v-for="(page, index) in previewPages"
+              :key="page"
+              type="button"
+              class="cursor-pointer"
+              :title="`${index + 1}페이지부터 보기`"
+              @click="openReader(index + 1)"
+            >
+              <img
+                :src="page"
+                :alt="`${index + 1}페이지`"
+                class="aspect-[3/4] w-full rounded object-cover"
+                loading="lazy"
+              />
+            </button>
+          </div>
         </div>
       </div>
       <div v-else class="text-muted-foreground py-8 text-center">

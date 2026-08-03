@@ -37,6 +37,7 @@ import {
 import AddBookToSeriesDialog from "./AddBookToSeriesDialog.vue";
 import BookDetailDialog from "./BookDetailDialog.vue";
 import { reorderForDrop, type DropPosition } from "./seriesReorder";
+import { getSeriesResumeTarget } from "./seriesResume";
 
 interface Props {
   open: boolean;
@@ -247,6 +248,16 @@ const handleBookClick = (book: Book) => {
 };
 
 const firstBook = computed(() => books.value[0] || null);
+const resumeTarget = computed(() => getSeriesResumeTarget(books.value));
+const openReader = (book: Book | null, page: number) => {
+  if (!book) return;
+  emit("update:open", false);
+  router.push({
+    name: "Viewer",
+    params: { id: book.id },
+    query: { start: String(page) },
+  });
+};
 const uniqueNames = (key: "artists" | "tags" | "groups" | "characters") =>
   computed(() => [
     ...new Set(
@@ -368,17 +379,25 @@ const excludeBookIds = computed(() => books.value.map((book) => book.id));
               :alt="series?.name"
               class="h-56 w-40 rounded-lg object-cover shadow"
             />
-            <div class="min-w-0 flex-1 space-y-3">
+            <div class="flex min-w-0 flex-1 flex-col gap-3">
               <div class="flex items-start justify-between gap-3">
                 <h2
                   class="text-2xl font-bold"
                   @contextmenu.prevent="
-                    searchInDownloader(seriesDetail?.name || series?.name || '', 'series')
+                    searchInDownloader(
+                      seriesDetail?.name || series?.name || '',
+                      'series',
+                    )
                   "
                 >
                   {{ seriesDetail?.name || series?.name }}
                 </h2>
-                <Button v-if="!isEditing" variant="outline" size="sm" @click="startEdit">
+                <Button
+                  v-if="!isEditing"
+                  variant="outline"
+                  size="sm"
+                  @click="startEdit"
+                >
                   <Icon icon="solar:pen-bold-duotone" class="mr-2 h-4 w-4" />
                   이름변경
                 </Button>
@@ -390,7 +409,8 @@ const excludeBookIds = computed(() => books.value.map((book) => book.id));
                   variant="outline"
                   class="cursor-context-menu"
                   @contextmenu.prevent="searchInDownloader(name, 'artist')"
-                >{{ name }}</Badge>
+                  >{{ name }}</Badge
+                >
               </div>
               <div v-if="seriesGroups.length" class="flex flex-wrap gap-1">
                 <Badge
@@ -399,7 +419,8 @@ const excludeBookIds = computed(() => books.value.map((book) => book.id));
                   variant="secondary"
                   class="cursor-context-menu"
                   @contextmenu.prevent="searchInDownloader(name, 'group')"
-                >{{ name }}</Badge>
+                  >{{ name }}</Badge
+                >
               </div>
               <div v-if="seriesTags.length" class="flex flex-wrap gap-1">
                 <Badge
@@ -408,7 +429,8 @@ const excludeBookIds = computed(() => books.value.map((book) => book.id));
                   variant="secondary"
                   class="cursor-context-menu"
                   @contextmenu.prevent="searchInDownloader(name, 'tag')"
-                >{{ name }}</Badge>
+                  >{{ name }}</Badge
+                >
               </div>
               <div v-if="seriesCharacters.length" class="flex flex-wrap gap-1">
                 <Badge
@@ -417,7 +439,8 @@ const excludeBookIds = computed(() => books.value.map((book) => book.id));
                   variant="secondary"
                   class="cursor-context-menu"
                   @contextmenu.prevent="searchInDownloader(name, 'character')"
-                >{{ name }}</Badge>
+                  >{{ name }}</Badge
+                >
               </div>
               <p
                 v-if="seriesDetail?.description || series?.description"
@@ -425,6 +448,24 @@ const excludeBookIds = computed(() => books.value.map((book) => book.id));
               >
                 {{ seriesDetail?.description || series?.description }}
               </p>
+              <div class="mt-auto flex justify-end gap-2">
+                <Button
+                  variant="outline"
+                  :disabled="!firstBook"
+                  @click="openReader(firstBook, 1)"
+                >
+                  처음부터 보기
+                </Button>
+                <Button
+                  :disabled="!resumeTarget"
+                  @click="
+                    resumeTarget &&
+                    openReader(resumeTarget.book, resumeTarget.page)
+                  "
+                >
+                  이어서 보기
+                </Button>
+              </div>
             </div>
           </div>
           <div v-if="isEditing" class="space-y-4 rounded-lg border p-4">
@@ -446,7 +487,9 @@ const excludeBookIds = computed(() => books.value.map((book) => book.id));
               />
             </div>
             <div class="flex justify-end gap-2">
-              <Button variant="outline" size="sm" @click="cancelEdit">취소</Button>
+              <Button variant="outline" size="sm" @click="cancelEdit"
+                >취소</Button
+              >
               <Button
                 size="sm"
                 :disabled="updateMutation.isPending.value"
