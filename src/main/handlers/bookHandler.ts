@@ -513,7 +513,6 @@ export const handleUpdateBookMetadata = async ({
   metadata: EditableBookMetadata;
 }) => {
   const title = metadata.title.trim();
-  if (!title) return { success: false, error: "제목은 비울 수 없습니다" };
 
   try {
     await db.transaction(async (trx) => {

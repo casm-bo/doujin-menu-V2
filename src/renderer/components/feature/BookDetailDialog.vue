@@ -125,10 +125,7 @@ const addValue = (field: ListField | ScalarField, value: string) => {
 };
 
 const saveMetadata = async () => {
-  if (!book.value || !draft.value.title.trim()) {
-    toast.error("제목을 입력해주세요");
-    return;
-  }
+  if (!book.value) return;
   saving.value = true;
   try {
     await updateBookMetadata(book.value.id, {
@@ -214,12 +211,21 @@ const searchInDownloader = (text: string, prefix: string) => {
           />
           <div class="flex flex-1 flex-col gap-3">
             <div class="flex items-start justify-between gap-3">
-              <Input
-                v-if="isEditing"
-                v-model="draft.title"
-                class="h-auto py-2 text-xl font-bold"
-                aria-label="제목"
-              />
+              <div v-if="isEditing" class="relative flex-1">
+                <Input
+                  v-model="draft.title"
+                  class="h-auto py-2 pr-9 text-xl font-bold"
+                  aria-label="제목"
+                />
+                <button
+                  type="button"
+                  class="text-destructive hover:bg-destructive/10 absolute top-1/2 right-2 inline-flex size-5 -translate-y-1/2 items-center justify-center rounded"
+                  aria-label="제목 삭제"
+                  @click="draft.title = ''"
+                >
+                  <Icon icon="solar:close-circle-bold" class="size-4" />
+                </button>
+              </div>
               <h3 v-else class="text-2xl leading-tight font-bold">
                 {{ book.title || "N/A" }}
               </h3>

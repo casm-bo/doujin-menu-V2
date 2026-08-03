@@ -1414,256 +1414,31 @@ export async function scanFile(
       isFile: stats.isFile(),
       name: path.basename(filePath),
     });
+    if (!processedBook) return;
 
-    if (processedBook) {
-      const { bookData, infoMetadata } = processedBook;
-      if (syncIdOverride) bookData.sync_id = cleanValue(syncIdOverride);
-      let bookId: number | undefined;
-      let shouldGenerateThumbnail = false;
-      const thumbnailRemovals: Pick<Book, "cover_path">[] = [];
+    if (syncIdOverride) {
+      processedBook.bookData.sync_id = cleanValue(syncIdOverride);
+    }
+    const result = await db.transaction((trx) =>
+      processBatchInTransaction(
+        [processedBook],
+        trx,
+        new Set<string>(),
+        metadataMode,
+      ),
+    );
+    await removeThumbnailFiles(result.thumbnailRemovals);
 
-      await db.transaction(async (trx) => {
-        const existingCandidates: ExistingScanBook[] = await trx("Book")
-          .where((query) => {
-            query.where("path", bookData.path);
-            if (bookData.sync_id) query.orWhere("sync_id", bookData.sync_id);
-          })
-          .select(
-            "id",
-            "title",
-            "path",
-            "cover_path",
-            "sync_id",
-            "is_offline",
-            "state_version",
-            "hitomi_id",
-            "type",
-            "language_name_english",
-            "language_name_local",
-          );
-        const existingBook = await resolveExistingBookForScan(
-          trx,
-          existingCandidates,
-          bookData.path,
-          bookData.sync_id,
-          thumbnailRemovals,
-        );
-
-        if (existingBook) {
-          bookId = existingBook.id;
-          const sourceTitle = cleanValue(infoMetadata.title);
-          const sourceHitomiId = cleanValue(infoMetadata.hitomi_id);
-          const sourceType = cleanValue(infoMetadata.type);
-          const sourceLanguage = cleanValue(infoMetadata.language);
-          await trx("Book")
-            .where("id", bookId)
-            .update({
-              title:
-                metadataMode === "hard"
-                  ? sourceTitle || ""
-                  : cleanValue(existingBook.title) || sourceTitle || "",
-              path: bookData.path,
-              page_count: bookData.page_count,
-              hitomi_id:
-                metadataMode === "hard"
-                  ? sourceHitomiId
-                  : (cleanValue(existingBook.hitomi_id) ?? sourceHitomiId),
-              type:
-                metadataMode === "hard"
-                  ? sourceType
-                  : (cleanValue(existingBook.type) ?? sourceType),
-              language_name_english:
-                metadataMode === "hard"
-                  ? null
-                  : existingBook.language_name_english,
-              language_name_local:
-                metadataMode === "hard"
-                  ? sourceLanguage
-                  : (cleanValue(existingBook.language_name_local) ??
-                    sourceLanguage),
-              ...(syncIdOverride
-                ? { sync_id: cleanValue(syncIdOverride) }
-                : {}),
-              file_mtime: bookData.file_mtime ?? null,
-              file_size: bookData.file_size ?? null,
-              is_offline: false,
-            });
-
-          // 업데이트를 위해 기존 연결 제거
-          if (metadataMode === "hard") {
-            await Promise.all(
-              [
-                "BookArtist",
-                "BookTag",
-                "BookSeries",
-                "BookGroup",
-                "BookCharacter",
-              ].map((table) => trx(table).where("book_id", bookId).del()),
-            );
-          }
-        } else {
-          const bookToInsert = {
-            title: cleanValue(bookData.title),
-            path: bookData.path,
-            page_count: bookData.page_count || 0,
-            added_at: bookData.added_at,
-            hitomi_id: cleanValue(bookData.hitomi_id),
-            type: cleanValue(bookData.type),
-            language_name_english: cleanValue(bookData.language_name_english),
-            language_name_local: cleanValue(bookData.language_name_local),
-            sync_id: cleanValue(bookData.sync_id),
-            file_mtime: bookData.file_mtime ?? null,
-            file_size: bookData.file_size ?? null,
-          };
-          const result = await trx("Book").insert(bookToInsert);
-          bookId = result[0];
-        }
-
-        // 아티스트, 그룹, 캐릭터, 태그, 시리즈 처리
-        const artistsToProcess =
-          infoMetadata.artists
-            ?.map((a) => cleanValue(a.name))
-            .filter(Boolean) || [];
-        for (const artistName of artistsToProcess) {
-          let artist = await trx("Artist").where("name", artistName).first();
-          if (!artist) {
-            const [newArtistId] = await trx("Artist").insert({
-              name: artistName,
-            });
-            artist = { id: newArtistId, name: artistName };
-          }
-          if (
-            !(await trx("BookArtist")
-              .where({ book_id: bookId, artist_id: artist.id })
-              .first())
-          ) {
-            await trx("BookArtist").insert({
-              book_id: bookId,
-              artist_id: artist.id,
-            });
-          }
-        }
-
-        const groupsToProcess =
-          infoMetadata.groups?.map((g) => cleanValue(g.name)).filter(Boolean) ||
-          [];
-        for (const groupName of groupsToProcess) {
-          let group = await trx("Group").where("name", groupName).first();
-          if (!group) {
-            const [newGroupId] = await trx("Group").insert({
-              name: groupName,
-            });
-            group = { id: newGroupId, name: groupName };
-          }
-          if (
-            !(await trx("BookGroup")
-              .where({ book_id: bookId, group_id: group.id })
-              .first())
-          ) {
-            await trx("BookGroup").insert({
-              book_id: bookId,
-              group_id: group.id,
-            });
-          }
-        }
-
-        const charactersToProcess =
-          infoMetadata.characters
-            ?.map((c) => cleanValue(c.name))
-            .filter(Boolean) || [];
-        for (const characterName of charactersToProcess) {
-          let character = await trx("Character")
-            .where("name", characterName)
-            .first();
-          if (!character) {
-            const [newCharacterId] = await trx("Character").insert({
-              name: characterName,
-            });
-            character = { id: newCharacterId, name: characterName };
-          }
-          if (
-            !(await trx("BookCharacter")
-              .where({ book_id: bookId, character_id: character.id })
-              .first())
-          ) {
-            await trx("BookCharacter").insert({
-              book_id: bookId,
-              character_id: character.id,
-            });
-          }
-        }
-
-        const tagsToProcess =
-          infoMetadata.tags?.map((t) => cleanValue(t.name)).filter(Boolean) ||
-          [];
-        for (const tagName of tagsToProcess) {
-          let tag = await trx("Tag").where("name", tagName).first();
-          if (!tag) {
-            const [newTagId] = await trx("Tag").insert({ name: tagName });
-            tag = { id: newTagId, name: tagName };
-          }
-          if (
-            !(await trx("BookTag")
-              .where({ book_id: bookId, tag_id: tag.id })
-              .first())
-          ) {
-            await trx("BookTag").insert({ book_id: bookId, tag_id: tag.id });
-          }
-        }
-
-        for (const seriesValue of infoMetadata.series || []) {
-          const seriesName = cleanValue(seriesValue.name);
-          if (!seriesName) continue;
-          let series = await trx("Series").where("name", seriesName).first();
-          if (!series) {
-            const [newSeriesId] = await trx("Series").insert({
-              name: seriesName,
-            });
-            series = { id: newSeriesId, name: seriesName };
-          }
-          if (
-            !(await trx("BookSeries")
-              .where({ book_id: bookId, series_id: series.id })
-              .first())
-          ) {
-            await trx("BookSeries").insert({
-              book_id: bookId,
-              series_id: series.id,
-            });
-          }
-        }
-
-        // 썸네일 생성 필요 여부 결정
-        const currentBookInDb = await trx("Book").where("id", bookId).first();
-        if (!currentBookInDb?.cover_path) {
-          shouldGenerateThumbnail = true;
-        } else {
-          try {
-            await fs.access(currentBookInDb.cover_path);
-          } catch {
-            shouldGenerateThumbnail = true;
-            console.warn(
-              `[Main] 기존 썸네일 파일을 찾을 수 없어 재생성합니다: Book ID ${bookId}`,
-            );
-          }
-        }
-      }); // 배치 트랜잭션 종료
-      await removeThumbnailFiles(thumbnailRemovals);
-
-      // 단일 파일 스캔 후 썸네일 생성 및 DB 업데이트
-      if (shouldGenerateThumbnail && bookId) {
-        const result = await generateThumbnailForBook(bookId);
-        if (result) {
-          await db("Book")
-            .where("id", result.bookId)
-            .update({ cover_path: result.thumbnailPath });
-        }
+    for (const bookId of result.thumbnailNeeded) {
+      const thumbnail = await generateThumbnailForBook(bookId);
+      if (thumbnail) {
+        await db("Book")
+          .where("id", thumbnail.bookId)
+          .update({ cover_path: thumbnail.thumbnailPath });
       }
     }
 
-    BrowserWindow.getAllWindows().forEach((window) => {
-      window.webContents.send("books-updated");
-    });
+    broadcastBooksUpdated();
     notifyCompanionLibraryChanged();
   } catch (error) {
     console.error(`[Main] 파일 스캔 오류 ${filePath}:`, error);

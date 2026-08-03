@@ -403,6 +403,26 @@ describe("handleGetBooks - 통합 테스트", () => {
       groups: [{ name: "group one" }],
       characters: [{ name: "character one" }],
     });
+
+    expect(
+      await handleUpdateBookMetadata({
+        bookId: book.id,
+        metadata: {
+          title: "",
+          hitomi_id: null,
+          type: null,
+          language_name_local: null,
+          artists: [],
+          tags: [],
+          series: [],
+          groups: [],
+          characters: [],
+        },
+      }),
+    ).toEqual({ success: true });
+    expect(await db("Book").where("id", book.id).first("title")).toEqual({
+      title: "",
+    });
   });
 
   afterAll(async () => {

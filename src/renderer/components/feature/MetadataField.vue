@@ -37,6 +37,11 @@ const submit = () => {
   adding.value = false;
 };
 
+const cancelAdd = () => {
+  newValue.value = "";
+  adding.value = false;
+};
+
 watch(
   () => props.editing,
   (editing) => {
@@ -57,25 +62,27 @@ watch(
         class="flex flex-wrap items-center gap-1.5"
         :class="{ 'gap-2': editing }"
       >
-        <button
+        <component
+          :is="editing ? 'div' : 'button'"
           v-for="(value, index) in values"
           :key="`${value}-${index}`"
-          type="button"
+          :type="editing ? undefined : 'button'"
           class="group/value hover:bg-accent inline-flex items-center gap-1 rounded-md px-2 py-1 text-sm transition-colors"
           :class="{ 'px-3 py-2': editing, 'cursor-pointer': !editing }"
           @click="!editing && emit('activate', value)"
           @contextmenu.prevent="!editing && emit('search', value)"
         >
           <span>{{ value }}</span>
-          <span
+          <button
             v-if="editing"
+            type="button"
             class="text-destructive hover:bg-destructive/10 ml-0.5 inline-flex size-4 items-center justify-center rounded"
             :aria-label="`${value} 삭제`"
             @click.stop="emit('remove', index)"
           >
             <Icon icon="solar:close-circle-bold" class="size-3.5" />
-          </span>
-        </button>
+          </button>
+        </component>
         <span
           v-if="values.length === 0 && !editing"
           class="text-muted-foreground text-sm"
@@ -89,7 +96,7 @@ watch(
           class="bg-accent/60 focus:ring-ring min-w-28 rounded-md border px-3 py-2 text-sm outline-none focus:ring-2"
           :aria-label="`${label} 추가`"
           @keydown.enter.prevent="submit"
-          @keydown.escape.prevent="adding = false"
+          @keydown.escape.prevent="cancelAdd"
           @blur="submit"
         />
         <button
