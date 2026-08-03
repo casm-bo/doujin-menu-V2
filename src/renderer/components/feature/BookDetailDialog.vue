@@ -1,6 +1,5 @@
 <script setup lang="ts">
-import { getThumbnailUrl } from "@/api";
-import { Badge } from "@/components/ui/badge";
+import { getBook, getThumbnailUrl, updateBookMetadata } from "@/api";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -10,23 +9,45 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Separator } from "@/components/ui/separator";
+import { Input } from "@/components/ui/input";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { usePreviewViewMode } from "@/composables/usePreviewViewMode";
 import { Icon } from "@iconify/vue";
-import { computed } from "vue";
+import { computed, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import { toast } from "vue-sonner";
 import type { Book } from "../../../types/ipc";
+import MetadataField from "./MetadataField.vue";
 
 const props = defineProps<{
   modelValue: boolean;
   book: Book | null;
 }>();
 
-const emit = defineEmits(["update:modelValue"]);
+const emit = defineEmits<{
+  "update:modelValue": [value: boolean];
+  updated: [];
+}>();
 
 const router = useRouter();
 const { viewMode, setViewMode } = usePreviewViewMode();
+const detailBook = ref<Book | null>(null);
+const book = computed(() => detailBook.value || props.book);
+const isEditing = ref(false);
+const saving = ref(false);
+type ListField = "artists" | "tags" | "series" | "groups" | "characters";
+type ScalarField = "hitomi_id" | "type" | "language";
+const draft = ref({
+  title: "",
+  hitomi_id: [] as string[],
+  type: [] as string[],
+  language: [] as string[],
+  artists: [] as string[],
+  tags: [] as string[],
+  series: [] as string[],
+  groups: [] as string[],
+  characters: [] as string[],
+});
 
 const open = computed({
   get: () => props.modelValue,
@@ -34,29 +55,114 @@ const open = computed({
 });
 
 const displayPath = computed(() => {
-  if (!props.book?.path) return "";
-  const parts = props.book.path.split(/[\\/]/);
+  if (!book.value?.path) return "";
+  const parts = book.value.path.split(/[\\/]/);
   return parts.slice(0, -1).join("/");
 });
 
 const previewPages = computed(() =>
-  props.book
+  book.value
     ? Array.from(
-        { length: props.book.page_count || 0 },
-        (_, index) => `doujin-menu://page/${props.book!.id}/${index}`,
+        { length: book.value.page_count || 0 },
+        (_, index) => `doujin-menu://page/${book.value!.id}/${index}`,
       )
     : [],
 );
 
 const openReader = (page: number) => {
-  if (!props.book) return;
+  if (!book.value) return;
   open.value = false;
   router.push({
     name: "Viewer",
-    params: { id: props.book.id },
+    params: { id: book.value.id },
     query: { start: String(page) },
   });
 };
+
+const values = (field: ListField) =>
+  isEditing.value
+    ? draft.value[field]
+    : (book.value?.[field] || []).map((item) => item.name);
+const scalarValues = (field: ScalarField) => {
+  if (isEditing.value) return draft.value[field];
+  const value =
+    field === "language"
+      ? book.value?.language_name_local || book.value?.language_name_english
+      : book.value?.[field];
+  return value ? [String(value)] : [];
+};
+
+const resetDraft = () => {
+  if (!book.value) return;
+  draft.value = {
+    title: book.value.title,
+    hitomi_id: book.value.hitomi_id ? [book.value.hitomi_id] : [],
+    type: book.value.type ? [book.value.type] : [],
+    language: [
+      book.value.language_name_local || book.value.language_name_english || "",
+    ].filter(Boolean),
+    artists: values("artists"),
+    tags: values("tags"),
+    series: values("series"),
+    groups: values("groups"),
+    characters: values("characters"),
+  };
+};
+
+const startEdit = () => {
+  resetDraft();
+  isEditing.value = true;
+};
+const cancelEdit = () => {
+  isEditing.value = false;
+  resetDraft();
+};
+const removeValue = (field: ListField | ScalarField, index: number) => {
+  draft.value[field].splice(index, 1);
+};
+const addValue = (field: ListField | ScalarField, value: string) => {
+  if (!draft.value[field].includes(value)) draft.value[field].push(value);
+};
+
+const saveMetadata = async () => {
+  if (!book.value || !draft.value.title.trim()) {
+    toast.error("제목을 입력해주세요");
+    return;
+  }
+  saving.value = true;
+  try {
+    await updateBookMetadata(book.value.id, {
+      title: draft.value.title,
+      hitomi_id: draft.value.hitomi_id[0] || null,
+      type: draft.value.type[0] || null,
+      language_name_local: draft.value.language[0] || null,
+      artists: draft.value.artists,
+      tags: draft.value.tags,
+      series: draft.value.series,
+      groups: draft.value.groups,
+      characters: draft.value.characters,
+    });
+    detailBook.value = await getBook(book.value.id);
+    isEditing.value = false;
+    emit("updated");
+    toast.success("메타데이터를 저장했습니다");
+  } catch (error) {
+    toast.error(`저장 실패: ${(error as Error).message}`);
+  } finally {
+    saving.value = false;
+  }
+};
+
+watch(
+  () => [props.modelValue, props.book] as const,
+  ([open, nextBook]) => {
+    if (open) {
+      detailBook.value = nextBook ? { ...nextBook } : null;
+      isEditing.value = false;
+    }
+  },
+  { immediate: true },
+);
 
 // 클립보드 복사 함수
 const copyToClipboard = async (text: string, prefix: string) => {
@@ -107,107 +213,91 @@ const searchInDownloader = (text: string, prefix: string) => {
             class="h-64 w-auto rounded-lg object-cover shadow-lg"
           />
           <div class="flex flex-1 flex-col gap-3">
-            <h3 class="text-2xl leading-tight font-bold">{{ book.title }}</h3>
+            <div class="flex items-start justify-between gap-3">
+              <Input
+                v-if="isEditing"
+                v-model="draft.title"
+                class="h-auto py-2 text-xl font-bold"
+                aria-label="제목"
+              />
+              <h3 v-else class="text-2xl leading-tight font-bold">
+                {{ book.title || "N/A" }}
+              </h3>
+              <div class="flex shrink-0 gap-2">
+                <template v-if="isEditing">
+                  <Button variant="outline" size="sm" @click="cancelEdit">
+                    취소
+                  </Button>
+                  <Button size="sm" :disabled="saving" @click="saveMetadata">
+                    저장
+                  </Button>
+                </template>
+                <Button v-else variant="outline" size="sm" @click="startEdit">
+                  <Icon icon="solar:pen-bold-duotone" class="mr-2 h-4 w-4" />
+                  편집
+                </Button>
+              </div>
+            </div>
 
             <!-- 메타데이터 안내 -->
             <p class="text-muted-foreground text-xs">
               메타데이터를 클릭하면 복사, 우클릭하면 다운로더에서 검색합니다.
             </p>
 
-            <!-- Hitomi ID -->
-            <div v-if="book.hitomi_id" class="flex items-center gap-2 text-sm">
-              <Icon
+            <div class="grid gap-2" :class="{ 'gap-3': isEditing }">
+              <MetadataField
+                label="Hitomi ID"
                 icon="solar:hashtag-circle-bold-duotone"
-                class="text-primary h-5 w-5"
+                :values="scalarValues('hitomi_id')"
+                :editing="isEditing"
+                :multiple="false"
+                @activate="copyToClipboard($event, 'id')"
+                @search="searchInDownloader($event, 'id')"
+                @remove="removeValue('hitomi_id', $event)"
+                @add="addValue('hitomi_id', $event)"
               />
-              <Badge
-                variant="secondary"
-                class="hover:bg-secondary/80 cursor-pointer"
-                @click="copyToClipboard(book.hitomi_id, 'id')"
-                @contextmenu.prevent="searchInDownloader(book.hitomi_id, 'id')"
-              >
-                ID: {{ book.hitomi_id }}
-              </Badge>
-            </div>
-
-            <!-- 작가 -->
-            <div
-              v-if="book.artists && book.artists.length > 0"
-              class="flex items-start gap-2"
-            >
-              <Icon
+              <MetadataField
+                label="작가"
                 icon="solar:user-bold-duotone"
-                class="text-primary mt-0.5 h-5 w-5"
+                :values="values('artists')"
+                :editing="isEditing"
+                @activate="copyToClipboard($event, 'artist')"
+                @search="searchInDownloader($event, 'artist')"
+                @remove="removeValue('artists', $event)"
+                @add="addValue('artists', $event)"
               />
-              <div class="flex flex-wrap gap-1.5">
-                <Badge
-                  v-for="artist in book.artists"
-                  :key="artist.name"
-                  variant="outline"
-                  class="hover:bg-accent cursor-pointer"
-                  @click="copyToClipboard(artist.name, 'artist')"
-                  @contextmenu.prevent="
-                    searchInDownloader(artist.name, 'artist')
-                  "
-                >
-                  {{ artist.name }}
-                </Badge>
-              </div>
-            </div>
-
-            <!-- 시리즈 -->
-            <div v-if="book.series_name" class="flex items-center gap-2">
-              <Icon
+              <MetadataField
+                label="시리즈"
                 icon="solar:library-bold-duotone"
-                class="text-primary h-5 w-5"
+                :values="values('series')"
+                :editing="isEditing"
+                @activate="copyToClipboard($event, 'series')"
+                @search="searchInDownloader($event, 'series')"
+                @remove="removeValue('series', $event)"
+                @add="addValue('series', $event)"
               />
-              <Badge
-                variant="outline"
-                class="hover:bg-accent cursor-pointer"
-                @click="copyToClipboard(book.series_name, 'series')"
-                @contextmenu.prevent="
-                  searchInDownloader(book.series_name, 'series')
-                "
-              >
-                {{ book.series_name }}
-              </Badge>
-            </div>
-
-            <!-- 유형 -->
-            <div v-if="book.type" class="flex items-center gap-2">
-              <Icon
+              <MetadataField
+                label="유형"
                 icon="solar:bookmark-bold-duotone"
-                class="text-primary h-5 w-5"
+                :values="scalarValues('type')"
+                :editing="isEditing"
+                :multiple="false"
+                @activate="copyToClipboard($event, 'type')"
+                @search="searchInDownloader($event, 'type')"
+                @remove="removeValue('type', $event)"
+                @add="addValue('type', $event)"
               />
-              <Badge
-                variant="outline"
-                class="hover:bg-accent cursor-pointer"
-                @click="copyToClipboard(book.type, 'type')"
-                @contextmenu.prevent="searchInDownloader(book.type, 'type')"
-              >
-                {{ book.type }}
-              </Badge>
-            </div>
-
-            <!-- 언어 -->
-            <div
-              v-if="book.language_name_english"
-              class="flex items-center gap-2"
-            >
-              <Icon
+              <MetadataField
+                label="언어"
                 icon="solar:translation-bold-duotone"
-                class="text-primary h-5 w-5"
+                :values="scalarValues('language')"
+                :editing="isEditing"
+                :multiple="false"
+                @activate="copyToClipboard($event, 'language')"
+                @search="searchInDownloader($event, 'language')"
+                @remove="removeValue('language', $event)"
+                @add="addValue('language', $event)"
               />
-              <Badge
-                variant="outline"
-                class="hover:bg-accent cursor-pointer"
-                @click="copyToClipboard(book.language_name_english, 'language')"
-                @contextmenu.prevent="
-                  searchInDownloader(book.language_name_english, 'language')
-                "
-              >
-                {{ book.language_name_english }}
-              </Badge>
             </div>
 
             <div class="mt-auto flex justify-end gap-2">
@@ -223,78 +313,37 @@ const searchInDownloader = (text: string, prefix: string) => {
 
         <Separator />
 
-        <!-- 태그, 그룹, 캐릭터 -->
-        <div class="space-y-4">
-          <!-- 태그 -->
-          <div v-if="book.tags && book.tags.length > 0">
-            <div class="mb-2 flex items-center gap-2">
-              <Icon
-                icon="solar:tag-bold-duotone"
-                class="text-primary h-5 w-5"
-              />
-              <span class="text-sm font-semibold">태그</span>
-            </div>
-            <div class="flex flex-wrap gap-1.5">
-              <Badge
-                v-for="tag in book.tags"
-                :key="tag.name"
-                variant="secondary"
-                class="hover:bg-secondary/80 cursor-pointer"
-                @click="copyToClipboard(tag.name, 'tag')"
-                @contextmenu.prevent="searchInDownloader(tag.name, 'tag')"
-              >
-                {{ tag.name }}
-              </Badge>
-            </div>
-          </div>
-
-          <!-- 그룹 -->
-          <div v-if="book.groups && book.groups.length > 0">
-            <div class="mb-2 flex items-center gap-2">
-              <Icon
-                icon="solar:users-group-rounded-bold-duotone"
-                class="text-primary h-5 w-5"
-              />
-              <span class="text-sm font-semibold">그룹</span>
-            </div>
-            <div class="flex flex-wrap gap-1.5">
-              <Badge
-                v-for="group in book.groups"
-                :key="group.name"
-                variant="secondary"
-                class="hover:bg-secondary/80 cursor-pointer"
-                @click="copyToClipboard(group.name, 'group')"
-                @contextmenu.prevent="searchInDownloader(group.name, 'group')"
-              >
-                {{ group.name }}
-              </Badge>
-            </div>
-          </div>
-
-          <!-- 캐릭터 -->
-          <div v-if="book.characters && book.characters.length > 0">
-            <div class="mb-2 flex items-center gap-2">
-              <Icon
-                icon="solar:user-speak-bold-duotone"
-                class="text-primary h-5 w-5"
-              />
-              <span class="text-sm font-semibold">캐릭터</span>
-            </div>
-            <div class="flex flex-wrap gap-1.5">
-              <Badge
-                v-for="character in book.characters"
-                :key="character.name"
-                variant="secondary"
-                class="hover:bg-secondary/80 cursor-pointer"
-                @click="copyToClipboard(character.name, 'character')"
-                @contextmenu.prevent="
-                  searchInDownloader(character.name, 'character')
-                "
-              >
-                {{ character.name }}
-              </Badge>
-            </div>
-          </div>
+        <div class="space-y-2" :class="{ 'space-y-3': isEditing }">
+          <MetadataField
+            label="태그"
+            icon="solar:tag-bold-duotone"
+            :values="values('tags')"
+            :editing="isEditing"
+            @activate="copyToClipboard($event, 'tag')"
+            @search="searchInDownloader($event, 'tag')"
+            @remove="removeValue('tags', $event)"
+            @add="addValue('tags', $event)"
+          />
+          <MetadataField
+            label="그룹"
+            icon="solar:users-group-rounded-bold-duotone"
+            :values="values('groups')"
+            :editing="isEditing"
+            @activate="copyToClipboard($event, 'group')"
+            @search="searchInDownloader($event, 'group')"
+            @remove="removeValue('groups', $event)"
+            @add="addValue('groups', $event)"
+          />
+          <MetadataField
+            label="캐릭터"
+            icon="solar:user-speak-bold-duotone"
+            :values="values('characters')"
+            :editing="isEditing"
+            @activate="copyToClipboard($event, 'character')"
+            @search="searchInDownloader($event, 'character')"
+            @remove="removeValue('characters', $event)"
+            @add="addValue('characters', $event)"
+          />
         </div>
 
         <Separator />
@@ -303,7 +352,7 @@ const searchInDownloader = (text: string, prefix: string) => {
         <div class="bg-muted/50 space-y-2 rounded-lg p-4">
           <div class="flex items-center justify-between text-sm">
             <span class="text-muted-foreground">페이지 수</span>
-            <span class="font-medium">{{ book.page_count }}</span>
+            <span class="font-medium">{{ book.page_count || "N/A" }}</span>
           </div>
           <div class="flex items-center justify-between text-sm">
             <span class="text-muted-foreground">추가된 날짜</span>
@@ -311,7 +360,7 @@ const searchInDownloader = (text: string, prefix: string) => {
               {{
                 book.added_at
                   ? new Date(book.added_at).toLocaleDateString()
-                  : "-"
+                  : "N/A"
               }}
             </span>
           </div>
@@ -321,7 +370,7 @@ const searchInDownloader = (text: string, prefix: string) => {
               {{
                 book.last_read_at
                   ? new Date(book.last_read_at).toLocaleDateString()
-                  : "없음"
+                  : "N/A"
               }}
             </span>
           </div>
@@ -333,12 +382,14 @@ const searchInDownloader = (text: string, prefix: string) => {
                 icon="solar:star-bold"
                 class="text-yellow-500"
               />
-              <span v-else>-</span>
+              <span v-else>N/A</span>
             </span>
           </div>
           <div class="flex flex-col gap-1 text-sm">
             <span class="text-muted-foreground">경로</span>
-            <span class="font-mono text-xs break-all">{{ displayPath }}</span>
+            <span class="font-mono text-xs break-all">{{
+              displayPath || "N/A"
+            }}</span>
           </div>
         </div>
 

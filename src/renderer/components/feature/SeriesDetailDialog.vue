@@ -10,7 +10,6 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import {
   Dialog,
   DialogContent,
@@ -37,6 +36,7 @@ import {
 } from "../../api";
 import AddBookToSeriesDialog from "./AddBookToSeriesDialog.vue";
 import BookDetailDialog from "./BookDetailDialog.vue";
+import MetadataField from "./MetadataField.vue";
 import { reorderForDrop, type DropPosition } from "./seriesReorder";
 import { getSeriesResumeTarget } from "./seriesResume";
 
@@ -283,6 +283,26 @@ const seriesArtists = uniqueNames("artists");
 const seriesTags = uniqueNames("tags");
 const seriesGroups = uniqueNames("groups");
 const seriesCharacters = uniqueNames("characters");
+const uniqueBookValues = (key: "hitomi_id" | "type") =>
+  computed(() => [
+    ...new Set(
+      books.value.map((book) => book[key]).filter(Boolean) as string[],
+    ),
+  ]);
+const seriesHitomiIds = uniqueBookValues("hitomi_id");
+const seriesTypes = uniqueBookValues("type");
+const seriesLanguages = computed(() => [
+  ...new Set(
+    books.value
+      .map((book) => book.language_name_local || book.language_name_english)
+      .filter(Boolean) as string[],
+  ),
+]);
+
+const handleEpisodeUpdated = async () => {
+  await refetch();
+  emit("updated");
+};
 
 // 썸네일 URL 생성
 const getCoverUrl = (book: Book) => {
@@ -423,51 +443,59 @@ const excludeBookIds = computed(() => books.value.map((book) => book.id));
                   </Button>
                 </div>
               </div>
-              <div v-if="seriesArtists.length" class="flex flex-wrap gap-1">
-                <Badge
-                  v-for="name in seriesArtists"
-                  :key="name"
-                  variant="outline"
-                  class="cursor-context-menu"
-                  @contextmenu.prevent="searchInDownloader(name, 'artist')"
-                  >{{ name }}</Badge
-                >
+              <div class="grid gap-2">
+                <MetadataField
+                  label="Hitomi ID"
+                  icon="solar:hashtag-circle-bold-duotone"
+                  :values="seriesHitomiIds"
+                  @activate="searchInDownloader($event, 'id')"
+                  @search="searchInDownloader($event, 'id')"
+                />
+                <MetadataField
+                  label="작가"
+                  icon="solar:user-bold-duotone"
+                  :values="seriesArtists"
+                  @activate="searchInDownloader($event, 'artist')"
+                  @search="searchInDownloader($event, 'artist')"
+                />
+                <MetadataField
+                  label="그룹"
+                  icon="solar:users-group-rounded-bold-duotone"
+                  :values="seriesGroups"
+                  @activate="searchInDownloader($event, 'group')"
+                  @search="searchInDownloader($event, 'group')"
+                />
+                <MetadataField
+                  label="태그"
+                  icon="solar:tag-bold-duotone"
+                  :values="seriesTags"
+                  @activate="searchInDownloader($event, 'tag')"
+                  @search="searchInDownloader($event, 'tag')"
+                />
+                <MetadataField
+                  label="캐릭터"
+                  icon="solar:user-speak-bold-duotone"
+                  :values="seriesCharacters"
+                  @activate="searchInDownloader($event, 'character')"
+                  @search="searchInDownloader($event, 'character')"
+                />
+                <MetadataField
+                  label="유형"
+                  icon="solar:bookmark-bold-duotone"
+                  :values="seriesTypes"
+                  @activate="searchInDownloader($event, 'type')"
+                  @search="searchInDownloader($event, 'type')"
+                />
+                <MetadataField
+                  label="언어"
+                  icon="solar:translation-bold-duotone"
+                  :values="seriesLanguages"
+                  @activate="searchInDownloader($event, 'language')"
+                  @search="searchInDownloader($event, 'language')"
+                />
               </div>
-              <div v-if="seriesGroups.length" class="flex flex-wrap gap-1">
-                <Badge
-                  v-for="name in seriesGroups"
-                  :key="name"
-                  variant="secondary"
-                  class="cursor-context-menu"
-                  @contextmenu.prevent="searchInDownloader(name, 'group')"
-                  >{{ name }}</Badge
-                >
-              </div>
-              <div v-if="seriesTags.length" class="flex flex-wrap gap-1">
-                <Badge
-                  v-for="name in seriesTags"
-                  :key="name"
-                  variant="secondary"
-                  class="cursor-context-menu"
-                  @contextmenu.prevent="searchInDownloader(name, 'tag')"
-                  >{{ name }}</Badge
-                >
-              </div>
-              <div v-if="seriesCharacters.length" class="flex flex-wrap gap-1">
-                <Badge
-                  v-for="name in seriesCharacters"
-                  :key="name"
-                  variant="secondary"
-                  class="cursor-context-menu"
-                  @contextmenu.prevent="searchInDownloader(name, 'character')"
-                  >{{ name }}</Badge
-                >
-              </div>
-              <p
-                v-if="seriesDetail?.description || series?.description"
-                class="text-muted-foreground text-sm"
-              >
-                {{ seriesDetail?.description || series?.description }}
+              <p class="text-muted-foreground text-sm">
+                {{ seriesDetail?.description || series?.description || "N/A" }}
               </p>
               <div class="mt-auto flex justify-end gap-2">
                 <Button
@@ -707,7 +735,11 @@ const excludeBookIds = computed(() => books.value.map((book) => book.id));
     </DialogContent>
   </Dialog>
 
-  <BookDetailDialog v-model="showEpisodeDetail" :book="selectedEpisode" />
+  <BookDetailDialog
+    v-model="showEpisodeDetail"
+    :book="selectedEpisode"
+    @updated="handleEpisodeUpdated"
+  />
 
   <AlertDialog
     :open="showDeleteSeriesDialog"

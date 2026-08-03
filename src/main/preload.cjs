@@ -96,6 +96,7 @@ const invokeChannels = new Set([
   "stop-companion-server",
   "toggle-book-favorite",
   "toggle-series-favorite",
+  "update-book-metadata",
   "set-book-read",
   "set-series-read",
   "update-book-current-page",

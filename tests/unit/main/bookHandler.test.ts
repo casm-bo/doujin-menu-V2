@@ -343,6 +343,7 @@ import {
   handleGetNextBook,
   handleGetPrevBook,
   handleSetSeriesRead,
+  handleUpdateBookMetadata,
 } from "../../../src/main/handlers/bookHandler.js";
 import { store as configStore } from "../../../src/main/handlers/configHandler.js";
 import {
@@ -367,6 +368,41 @@ describe("handleGetBooks - 통합 테스트", () => {
 
   beforeEach(async () => {
     await truncateAll(db);
+  });
+
+  it("updates editable metadata and replaces relation values", async () => {
+    const oldArtist = await seedArtist(db, "old artist");
+    const book = await seedBook(db, { path: "/editable", title: "old title" });
+    await linkBookArtist(db, book.id, oldArtist.id);
+
+    const result = await handleUpdateBookMetadata({
+      bookId: book.id,
+      metadata: {
+        title: "new title",
+        hitomi_id: "12345",
+        type: "doujinshi",
+        language_name_local: "한국어",
+        artists: ["new artist", "new artist"],
+        tags: ["tag one"],
+        series: ["source series"],
+        groups: ["group one"],
+        characters: ["character one"],
+      },
+    });
+
+    expect(result).toEqual({ success: true });
+    const updated = await handleGetBook(book.id);
+    expect(updated).toMatchObject({
+      title: "new title",
+      hitomi_id: "12345",
+      type: "doujinshi",
+      language_name_local: "한국어",
+      artists: [{ name: "new artist" }],
+      tags: [{ name: "tag one" }],
+      series: [{ name: "source series" }],
+      groups: [{ name: "group one" }],
+      characters: [{ name: "character one" }],
+    });
   });
 
   afterAll(async () => {

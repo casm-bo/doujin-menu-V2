@@ -78,6 +78,18 @@ export interface Book {
   characters: { name: string }[];
 }
 
+export interface EditableBookMetadata {
+  title: string;
+  hitomi_id: string | null;
+  type: string | null;
+  language_name_local: string | null;
+  artists: string[];
+  tags: string[];
+  series: string[];
+  groups: string[];
+  characters: string[];
+}
+
 export interface BookHistory {
   history_id: number;
   viewed_at: string;
@@ -336,6 +348,10 @@ export interface IpcChannels {
   };
   "delete-book": {
     request: number; // bookId
+    response: { success: boolean; error?: string };
+  };
+  "update-book-metadata": {
+    request: { bookId: number; metadata: EditableBookMetadata };
     response: { success: boolean; error?: string };
   };
   // Statistics handlers

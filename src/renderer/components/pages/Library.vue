@@ -1266,6 +1266,7 @@ useScrollRestoration(".flex-grow.overflow-y-auto");
       :book="selectedBook"
       :on-toggle-favorite="handleToggleFavorite"
       :on-open-folder="handleOpenFolder"
+      @updated="handleBooksUpdated"
     />
     <CreateSeriesDialog
       v-model:open="showCreateSeriesDialog"
