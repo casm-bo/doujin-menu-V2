@@ -17,6 +17,7 @@ import { createSeriesCollection } from "../../api";
 
 interface Props {
   open: boolean;
+  bookIds?: number[];
 }
 
 const props = defineProps<Props>();
@@ -32,7 +33,7 @@ const description = ref("");
 // 시리즈 생성 뮤테이션
 const createMutation = useMutation({
   mutationFn: (data: { name: string; description?: string }) =>
-    createSeriesCollection(data),
+    createSeriesCollection({ ...data, bookIds: props.bookIds }),
   onSuccess: () => {
     toast.success("시리즈가 생성되었습니다");
     emit("created");
@@ -80,7 +81,11 @@ const handleCreate = () => {
       <DialogHeader>
         <DialogTitle>새 시리즈 만들기</DialogTitle>
         <DialogDescription>
-          빈 시리즈를 만들고 나중에 책을 추가할 수 있습니다
+          {{
+            props.bookIds?.length
+              ? `선택한 ${props.bookIds.length}권을 한 시리즈로 만듭니다`
+              : "빈 시리즈를 만들고 나중에 책을 추가할 수 있습니다"
+          }}
         </DialogDescription>
       </DialogHeader>
 

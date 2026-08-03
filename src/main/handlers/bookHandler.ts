@@ -145,6 +145,7 @@ function buildFilteredQuery(filter: FilterParams | null) {
     isFavorite = false,
     libraryPath = "",
     offlineStatus = "all",
+    seriesStatus = "all",
   } = filter || {};
 
   const subquery = db("Book")
@@ -189,6 +190,10 @@ function buildFilteredQuery(filter: FilterParams | null) {
 
   if (libraryPath && libraryPath !== "all") {
     mainQuery.where("sub.path", "like", `${libraryPath}%`);
+  }
+
+  if (seriesStatus === "series") {
+    mainQuery.whereNotNull("sub.series_collection_id");
   }
 
   if (searchQuery) {
@@ -657,7 +662,10 @@ export const handleUpdateBookCurrentPage = async ({
   currentPage: number;
 }) => {
   try {
-    const book = await db("Book").select("page_count").where("id", bookId).first();
+    const book = await db("Book")
+      .select("page_count")
+      .where("id", bookId)
+      .first();
     const completed =
       Number(book?.page_count || 0) > 0 &&
       currentPage >= Number(book.page_count);
@@ -702,7 +710,9 @@ export const handleSetSeriesRead = async ({
   seriesId: number;
   isRead: boolean;
 }) => {
-  const books = await db("Book").select("id").where("series_collection_id", seriesId);
+  const books = await db("Book")
+    .select("id")
+    .where("series_collection_id", seriesId);
   if (books.length === 0) return { success: false, error: "Series is empty" };
   const sync = new DesktopCompanionSyncService(db);
   await Promise.all(
@@ -1268,7 +1278,9 @@ export function registerBookHandlers() {
   ipcMain.handle("update-book-current-page", (_event, params) =>
     handleUpdateBookCurrentPage(params),
   );
-  ipcMain.handle("set-book-read", (_event, params) => handleSetBookRead(params));
+  ipcMain.handle("set-book-read", (_event, params) =>
+    handleSetBookRead(params),
+  );
   ipcMain.handle("set-series-read", (_event, params) =>
     handleSetSeriesRead(params),
   );

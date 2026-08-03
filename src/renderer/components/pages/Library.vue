@@ -64,6 +64,7 @@ import BookCard from "../feature/BookCard.vue";
 import BookDetailDialog from "../feature/BookDetailDialog.vue";
 import BookPreviewDialog from "../feature/BookPreviewDialog.vue";
 import BookRowCard from "../feature/BookRowCard.vue";
+import CreateSeriesDialog from "../feature/CreateSeriesDialog.vue";
 import SeriesDetailDialog from "../feature/SeriesDetailDialog.vue";
 import LibraryScanProgress from "../feature/LibraryScanProgress.vue";
 
@@ -92,6 +93,9 @@ const isFavorite = ref((route.query.isFavorite as string) || "all");
 const offlineStatus = ref<"all" | "online" | "offline">(
   (route.query.offlineStatus as "all" | "online" | "offline") || "all",
 );
+const seriesStatus = ref<"all" | "series">(
+  (route.query.seriesStatus as "all" | "series") || "all",
+);
 const sortBy = ref((route.query.sortBy as string) || "added_at");
 const sortOrder = ref<"asc" | "desc">(
   (route.query.sortOrder as "asc" | "desc") || "desc",
@@ -104,6 +108,7 @@ const { schWord: searchQuery } = useQueryAndParams({
     readStatus,
     isFavorite,
     offlineStatus,
+    seriesStatus,
     sortBy,
     sortOrder,
   },
@@ -112,6 +117,7 @@ const { schWord: searchQuery } = useQueryAndParams({
     readStatus: "all",
     isFavorite: "all",
     offlineStatus: "all",
+    seriesStatus: "all",
     sortBy: "added_at",
     sortOrder: "desc",
   },
@@ -227,6 +233,7 @@ const queryKey = computed(
         libraryPath: libraryPath.value,
         readStatus: readStatus.value,
         offlineStatus: offlineStatus.value,
+        seriesStatus: seriesStatus.value,
         sortBy: sortBy.value,
         sortOrder: sortOrder.value,
         isFavorite: isFavorite.value === "favorite",
@@ -270,6 +277,7 @@ const allSelected = computed(
   () => totalCount.value > 0 && selectedCount.value === totalCount.value,
 );
 const showDeleteDialog = ref(false);
+const showCreateSeriesDialog = ref(false);
 const booksToDelete = ref<number[]>([]);
 
 const toggleBookSelection = (bookId: number) => {
@@ -363,6 +371,11 @@ const handleBookDeleted = (bookId: number) => {
 };
 
 const handleBooksUpdated = () => {
+  void queryClient.invalidateQueries({ queryKey: ["books"] });
+};
+
+const handleSeriesCreated = () => {
+  selectedBookIds.value = new Set();
   void queryClient.invalidateQueries({ queryKey: ["books"] });
 };
 let stopBooksUpdated = () => {};
@@ -748,6 +761,14 @@ useScrollRestoration(".flex-grow.overflow-y-auto");
             시리즈 자동 생성
           </Button>
           <Button
+            variant="outline"
+            :disabled="selectedCount < 2"
+            @click="showCreateSeriesDialog = true"
+          >
+            <Icon icon="solar:add-circle-bold-duotone" class="h-5 w-5" />
+            시리즈 추가 ({{ selectedCount }})
+          </Button>
+          <Button
             variant="secondary"
             size="icon"
             @click="router.push('/settings?tab=library')"
@@ -816,6 +837,14 @@ useScrollRestoration(".flex-grow.overflow-y-auto");
               <DropdownMenuRadioItem value="all">모두</DropdownMenuRadioItem>
               <DropdownMenuRadioItem value="favorite"
                 >즐겨찾기만</DropdownMenuRadioItem
+              >
+            </DropdownMenuRadioGroup>
+            <DropdownMenuSeparator />
+            <DropdownMenuLabel>시리즈</DropdownMenuLabel>
+            <DropdownMenuRadioGroup v-model="seriesStatus">
+              <DropdownMenuRadioItem value="all">모두</DropdownMenuRadioItem>
+              <DropdownMenuRadioItem value="series"
+                >시리즈만</DropdownMenuRadioItem
               >
             </DropdownMenuRadioGroup>
             <DropdownMenuSeparator />
@@ -1112,6 +1141,11 @@ useScrollRestoration(".flex-grow.overflow-y-auto");
       :book="selectedBook"
       :on-toggle-favorite="handleToggleFavorite"
       :on-open-folder="handleOpenFolder"
+    />
+    <CreateSeriesDialog
+      v-model:open="showCreateSeriesDialog"
+      :book-ids="[...selectedBookIds]"
+      @created="handleSeriesCreated"
     />
 
     <SeriesDetailDialog

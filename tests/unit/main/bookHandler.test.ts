@@ -345,6 +345,7 @@ import {
   handleSetSeriesRead,
 } from "../../../src/main/handlers/bookHandler.js";
 import { store as configStore } from "../../../src/main/handlers/configHandler.js";
+import { handleCreateSeriesCollection } from "../../../src/main/handlers/seriesCollectionHandler.js";
 
 let db: Knex;
 
@@ -370,6 +371,24 @@ describe("handleGetBooks - 통합 테스트", () => {
   });
 
   describe("기본 필터", () => {
+    it("creates one series from selected standalone books atomically", async () => {
+      const first = await seedBook(db, { path: "/selected/1" });
+      const second = await seedBook(db, { path: "/selected/2" });
+
+      const result = await handleCreateSeriesCollection({
+        name: "Selected",
+        bookIds: [first.id, second.id],
+      });
+
+      expect(result.success).toBe(true);
+      expect(
+        await db("Book")
+          .whereIn("id", [first.id, second.id])
+          .orderBy("series_order_index")
+          .pluck("series_collection_id"),
+      ).toEqual([result.data!.id, result.data!.id]);
+    });
+
     it("필터 없으면 모든 책 반환", async () => {
       await seedBook(db, { path: "/a" });
       await seedBook(db, { path: "/b" });
@@ -425,15 +444,36 @@ describe("handleGetBooks - 통합 테스트", () => {
         is_read: true,
       });
 
-      expect(await getResultIds({ readStatus: "read", isFavorite: true })).toEqual([
-        first.id,
-      ]);
+      expect(
+        await getResultIds({ readStatus: "read", isFavorite: true }),
+      ).toEqual([first.id]);
 
       await db("Book").where("id", second.id).update({ is_read: false });
       expect(await getResultIds({ readStatus: "read" })).toEqual([]);
 
       await handleSetSeriesRead({ seriesId, isRead: true });
       expect(await getResultIds({ readStatus: "read" })).toEqual([first.id]);
+    });
+
+    it("seriesStatus=series returns only series representatives", async () => {
+      const [seriesId] = await db("SeriesCollection").insert({
+        name: "Series",
+      });
+      const first = await seedBook(db, {
+        path: "/series/1",
+        series_collection_id: seriesId,
+        series_order_index: 0,
+      });
+      await seedBook(db, {
+        path: "/series/2",
+        series_collection_id: seriesId,
+        series_order_index: 1,
+      });
+      await seedBook(db, { path: "/standalone" });
+
+      expect(await getResultIds({ seriesStatus: "series" })).toEqual([
+        first.id,
+      ]);
     });
 
     it("libraryPath 지정 → 해당 경로의 책만", async () => {

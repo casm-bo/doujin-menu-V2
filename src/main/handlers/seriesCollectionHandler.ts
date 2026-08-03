@@ -584,20 +584,45 @@ export async function handleCreateSeriesCollection(data: {
   name: string;
   description?: string;
   cover_image?: string;
+  bookIds?: number[];
 }) {
   try {
-    const [id] = await db("SeriesCollection").insert({
-      name: data.name,
-      description: data.description || null,
-      cover_image: data.cover_image || null,
-      is_auto_generated: false,
-      is_manually_edited: true,
-      confidence_score: 1.0,
-      created_at: db.fn.now(),
-      updated_at: db.fn.now(),
-    });
+    const bookIds = [...new Set(data.bookIds || [])];
+    const created = await db.transaction(async (trx) => {
+      if (bookIds.length > 0) {
+        const selectedBooks = await trx("Book")
+          .select("id", "series_collection_id")
+          .whereIn("id", bookIds);
+        if (selectedBooks.length !== bookIds.length) {
+          throw new Error("선택한 책 중 라이브러리에 없는 책이 있습니다");
+        }
+        if (selectedBooks.some((book) => book.series_collection_id != null)) {
+          throw new Error(
+            "이미 시리즈에 속한 책은 새 시리즈에 추가할 수 없습니다",
+          );
+        }
+      }
 
-    const created = await db("SeriesCollection").where("id", id).first();
+      const [id] = await trx("SeriesCollection").insert({
+        name: data.name,
+        description: data.description || null,
+        cover_image: data.cover_image || null,
+        is_auto_generated: false,
+        is_manually_edited: true,
+        confidence_score: 1.0,
+        created_at: db.fn.now(),
+        updated_at: db.fn.now(),
+      });
+
+      for (const [index, bookId] of bookIds.entries()) {
+        await trx("Book").where("id", bookId).update({
+          series_collection_id: id,
+          series_order_index: index,
+        });
+      }
+
+      return trx("SeriesCollection").where("id", id).first();
+    });
 
     return {
       success: true,
