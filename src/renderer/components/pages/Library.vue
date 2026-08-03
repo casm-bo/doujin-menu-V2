@@ -26,6 +26,7 @@ import { useQueryAndParams } from "@/composable/useQueryAndParams";
 import { useScrollRestoration } from "@/composable/useScrollRestoration";
 import { useLibraryScanStore } from "@/store/libraryScanStore";
 import { useUiStore } from "@/store/uiStore";
+import { hasOpenDialog } from "@/lib/utils";
 import { Icon } from "@iconify/vue";
 import PageHeader from "../layout/PageHeader.vue";
 import {
@@ -301,6 +302,7 @@ const dragSelection = ref<{
 } | null>(null);
 const isDraggingSelection = ref(false);
 const suppressSelectionClick = ref(false);
+const dragCursor = ref({ x: 0, y: 0 });
 
 const toggleBookSelection = (bookId: number, event?: MouseEvent) => {
   if (
@@ -348,6 +350,7 @@ const handleSelectionPointerMove = (event: PointerEvent) => {
       return;
     isDraggingSelection.value = true;
   }
+  dragCursor.value = { x: event.clientX, y: event.clientY };
   event.preventDefault();
   const card = document
     .elementFromPoint(event.clientX, event.clientY)
@@ -376,6 +379,19 @@ const suppressClickAfterDrag = (event: MouseEvent) => {
   if (!suppressSelectionClick.value) return;
   event.preventDefault();
   event.stopPropagation();
+};
+
+const clearSelectionOnEscape = (event: KeyboardEvent) => {
+  if (
+    event.key !== "Escape" ||
+    selectedBookIds.value.size === 0 ||
+    hasOpenDialog()
+  )
+    return;
+  event.preventDefault();
+  event.stopImmediatePropagation();
+  selectedBookIds.value = new Set();
+  selectionAnchorId.value = null;
 };
 
 const prepareCreateSeries = async () => {
@@ -500,12 +516,14 @@ onMounted(() => {
   stopBooksUpdated = ipcRenderer.on("books-updated", handleBooksUpdated);
   window.addEventListener("pointermove", handleSelectionPointerMove);
   window.addEventListener("pointerup", handleSelectionPointerUp);
+  window.addEventListener("keydown", clearSelectionOnEscape, true);
 });
 
 onUnmounted(() => {
   stopBooksUpdated();
   window.removeEventListener("pointermove", handleSelectionPointerMove);
   window.removeEventListener("pointerup", handleSelectionPointerUp);
+  window.removeEventListener("keydown", clearSelectionOnEscape, true);
 });
 
 // keep-alive로 캐시된 컴포넌트가 활성화될 때 쿼리 다시 불러오기
@@ -1158,7 +1176,9 @@ useScrollRestoration(".flex-grow.overflow-y-auto");
         ref="gridRef"
         class="grid flex-grow items-start gap-3 overflow-y-auto"
         :style="gridStyle"
-        :class="{ 'select-none': isDraggingSelection }"
+        :class="{
+          'cursor-crosshair select-none': isDraggingSelection,
+        }"
         @pointerdown="handleSelectionPointerDown"
         @click.capture="suppressClickAfterDrag"
         @wheel="handleGridWheel"
@@ -1199,7 +1219,9 @@ useScrollRestoration(".flex-grow.overflow-y-auto");
       <div
         v-else-if="books.length > 0 && viewMode === 'list'"
         class="flex flex-grow flex-col overflow-y-auto"
-        :class="{ 'select-none': isDraggingSelection }"
+        :class="{
+          'cursor-crosshair select-none': isDraggingSelection,
+        }"
         @pointerdown="handleSelectionPointerDown"
         @click.capture="suppressClickAfterDrag"
       >
@@ -1268,6 +1290,16 @@ useScrollRestoration(".flex-grow.overflow-y-auto");
       :on-open-folder="handleOpenFolder"
       @updated="handleBooksUpdated"
     />
+    <div
+      v-if="isDraggingSelection"
+      class="bg-primary text-primary-foreground pointer-events-none fixed z-[100] animate-pulse rounded-full px-3 py-1.5 text-sm font-semibold shadow-lg"
+      :style="{
+        left: `${dragCursor.x + 14}px`,
+        top: `${dragCursor.y + 14}px`,
+      }"
+    >
+      {{ selectedCount }}개 선택 중
+    </div>
     <CreateSeriesDialog
       v-model:open="showCreateSeriesDialog"
       :book-ids="orderedSelectedBookIds"

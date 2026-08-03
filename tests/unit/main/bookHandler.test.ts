@@ -448,23 +448,26 @@ describe("handleGetBooks - 통합 테스트", () => {
       ).toEqual([result.data!.id, result.data!.id]);
     });
 
-    it("dissolves conflicting series before preserving selected order", async () => {
+    it("expands a selected series in episode order at its visible position", async () => {
       const [oldSeriesId] = await db("SeriesCollection").insert({
         name: "Old",
       });
       const selected = await seedBook(db, {
         path: "/old/selected",
         series_collection_id: oldSeriesId,
+        series_order_index: 0,
       });
       const released = await seedBook(db, {
         path: "/old/released",
         series_collection_id: oldSeriesId,
+        series_order_index: 1,
       });
       const standalone = await seedBook(db, { path: "/standalone" });
+      const after = await seedBook(db, { path: "/after" });
 
       const result = await handleCreateSeriesCollection({
         name: "New",
-        bookIds: [standalone.id, selected.id],
+        bookIds: [standalone.id, selected.id, after.id],
         replaceExistingSeries: true,
       });
 
@@ -474,13 +477,10 @@ describe("handleGetBooks - 통합 테스트", () => {
       ).toBeUndefined();
       expect(
         await db("Book")
-          .whereIn("id", [standalone.id, selected.id])
+          .whereIn("id", [standalone.id, selected.id, released.id, after.id])
           .orderBy("series_order_index")
           .pluck("id"),
-      ).toEqual([standalone.id, selected.id]);
-      expect(
-        await db("Book").where("id", released.id).first("series_collection_id"),
-      ).toMatchObject({ series_collection_id: null });
+      ).toEqual([standalone.id, selected.id, released.id, after.id]);
     });
 
     it("deletes only the series and releases its episodes", async () => {

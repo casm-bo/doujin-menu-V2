@@ -178,8 +178,8 @@ const confirmDeleteBook = async () => {
 <template>
   <div
     :data-book-id="book.id"
-    class="hover:bg-muted/50 flex cursor-pointer items-center border-b p-2 transition-colors"
-    :class="{ 'border-primary bg-accent/40': selected }"
+    class="hover:bg-muted/50 flex cursor-pointer items-center border-b p-2 transition-all duration-150"
+    :class="{ 'border-primary bg-accent/40 translate-x-1': selected }"
     @click="handleCardClick"
   >
     <Checkbox

@@ -262,8 +262,8 @@ const confirmDeleteBook = async () => {
     <ContextMenuTrigger>
       <LightCard
         :data-book-id="book.id"
-        class="flex h-full cursor-pointer flex-col gap-0 overflow-hidden py-0 transition-shadow hover:shadow-lg"
-        :class="{ 'ring-primary ring-2': selected }"
+        class="flex h-full cursor-pointer flex-col gap-0 overflow-hidden py-0 transition-all duration-150 hover:shadow-lg"
+        :class="{ 'ring-primary scale-[0.98] ring-2': selected }"
         @click="handleCardClick"
       >
         <CardContent class="relative p-0">
