@@ -178,6 +178,8 @@ export function useGalleryCard(
     return bookId.value || props.downloadStatus.status === "completed";
   });
 
+  const isInLibrary = computed(() => bookId.value !== null);
+
   // 다운로드 실패 여부
   const isDownloadFailed = computed(() => {
     return props.downloadStatus.status === "failed";
@@ -211,6 +213,7 @@ export function useGalleryCard(
     buttonText,
     isDownloading,
     isDownloadCompleted,
+    isInLibrary,
     isDownloadFailed,
     checkBookExists,
     handleOpenBook,

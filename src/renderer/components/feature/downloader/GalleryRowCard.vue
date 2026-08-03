@@ -46,6 +46,7 @@ const {
   buttonText,
   isDownloading,
   isDownloadCompleted,
+  isInLibrary,
   isDownloadFailed,
   handleOpenBook,
   handleDownload,
@@ -60,6 +61,7 @@ const {
     class="hover:bg-muted/50 flex cursor-pointer items-center border-b p-2 transition-colors"
     :class="{
       'opacity-50': isDownloading,
+      'opacity-[0.85]': isInLibrary && !isDownloading,
       'bg-red-50/50': isDownloadFailed,
       'ring-2 ring-blue-500': selected, // 선택 시 파란색 테두리 추가
     }"
