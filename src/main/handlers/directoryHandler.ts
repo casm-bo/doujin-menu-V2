@@ -11,7 +11,10 @@ import db from "../db/index.js";
 import { Book } from "../db/types.js";
 import { console } from "../main.js";
 import { ParsedMetadata, parseInfoTxt } from "../parsers/infoTxtParser.js";
-import type { LibraryScanProgress } from "../../types/ipc.js";
+import type {
+  LibraryScanProgress,
+  MetadataRescanMode,
+} from "../../types/ipc.js";
 import { naturalSort } from "../utils/index.js";
 import { filterLibraryPathRows } from "../utils/libraryPath.js";
 import { notifyCompanionLibraryChanged } from "../services/companion/companionSyncSignal.js";
@@ -436,7 +439,17 @@ async function processBookItem(
 // 청크 단위로 책을 처리하여 DB에 저장하는 헬퍼 함수
 type ExistingScanBook = Pick<
   Book,
-  "id" | "path" | "cover_path" | "sync_id" | "is_offline" | "state_version"
+  | "id"
+  | "title"
+  | "path"
+  | "cover_path"
+  | "sync_id"
+  | "is_offline"
+  | "state_version"
+  | "hitomi_id"
+  | "type"
+  | "language_name_english"
+  | "language_name_local"
 >;
 
 async function deleteBookRecords(
@@ -543,6 +556,7 @@ async function processBatchInTransaction(
   batch: ProcessedBook[],
   trx: Knex.Transaction,
   claimedSyncIds: Set<string>,
+  metadataMode: MetadataRescanMode,
 ): Promise<{
   added: number;
   updated: number;
@@ -565,11 +579,16 @@ async function processBatchInTransaction(
   const existingBooksInBatch: ExistingScanBook[] = await trx("Book")
     .select(
       "id",
+      "title",
       "path",
       "cover_path",
       "sync_id",
       "is_offline",
       "state_version",
+      "hitomi_id",
+      "type",
+      "language_name_english",
+      "language_name_local",
     )
     .where((query) => {
       query.whereIn("path", batchPaths);
@@ -589,16 +608,35 @@ async function processBatchInTransaction(
     let bookId: number;
     if (existingBook) {
       bookId = existingBook.id;
+      const sourceTitle = cleanValue(infoMetadata.title);
+      const sourceHitomiId = cleanValue(infoMetadata.hitomi_id);
+      const sourceType = cleanValue(infoMetadata.type);
+      const sourceLanguage = cleanValue(infoMetadata.language);
       await trx("Book")
         .where("id", bookId)
         .update({
-          title: cleanValue(bookData.title),
+          title:
+            metadataMode === "hard"
+              ? sourceTitle || ""
+              : cleanValue(existingBook.title) || sourceTitle || "",
           path: bookData.path,
           page_count: bookData.page_count,
-          hitomi_id: cleanValue(bookData.hitomi_id),
-          type: cleanValue(bookData.type),
-          language_name_english: cleanValue(bookData.language_name_english),
-          language_name_local: cleanValue(bookData.language_name_local),
+          hitomi_id:
+            metadataMode === "hard"
+              ? sourceHitomiId
+              : (cleanValue(existingBook.hitomi_id) ?? sourceHitomiId),
+          type:
+            metadataMode === "hard"
+              ? sourceType
+              : (cleanValue(existingBook.type) ?? sourceType),
+          language_name_english:
+            metadataMode === "hard" ? null : existingBook.language_name_english,
+          language_name_local:
+            metadataMode === "hard"
+              ? sourceLanguage
+              : (cleanValue(existingBook.language_name_local) ??
+                sourceLanguage),
+          sync_id: cleanValue(bookData.sync_id) ?? existingBook.sync_id,
           file_mtime: bookData.file_mtime ?? null,
           file_size: bookData.file_size ?? null,
           is_offline: false,
@@ -608,11 +646,17 @@ async function processBatchInTransaction(
       updatedCount++;
 
       // 업데이트를 위해 기존 연결 제거
-      await trx("BookArtist").where("book_id", bookId).del();
-      await trx("BookTag").where("book_id", bookId).del();
-      await trx("BookSeries").where("book_id", bookId).del();
-      await trx("BookGroup").where("book_id", bookId).del();
-      await trx("BookCharacter").where("book_id", bookId).del();
+      if (metadataMode === "hard") {
+        await Promise.all(
+          [
+            "BookArtist",
+            "BookTag",
+            "BookSeries",
+            "BookGroup",
+            "BookCharacter",
+          ].map((table) => trx(table).where("book_id", bookId).del()),
+        );
+      }
     } else {
       const bookToInsert = {
         title: cleanValue(bookData.title),
@@ -631,11 +675,16 @@ async function processBatchInTransaction(
       bookId = result[0];
       existingBooksInBatch.push({
         id: bookId,
+        title: bookToInsert.title || "",
         path: bookData.path,
         cover_path: null,
         sync_id: cleanValue(bookData.sync_id),
         is_offline: false,
         state_version: 0,
+        hitomi_id: bookToInsert.hitomi_id,
+        type: bookToInsert.type,
+        language_name_english: bookToInsert.language_name_english,
+        language_name_local: bookToInsert.language_name_local,
       });
       addedCount++;
       newBookIds.push(bookId);
@@ -659,7 +708,16 @@ async function processBatchInTransaction(
         const [newArtistId] = await trx("Artist").insert({ name: artistName });
         artist = { id: newArtistId, name: artistName };
       }
-      await trx("BookArtist").insert({ book_id: bookId, artist_id: artist.id });
+      if (
+        !(await trx("BookArtist")
+          .where({ book_id: bookId, artist_id: artist.id })
+          .first())
+      ) {
+        await trx("BookArtist").insert({
+          book_id: bookId,
+          artist_id: artist.id,
+        });
+      }
     }
 
     // 그룹 처리
@@ -671,7 +729,13 @@ async function processBatchInTransaction(
         const [newGroupId] = await trx("Group").insert({ name: groupName });
         group = { id: newGroupId, name: groupName };
       }
-      await trx("BookGroup").insert({ book_id: bookId, group_id: group.id });
+      if (
+        !(await trx("BookGroup")
+          .where({ book_id: bookId, group_id: group.id })
+          .first())
+      ) {
+        await trx("BookGroup").insert({ book_id: bookId, group_id: group.id });
+      }
     }
 
     // 캐릭터 처리
@@ -688,10 +752,16 @@ async function processBatchInTransaction(
         });
         character = { id: newCharacterId, name: characterName };
       }
-      await trx("BookCharacter").insert({
-        book_id: bookId,
-        character_id: character.id,
-      });
+      if (
+        !(await trx("BookCharacter")
+          .where({ book_id: bookId, character_id: character.id })
+          .first())
+      ) {
+        await trx("BookCharacter").insert({
+          book_id: bookId,
+          character_id: character.id,
+        });
+      }
     }
 
     // 태그 처리
@@ -703,18 +773,34 @@ async function processBatchInTransaction(
         const [newTagId] = await trx("Tag").insert({ name: tagName });
         tag = { id: newTagId, name: tagName };
       }
-      await trx("BookTag").insert({ book_id: bookId, tag_id: tag.id });
+      if (
+        !(await trx("BookTag")
+          .where({ book_id: bookId, tag_id: tag.id })
+          .first())
+      ) {
+        await trx("BookTag").insert({ book_id: bookId, tag_id: tag.id });
+      }
     }
 
     // 시리즈 처리
-    if (infoMetadata.series && infoMetadata.series.length > 0) {
-      const seriesName = infoMetadata.series[0].name;
+    for (const seriesValue of infoMetadata.series || []) {
+      const seriesName = cleanValue(seriesValue.name);
+      if (!seriesName) continue;
       let series = await trx("Series").where("name", seriesName).first();
       if (!series) {
         const [newSeriesId] = await trx("Series").insert({ name: seriesName });
         series = { id: newSeriesId, name: seriesName };
       }
-      await trx("BookSeries").insert({ book_id: bookId, series_id: series.id });
+      if (
+        !(await trx("BookSeries")
+          .where({ book_id: bookId, series_id: series.id })
+          .first())
+      ) {
+        await trx("BookSeries").insert({
+          book_id: bookId,
+          series_id: series.id,
+        });
+      }
     }
 
     // 썸네일 생성 필요 여부 결정
@@ -965,7 +1051,11 @@ export async function forgetBooksUnderPath(directoryPath: string) {
 
 export async function scanDirectory(
   directoryPath: string,
-  options: { force?: boolean; preserveMissingSyncIds?: boolean } = {},
+  options: {
+    force?: boolean;
+    preserveMissingSyncIds?: boolean;
+    metadataMode?: MetadataRescanMode;
+  } = {},
 ): Promise<{
   added: number;
   updated: number;
@@ -975,7 +1065,11 @@ export async function scanDirectory(
   offline?: boolean; // 루트 접근 불가로 오프라인 처리됨
   offlineCount?: number; // 오프라인 처리된 책 수
 }> {
-  const { force = false, preserveMissingSyncIds = false } = options; // true면 캐시 무시 강제 재스캔 (수동 재스캔 시)
+  const {
+    force = false,
+    preserveMissingSyncIds = false,
+    metadataMode = "soft",
+  } = options;
   const MAX_SCAN_DEPTH = 100;
   const CHUNK_SIZE = 100; // 메모리 최적화를 위한 청크 크기
   console.log(
@@ -1168,6 +1262,7 @@ export async function scanDirectory(
                 processedBooksChunk,
                 trx,
                 claimedSyncIds,
+                metadataMode,
               ),
             );
             totalAddedCount += result.added;
@@ -1192,7 +1287,12 @@ export async function scanDirectory(
     // 남은 항목 처리 (마지막 청크)
     if (processedBooksChunk.length > 0) {
       const result = await db.transaction((trx) =>
-        processBatchInTransaction(processedBooksChunk, trx, claimedSyncIds),
+        processBatchInTransaction(
+          processedBooksChunk,
+          trx,
+          claimedSyncIds,
+          metadataMode,
+        ),
       );
       totalAddedCount += result.added;
       totalUpdatedCount += result.updated;
@@ -1302,7 +1402,11 @@ export async function scanDirectory(
   }
 }
 
-export async function scanFile(filePath: string, syncIdOverride?: string) {
+export async function scanFile(
+  filePath: string,
+  syncIdOverride?: string,
+  metadataMode: MetadataRescanMode = "soft",
+) {
   try {
     const stats = await fs.stat(filePath);
     const processedBook = await processBookItem(filePath, {
@@ -1326,11 +1430,16 @@ export async function scanFile(filePath: string, syncIdOverride?: string) {
           })
           .select(
             "id",
+            "title",
             "path",
             "cover_path",
             "sync_id",
             "is_offline",
             "state_version",
+            "hitomi_id",
+            "type",
+            "language_name_english",
+            "language_name_local",
           );
         const existingBook = await resolveExistingBookForScan(
           trx,
@@ -1342,16 +1451,36 @@ export async function scanFile(filePath: string, syncIdOverride?: string) {
 
         if (existingBook) {
           bookId = existingBook.id;
+          const sourceTitle = cleanValue(infoMetadata.title);
+          const sourceHitomiId = cleanValue(infoMetadata.hitomi_id);
+          const sourceType = cleanValue(infoMetadata.type);
+          const sourceLanguage = cleanValue(infoMetadata.language);
           await trx("Book")
             .where("id", bookId)
             .update({
-              title: cleanValue(bookData.title),
+              title:
+                metadataMode === "hard"
+                  ? sourceTitle || ""
+                  : cleanValue(existingBook.title) || sourceTitle || "",
               path: bookData.path,
               page_count: bookData.page_count,
-              hitomi_id: cleanValue(bookData.hitomi_id),
-              type: cleanValue(bookData.type),
-              language_name_english: cleanValue(bookData.language_name_english),
-              language_name_local: cleanValue(bookData.language_name_local),
+              hitomi_id:
+                metadataMode === "hard"
+                  ? sourceHitomiId
+                  : (cleanValue(existingBook.hitomi_id) ?? sourceHitomiId),
+              type:
+                metadataMode === "hard"
+                  ? sourceType
+                  : (cleanValue(existingBook.type) ?? sourceType),
+              language_name_english:
+                metadataMode === "hard"
+                  ? null
+                  : existingBook.language_name_english,
+              language_name_local:
+                metadataMode === "hard"
+                  ? sourceLanguage
+                  : (cleanValue(existingBook.language_name_local) ??
+                    sourceLanguage),
               ...(syncIdOverride
                 ? { sync_id: cleanValue(syncIdOverride) }
                 : {}),
@@ -1361,11 +1490,17 @@ export async function scanFile(filePath: string, syncIdOverride?: string) {
             });
 
           // 업데이트를 위해 기존 연결 제거
-          await trx("BookArtist").where("book_id", bookId).del();
-          await trx("BookTag").where("book_id", bookId).del();
-          await trx("BookSeries").where("book_id", bookId).del();
-          await trx("BookGroup").where("book_id", bookId).del();
-          await trx("BookCharacter").where("book_id", bookId).del();
+          if (metadataMode === "hard") {
+            await Promise.all(
+              [
+                "BookArtist",
+                "BookTag",
+                "BookSeries",
+                "BookGroup",
+                "BookCharacter",
+              ].map((table) => trx(table).where("book_id", bookId).del()),
+            );
+          }
         } else {
           const bookToInsert = {
             title: cleanValue(bookData.title),
@@ -1397,10 +1532,16 @@ export async function scanFile(filePath: string, syncIdOverride?: string) {
             });
             artist = { id: newArtistId, name: artistName };
           }
-          await trx("BookArtist").insert({
-            book_id: bookId,
-            artist_id: artist.id,
-          });
+          if (
+            !(await trx("BookArtist")
+              .where({ book_id: bookId, artist_id: artist.id })
+              .first())
+          ) {
+            await trx("BookArtist").insert({
+              book_id: bookId,
+              artist_id: artist.id,
+            });
+          }
         }
 
         const groupsToProcess =
@@ -1414,10 +1555,16 @@ export async function scanFile(filePath: string, syncIdOverride?: string) {
             });
             group = { id: newGroupId, name: groupName };
           }
-          await trx("BookGroup").insert({
-            book_id: bookId,
-            group_id: group.id,
-          });
+          if (
+            !(await trx("BookGroup")
+              .where({ book_id: bookId, group_id: group.id })
+              .first())
+          ) {
+            await trx("BookGroup").insert({
+              book_id: bookId,
+              group_id: group.id,
+            });
+          }
         }
 
         const charactersToProcess =
@@ -1434,10 +1581,16 @@ export async function scanFile(filePath: string, syncIdOverride?: string) {
             });
             character = { id: newCharacterId, name: characterName };
           }
-          await trx("BookCharacter").insert({
-            book_id: bookId,
-            character_id: character.id,
-          });
+          if (
+            !(await trx("BookCharacter")
+              .where({ book_id: bookId, character_id: character.id })
+              .first())
+          ) {
+            await trx("BookCharacter").insert({
+              book_id: bookId,
+              character_id: character.id,
+            });
+          }
         }
 
         const tagsToProcess =
@@ -1449,11 +1602,18 @@ export async function scanFile(filePath: string, syncIdOverride?: string) {
             const [newTagId] = await trx("Tag").insert({ name: tagName });
             tag = { id: newTagId, name: tagName };
           }
-          await trx("BookTag").insert({ book_id: bookId, tag_id: tag.id });
+          if (
+            !(await trx("BookTag")
+              .where({ book_id: bookId, tag_id: tag.id })
+              .first())
+          ) {
+            await trx("BookTag").insert({ book_id: bookId, tag_id: tag.id });
+          }
         }
 
-        if (infoMetadata.series && infoMetadata.series.length > 0) {
-          const seriesName = infoMetadata.series[0].name;
+        for (const seriesValue of infoMetadata.series || []) {
+          const seriesName = cleanValue(seriesValue.name);
+          if (!seriesName) continue;
           let series = await trx("Series").where("name", seriesName).first();
           if (!series) {
             const [newSeriesId] = await trx("Series").insert({
@@ -1461,10 +1621,16 @@ export async function scanFile(filePath: string, syncIdOverride?: string) {
             });
             series = { id: newSeriesId, name: seriesName };
           }
-          await trx("BookSeries").insert({
-            book_id: bookId,
-            series_id: series.id,
-          });
+          if (
+            !(await trx("BookSeries")
+              .where({ book_id: bookId, series_id: series.id })
+              .first())
+          ) {
+            await trx("BookSeries").insert({
+              book_id: bookId,
+              series_id: series.id,
+            });
+          }
         }
 
         // 썸네일 생성 필요 여부 결정
@@ -1501,6 +1667,7 @@ export async function scanFile(filePath: string, syncIdOverride?: string) {
     notifyCompanionLibraryChanged();
   } catch (error) {
     console.error(`[Main] 파일 스캔 오류 ${filePath}:`, error);
+    throw error;
   }
 }
 
@@ -1561,7 +1728,7 @@ export const handleRescanBookMetadata = async (bookId: number) => {
       return { success: false, error: "책을 찾을 수 없습니다." };
     }
 
-    await scanFile(book.path);
+    await scanFile(book.path, undefined, "hard");
     return { success: true };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

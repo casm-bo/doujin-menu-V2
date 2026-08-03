@@ -13,6 +13,7 @@ import {
   scanDirectory,
 } from "./directoryHandler.js";
 import { handleGenerateThumbnail } from "./thumbnailHandler.js";
+import type { MetadataRescanMode } from "../../types/ipc.js";
 
 // 라이브러리 뷰 설정 타입
 export interface LibraryViewSettings {
@@ -257,7 +258,7 @@ export const handleVerifyLockPassword = async (password: string) => {
   }
 };
 
-export const handleRescanAllMetadata = async () => {
+export const handleRescanAllMetadata = async (mode: MetadataRescanMode) => {
   try {
     const libraryFolders = store.get("libraryFolders", []);
     const completedScans: {
@@ -269,6 +270,7 @@ export const handleRescanAllMetadata = async () => {
       const result = await scanDirectory(folderPath, {
         force: true,
         preserveMissingSyncIds: true,
+        metadataMode: mode,
       });
       completedScans.push({ folderPath, foundPaths: result.foundPaths });
       const candidates = await db("Book")
@@ -559,7 +561,9 @@ export function registerConfigHandlers() {
   // 설정 저장하기
   ipcMain.handle("set-config", (_event, params) => handleSetConfig(params));
   // 전체 메타데이터 재스캔
-  ipcMain.handle("rescan-all-metadata", (_event) => handleRescanAllMetadata());
+  ipcMain.handle("rescan-all-metadata", (_event, mode) =>
+    handleRescanAllMetadata(mode),
+  );
   // 라이브러리 폴더 추가
   ipcMain.handle("add-library-folder", (_event) => handleAddLibraryFolder());
   // 라이브러리 폴더 삭제

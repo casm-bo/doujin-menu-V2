@@ -90,6 +90,8 @@ export interface EditableBookMetadata {
   characters: string[];
 }
 
+export type MetadataRescanMode = "soft" | "hard";
+
 export interface BookHistory {
   history_id: number;
   viewed_at: string;
@@ -419,7 +421,7 @@ export interface IpcChannels {
     response: { success: boolean; error?: string };
   };
   "rescan-all-metadata": {
-    request: void;
+    request: MetadataRescanMode;
     response: { success: boolean; error?: string };
   };
   "add-library-folder": {

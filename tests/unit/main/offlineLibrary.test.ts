@@ -63,13 +63,20 @@ vi.mock("../../../src/main/db/index.js", () => ({
 
 import {
   createTestDb,
-  truncateAll,
+  linkBookArtist,
+  linkBookTag,
+  seedArtist,
   seedBook,
+  seedTag,
+  truncateAll,
 } from "../../../src/main/db/test-utils.js";
 
 let db: Knex;
 
-async function writeTestArchive(filePath: string): Promise<void> {
+async function writeTestArchive(
+  filePath: string,
+  info = "제목: Android import",
+): Promise<void> {
   await new Promise<void>((resolve, reject) => {
     const output = createWriteStream(filePath);
     const archive = archiver("zip");
@@ -78,7 +85,7 @@ async function writeTestArchive(filePath: string): Promise<void> {
     archive.once("error", reject);
     archive.pipe(output);
     archive.append(Buffer.from("image"), { name: "001.jpg" });
-    archive.append("제목: Android import", { name: "info.txt" });
+    archive.append(info, { name: "info.txt" });
     void archive.finalize();
   });
 }
@@ -189,6 +196,94 @@ describe("오프라인 라이브러리 보존", () => {
       await scanFile(archivePath, syncId);
 
       expect(await db("Book").where("sync_id", syncId)).toHaveLength(2);
+    });
+  });
+
+  describe("metadata rescan modes", () => {
+    let tmpDir: string;
+
+    beforeEach(async () => {
+      tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "metadata-rescan-"));
+    });
+
+    afterEach(async () => {
+      await fs.rm(tmpDir, { recursive: true, force: true });
+    });
+
+    it("soft mode preserves edits and merges missing relationships", async () => {
+      const archivePath = path.join(tmpDir, "soft.cbz");
+      await writeTestArchive(
+        archivePath,
+        "제목: info title\n태그: info tag\n갤러리 넘버: 12345",
+      );
+      const book = await seedBook(db, {
+        path: archivePath,
+        title: "edited title",
+        hitomi_id: null,
+      });
+      const editedArtist = await seedArtist(db, "edited artist");
+      const editedTag = await seedTag(db, "edited tag");
+      await linkBookArtist(db, book.id, editedArtist.id);
+      await linkBookTag(db, book.id, editedTag.id);
+
+      await scanFile(archivePath, undefined, "soft");
+
+      const stored = await db("Book").where("id", book.id).first();
+      expect(stored).toMatchObject({
+        title: "edited title",
+        hitomi_id: "12345",
+      });
+      const artists = await db("BookArtist").where("book_id", book.id);
+      const tags = await db("BookTag").where("book_id", book.id);
+      expect(artists).toHaveLength(1);
+      expect(tags).toHaveLength(2);
+    });
+
+    it("hard mode replaces metadata and clears absent values", async () => {
+      const archivePath = path.join(tmpDir, "hard.cbz");
+      await writeTestArchive(archivePath, "제목: info title\n태그: info tag");
+      const book = await seedBook(db, {
+        path: archivePath,
+        title: "edited title",
+        hitomi_id: "edited id",
+        type: "edited type",
+      });
+      const editedArtist = await seedArtist(db, "edited artist");
+      const editedTag = await seedTag(db, "edited tag");
+      await linkBookArtist(db, book.id, editedArtist.id);
+      await linkBookTag(db, book.id, editedTag.id);
+
+      await scanFile(archivePath, undefined, "hard");
+
+      const stored = await db("Book").where("id", book.id).first();
+      expect(stored).toMatchObject({
+        title: "info title",
+        hitomi_id: null,
+        type: null,
+      });
+      expect(await db("BookArtist").where("book_id", book.id)).toHaveLength(0);
+      expect(await db("BookTag").where("book_id", book.id)).toHaveLength(1);
+    });
+
+    it("directory scans apply the selected metadata mode", async () => {
+      const bookPath = path.join(tmpDir, "folder-book");
+      await fs.mkdir(bookPath);
+      await fs.writeFile(path.join(bookPath, "001.jpg"), "image");
+      await fs.writeFile(path.join(bookPath, "info.txt"), "제목: disk title");
+      const book = await seedBook(db, {
+        path: bookPath,
+        title: "edited title",
+        hitomi_id: "edited id",
+      });
+
+      await scanDirectory(tmpDir, {
+        force: true,
+        preserveMissingSyncIds: true,
+        metadataMode: "hard",
+      });
+
+      const stored = await db("Book").where("id", book.id).first();
+      expect(stored).toMatchObject({ title: "disk title", hitomi_id: null });
     });
   });
 

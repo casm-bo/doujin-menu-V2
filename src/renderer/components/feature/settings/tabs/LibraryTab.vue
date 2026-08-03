@@ -29,6 +29,7 @@ import { onMounted, onUnmounted, ref } from "vue";
 import { toast } from "vue-sonner";
 import { ipcRenderer } from "@/api";
 import { useQueryClient } from "@tanstack/vue-query";
+import type { MetadataRescanMode } from "../../../../../types/ipc";
 
 interface LibraryFolder {
   path: string;
@@ -49,6 +50,9 @@ const libraryFolders = ref<LibraryFolder[]>([]);
 const folderToRemove = ref<string | null>(null);
 const prioritizeKoreanTitles = ref(false);
 const hideLibraryTags = ref(false);
+const showRescanModeDialog = ref(false);
+const showHardRescanWarning = ref(false);
+const isRescanningMetadata = ref(false);
 
 // info.txt 생성 상태
 const isGeneratingInfoFiles = ref(false);
@@ -168,16 +172,21 @@ const regenerateAllThumbnails = async () => {
 };
 
 // 전체 메타데이터 재스캔
-const rescanAllMetadata = async () => {
+const rescanAllMetadata = async (mode: MetadataRescanMode) => {
+  isRescanningMetadata.value = true;
   toast.info("전체 메타데이터 재스캔을 시작합니다...");
-  const result = await ipcRenderer.invoke("rescan-all-metadata");
-  if (result.success) {
-    await loadLibraryFolders(); // 스캔 후 폴더 정보 업데이트
-    toast.success("모든 라이브러리 폴더의 메타데이터 스캔이 완료되었습니다.");
-  } else {
-    toast.error("메타데이터 재스캔에 실패했습니다.", {
-      description: result.error,
-    });
+  try {
+    const result = await ipcRenderer.invoke("rescan-all-metadata", mode);
+    if (result.success) {
+      await loadLibraryFolders();
+      toast.success("모든 라이브러리 폴더의 메타데이터 스캔이 완료되었습니다.");
+    } else {
+      toast.error("메타데이터 재스캔에 실패했습니다.", {
+        description: result.error,
+      });
+    }
+  } finally {
+    isRescanningMetadata.value = false;
   }
 };
 
@@ -392,7 +401,13 @@ const generateMissingInfoFiles = async () => {
           >
         </SettingItem>
         <SettingItem title="전체 메타데이터 재스캔">
-          <Button variant="outline" @click="rescanAllMetadata">재스캔</Button>
+          <Button
+            variant="outline"
+            :disabled="isRescanningMetadata"
+            @click="showRescanModeDialog = true"
+          >
+            재스캔
+          </Button>
         </SettingItem>
       </CardContent>
     </Card>
@@ -464,4 +479,55 @@ const generateMissingInfoFiles = async () => {
       </CardContent>
     </Card>
   </div>
+
+  <AlertDialog
+    :open="showRescanModeDialog"
+    @update:open="showRescanModeDialog = $event"
+  >
+    <AlertDialogContent>
+      <AlertDialogHeader>
+        <AlertDialogTitle>재스캔 방식을 선택하세요</AlertDialogTitle>
+        <AlertDialogDescription>
+          Soft는 현재 메타데이터를 유지하며 info.txt의 누락된 값을 합칩니다.
+          Hard는 info.txt 기준으로 기존 메타데이터를 교체합니다.
+        </AlertDialogDescription>
+      </AlertDialogHeader>
+      <AlertDialogFooter>
+        <AlertDialogCancel>취소</AlertDialogCancel>
+        <AlertDialogAction @click="rescanAllMetadata('soft')">
+          Soft 재스캔
+        </AlertDialogAction>
+        <Button
+          variant="destructive"
+          @click="
+            showRescanModeDialog = false;
+            showHardRescanWarning = true;
+          "
+        >
+          Hard 재스캔
+        </Button>
+      </AlertDialogFooter>
+    </AlertDialogContent>
+  </AlertDialog>
+
+  <AlertDialog
+    :open="showHardRescanWarning"
+    @update:open="showHardRescanWarning = $event"
+  >
+    <AlertDialogContent>
+      <AlertDialogHeader>
+        <AlertDialogTitle>편집한 메타데이터를 덮어쓸까요?</AlertDialogTitle>
+        <AlertDialogDescription>
+          Hard 재스캔은 현재 값을 info.txt로 교체하며, info.txt에 없는 항목은
+          비웁니다. 이 작업은 되돌릴 수 없습니다.
+        </AlertDialogDescription>
+      </AlertDialogHeader>
+      <AlertDialogFooter>
+        <AlertDialogCancel>취소</AlertDialogCancel>
+        <AlertDialogAction @click="rescanAllMetadata('hard')">
+          덮어쓰기
+        </AlertDialogAction>
+      </AlertDialogFooter>
+    </AlertDialogContent>
+  </AlertDialog>
 </template>
