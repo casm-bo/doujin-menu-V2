@@ -585,6 +585,7 @@ export async function handleCreateSeriesCollection(data: {
   description?: string;
   cover_image?: string;
   bookIds?: number[];
+  replaceExistingSeries?: boolean;
 }) {
   try {
     const bookIds = [...new Set(data.bookIds || [])];
@@ -596,10 +597,25 @@ export async function handleCreateSeriesCollection(data: {
         if (selectedBooks.length !== bookIds.length) {
           throw new Error("선택한 책 중 라이브러리에 없는 책이 있습니다");
         }
-        if (selectedBooks.some((book) => book.series_collection_id != null)) {
+        const existingSeriesIds = [
+          ...new Set(
+            selectedBooks
+              .map((book) => book.series_collection_id)
+              .filter((id): id is number => id != null),
+          ),
+        ];
+        if (existingSeriesIds.length > 0 && !data.replaceExistingSeries) {
           throw new Error(
             "이미 시리즈에 속한 책은 새 시리즈에 추가할 수 없습니다",
           );
+        }
+        if (existingSeriesIds.length > 0) {
+          await trx("Book")
+            .whereIn("series_collection_id", existingSeriesIds)
+            .update({ series_collection_id: null, series_order_index: null });
+          await trx("SeriesCollection")
+            .whereIn("id", existingSeriesIds)
+            .delete();
         }
       }
 

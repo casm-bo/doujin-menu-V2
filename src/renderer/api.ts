@@ -365,6 +365,7 @@ export async function createSeriesCollection(data: {
   description?: string;
   cover_image?: string;
   bookIds?: number[];
+  replaceExistingSeries?: boolean;
 }) {
   const result = await ipcRenderer.invoke("create-series-collection", data);
   if (result.success) {

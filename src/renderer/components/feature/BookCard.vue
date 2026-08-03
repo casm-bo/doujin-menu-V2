@@ -82,6 +82,10 @@ const openInNewWindow = () => {
 };
 
 const handleCardClick = (event: MouseEvent) => {
+  if (event.shiftKey) {
+    emit("toggle-select", event);
+    return;
+  }
   if (isOffline.value) {
     showOfflineToast();
     return;
@@ -257,6 +261,7 @@ const confirmDeleteBook = async () => {
   <ContextMenu>
     <ContextMenuTrigger>
       <LightCard
+        :data-book-id="book.id"
         class="flex h-full cursor-pointer flex-col gap-0 overflow-hidden py-0 transition-shadow hover:shadow-lg"
         :class="{ 'ring-primary ring-2': selected }"
         @click="handleCardClick"
@@ -278,7 +283,7 @@ const confirmDeleteBook = async () => {
           </Badge>
           <div
             class="absolute top-2 left-2 z-10 flex size-8 items-center justify-center"
-            @click.stop="emit('toggle-select')"
+            @click.stop="emit('toggle-select', $event)"
           >
             <Checkbox
               :model-value="selected"

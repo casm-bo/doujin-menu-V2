@@ -194,6 +194,8 @@ function buildFilteredQuery(filter: FilterParams | null) {
 
   if (seriesStatus === "series") {
     mainQuery.whereNotNull("sub.series_collection_id");
+  } else if (seriesStatus === "standalone") {
+    mainQuery.whereNull("sub.series_collection_id");
   }
 
   if (searchQuery) {

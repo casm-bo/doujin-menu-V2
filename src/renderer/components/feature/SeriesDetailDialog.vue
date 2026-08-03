@@ -28,6 +28,7 @@ import { toast } from "vue-sonner";
 import type { SeriesCollectionWithBooks } from "../../../main/db/types";
 import type { Book } from "../../../types/ipc";
 import {
+  deleteSeriesCollection,
   getSeriesCollectionById,
   getThumbnailUrl,
   removeBookFromSeries,
@@ -71,6 +72,7 @@ const showAddBookDialog = ref(false);
 
 // 책 제거 확인 다이얼로그
 const showRemoveDialog = ref(false);
+const showDeleteSeriesDialog = ref(false);
 const bookToRemove = ref<number | null>(null);
 
 // 드래그 앤 드롭 상태
@@ -146,6 +148,17 @@ const removeBookMutation = useMutation({
   onError: (error) => {
     toast.error(`제거 실패: ${error.message}`);
   },
+});
+
+const deleteSeriesMutation = useMutation({
+  mutationFn: () => deleteSeriesCollection(props.series!.id),
+  onSuccess: () => {
+    toast.success("시리즈를 삭제했습니다. 에피소드는 유지됩니다");
+    showDeleteSeriesDialog.value = false;
+    emit("update:open", false);
+    emit("updated");
+  },
+  onError: (error) => toast.error(`시리즈 삭제 실패: ${error.message}`),
 });
 
 const flushReorder = () => {
@@ -392,15 +405,23 @@ const excludeBookIds = computed(() => books.value.map((book) => book.id));
                 >
                   {{ seriesDetail?.name || series?.name }}
                 </h2>
-                <Button
-                  v-if="!isEditing"
-                  variant="outline"
-                  size="sm"
-                  @click="startEdit"
-                >
-                  <Icon icon="solar:pen-bold-duotone" class="mr-2 h-4 w-4" />
-                  이름변경
-                </Button>
+                <div v-if="!isEditing" class="flex gap-2">
+                  <Button variant="outline" size="sm" @click="startEdit">
+                    <Icon icon="solar:pen-bold-duotone" class="mr-2 h-4 w-4" />
+                    이름변경
+                  </Button>
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    @click="showDeleteSeriesDialog = true"
+                  >
+                    <Icon
+                      icon="solar:trash-bin-trash-bold-duotone"
+                      class="mr-2 h-4 w-4"
+                    />
+                    시리즈 삭제
+                  </Button>
+                </div>
               </div>
               <div v-if="seriesArtists.length" class="flex flex-wrap gap-1">
                 <Badge
@@ -687,6 +708,30 @@ const excludeBookIds = computed(() => books.value.map((book) => book.id));
   </Dialog>
 
   <BookDetailDialog v-model="showEpisodeDetail" :book="selectedEpisode" />
+
+  <AlertDialog
+    :open="showDeleteSeriesDialog"
+    @update:open="showDeleteSeriesDialog = $event"
+  >
+    <AlertDialogContent>
+      <AlertDialogHeader>
+        <AlertDialogTitle>시리즈를 삭제하시겠습니까?</AlertDialogTitle>
+        <AlertDialogDescription>
+          시리즈만 삭제합니다. 안에 있던 에피소드와 실제 파일은 삭제하지
+          않습니다.
+        </AlertDialogDescription>
+      </AlertDialogHeader>
+      <AlertDialogFooter>
+        <AlertDialogCancel>취소</AlertDialogCancel>
+        <AlertDialogAction
+          :disabled="deleteSeriesMutation.isPending.value"
+          @click="deleteSeriesMutation.mutate()"
+        >
+          시리즈 삭제
+        </AlertDialogAction>
+      </AlertDialogFooter>
+    </AlertDialogContent>
+  </AlertDialog>
 
   <!-- 책 추가 다이얼로그 -->
   <AddBookToSeriesDialog

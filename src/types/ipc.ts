@@ -15,7 +15,7 @@ export interface FilterParams {
   sortOrder?: "asc" | "desc";
   isFavorite?: boolean;
   offlineStatus?: "all" | "online" | "offline";
-  seriesStatus?: "all" | "series";
+  seriesStatus?: "all" | "series" | "standalone";
 }
 
 export interface Preset {
@@ -650,6 +650,7 @@ export interface IpcChannels {
       description?: string;
       cover_image?: string;
       bookIds?: number[];
+      replaceExistingSeries?: boolean;
       confidence_score?: number;
       is_auto_generated?: boolean;
       is_manually_edited?: boolean;
