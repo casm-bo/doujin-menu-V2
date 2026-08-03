@@ -15,19 +15,6 @@ export interface Changelog {
  */
 export const changelogData: Changelog[] = [
   {
-    version: "1.24.1",
-    changes: [
-      {
-        type: "fix",
-        title: "🐛 라이브러리 UI 수정",
-        items: [
-          "좁은 창에서도 도구 모음이 가로로 넘치지 않도록 정리하고, 라이브러리에서는 검색 프리셋을 제거했습니다.",
-          "시리즈 카드에 첫 번째 에피소드 제목 대신 시리즈 제목이 표시되도록 수정했습니다.",
-        ],
-      },
-    ],
-  },
-  {
     version: "1.24.0",
     changes: [
       {
