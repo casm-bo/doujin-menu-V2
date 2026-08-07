@@ -557,7 +557,12 @@ export interface IpcChannels {
   // Thumbnail handlers
   "regenerate-all-thumbnails": {
     request: void;
-    response: { success: boolean; error?: string };
+    response: {
+      success: boolean;
+      count?: number;
+      failedCount?: number;
+      error?: string;
+    };
   };
 
   // Downloader handlers

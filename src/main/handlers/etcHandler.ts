@@ -71,6 +71,14 @@ export function formatBytes(bytes: number, decimals = 2) {
   return `${(bytes / Math.pow(k, i)).toFixed(dm)} ${sizes[i]}`;
 }
 
+export async function clearTempFiles(userDataPath = app.getPath("userData")) {
+  await Promise.all(
+    ["downloader_temp_thumbnails", "temp_cover", "temp_external"].map((name) =>
+      fs.rm(path.join(userDataPath, name), { recursive: true, force: true }),
+    ),
+  );
+}
+
 async function handleGenerateMissingInfoFiles(
   event: IpcMainInvokeEvent,
   pattern: string,
@@ -252,23 +260,7 @@ export function registerEtcHandlers(win: BrowserWindow) {
 
   ipcMain.handle("clear-temp-files", async () => {
     try {
-      const tempPath = [
-        path.join(app.getPath("userData"), "downloader_temp_thumbnails"),
-        path.join(app.getPath("userData"), "temp_cover"),
-        path.join(app.getPath("userData"), "temp_external"),
-      ];
-
-      for (const temp of tempPath) {
-        const list = await fs.readdir(temp);
-        await Promise.allSettled(
-          list.map(async (file) => {
-            await fs.rm(path.join(temp, file), {
-              force: true,
-              recursive: true,
-            });
-          }),
-        );
-      }
+      await clearTempFiles();
 
       return { success: true };
     } catch (error) {
@@ -317,7 +309,9 @@ export function registerEtcHandlers(win: BrowserWindow) {
         if (isDirectory) {
           const files = await fs.readdir(bookPath);
           const imageFiles = files
-            .filter((file) => file.match(/\.(jpg|jpeg|png|webp|gif|bmp)$/i))
+            .filter((file) =>
+              file.match(/\.(jpg|jpeg|png|webp|gif|bmp|avif)$/i),
+            )
             .sort(naturalSort);
 
           if (pageIndex < 0 || pageIndex >= imageFiles.length) {
@@ -386,7 +380,9 @@ export function registerEtcHandlers(win: BrowserWindow) {
           }
           const files = await fs.readdir(bookPath);
           const imageFiles = files
-            .filter((file) => file.match(/\.(jpg|jpeg|png|webp|gif|bmp)$/i))
+            .filter((file) =>
+              file.match(/\.(jpg|jpeg|png|webp|gif|bmp|avif)$/i),
+            )
             .sort(naturalSort);
           if (imageFiles.length === 0) {
             return { success: false, error: "이미지 파일을 찾을 수 없습니다." };
@@ -436,7 +432,15 @@ function extractPageFromZip(
           if (!entry.fileName.endsWith("/")) {
             const ext = path.extname(entry.fileName).toLowerCase();
             if (
-              [".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp"].includes(ext)
+              [
+                ".jpg",
+                ".jpeg",
+                ".png",
+                ".webp",
+                ".gif",
+                ".bmp",
+                ".avif",
+              ].includes(ext)
             ) {
               imageEntries.push({ fileName: entry.fileName, entry });
             }

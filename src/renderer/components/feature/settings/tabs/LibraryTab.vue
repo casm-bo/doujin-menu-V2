@@ -38,6 +38,7 @@ interface LibraryFolder {
 }
 
 const queryClient = useQueryClient();
+const isRegeneratingThumbnails = ref(false);
 const saveConfig = async (key: string, value: unknown) => {
   const result = await ipcRenderer.invoke("set-config", { key, value });
   if (!result.success && result.error) {
@@ -162,12 +163,20 @@ const rescanLibraryFolder = async (folderPath: string) => {
 
 // 전체 썸네일 재생성
 const regenerateAllThumbnails = async () => {
+  if (isRegeneratingThumbnails.value) return;
+  isRegeneratingThumbnails.value = true;
   toast.info("전체 썸네일 재생성을 시작합니다...");
-  const result = await ipcRenderer.invoke("regenerate-all-thumbnails");
-  if (result.success) {
-    toast.success("모든 썸네일이 성공적으로 재생성되었습니다.");
-  } else {
-    toast.error("썸네일 재생성에 실패했습니다.", { description: result.error });
+  try {
+    const result = await ipcRenderer.invoke("regenerate-all-thumbnails");
+    if (result.success) {
+      toast.success(`${result.count ?? 0}개의 썸네일을 재생성했습니다.`);
+    } else {
+      toast.error("썸네일 재생성에 실패했습니다.", {
+        description: result.error,
+      });
+    }
+  } finally {
+    isRegeneratingThumbnails.value = false;
   }
 };
 
@@ -396,7 +405,10 @@ const generateMissingInfoFiles = async () => {
       </CardHeader>
       <CardContent class="space-y-4">
         <SettingItem title="전체 썸네일 재생성">
-          <Button variant="outline" @click="regenerateAllThumbnails"
+          <Button
+            variant="outline"
+            :disabled="isRegeneratingThumbnails"
+            @click="regenerateAllThumbnails"
             >재생성</Button
           >
         </SettingItem>

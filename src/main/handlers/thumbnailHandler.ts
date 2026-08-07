@@ -111,6 +111,7 @@ export async function generateThumbnailForBook(bookId: number) {
   }
 
   let sourcePath: string | null = null;
+  let tempSourcePath: string | undefined;
   const ext = path.extname(book.path).toLowerCase();
 
   try {
@@ -123,7 +124,7 @@ export async function generateThumbnailForBook(bookId: number) {
     ) {
       // 3-1. 폴더인 경우: 정렬 후 첫 번째 이미지 파일을 소스로 사용
       const imageFiles = (await fs.readdir(book.path))
-        .filter((f) => f.match(/\.(jpg|jpeg|png|webp)$/i))
+        .filter((f) => f.match(/\.(jpg|jpeg|png|webp|avif)$/i))
         .sort();
       if (imageFiles.length > 0) {
         sourcePath = path.join(book.path, imageFiles[0]);
@@ -139,7 +140,8 @@ export async function generateThumbnailForBook(bookId: number) {
         `${book.id}_temp_cover.webp`,
       );
       sourcePath = await extractCoverFromZip(book.path, tempCoverPath);
-    } else if (ext.match(/\.(jpg|jpeg|png|webp)$/i)) {
+      tempSourcePath = sourcePath ?? undefined;
+    } else if (ext.match(/\.(jpg|jpeg|png|webp|avif)$/i)) {
       // 3-3. 단일 이미지 파일인 경우: 해당 파일을 직접 소스로 사용
       sourcePath = book.path;
     }
@@ -181,7 +183,7 @@ export async function generateThumbnailForBook(bookId: number) {
         sourcePath,
         thumbnailPath,
         bookId,
-        tempPath: app.getPath("temp"),
+        tempSourcePath,
         thumbnailDirPath: thumbnailDir,
       });
     });
@@ -209,16 +211,23 @@ export const handleGenerateThumbnail = async (bookId: number) => {
 export const handleRegenerateAllThumbnails = async () => {
   global.console.time("handleRegenerateAllThumbnails >>>>>>>>>");
   try {
-    const books = await db("Book").select("id");
+    const books = await db("Book")
+      .select("id")
+      .where((query) =>
+        query.where("is_offline", false).orWhereNull("is_offline"),
+      );
 
     const queue = new PQueue({ concurrency: os.cpus().length });
     const updatedThumbnails: { bookId: number; thumbnailPath: string }[] = [];
+    let failedCount = 0;
 
     for (const book of books) {
       queue.add(async () => {
         const result = await generateThumbnailForBook(book.id);
         if (result) {
           updatedThumbnails.push(result);
+        } else {
+          failedCount++;
         }
       });
     }
@@ -239,7 +248,15 @@ export const handleRegenerateAllThumbnails = async () => {
     });
 
     global.console.timeEnd("handleRegenerateAllThumbnails >>>>>>>>>");
-    return { success: true, count: books.length };
+    if (failedCount > 0) {
+      return {
+        success: false,
+        count: updatedThumbnails.length,
+        failedCount,
+        error: `${failedCount}개의 썸네일을 재생성하지 못했습니다.`,
+      };
+    }
+    return { success: true, count: updatedThumbnails.length, failedCount: 0 };
   } catch (error) {
     console.error("[Main] Failed during thumbnail regeneration:", error);
     return { success: false, error: (error as Error).message };

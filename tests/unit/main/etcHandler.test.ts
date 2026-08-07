@@ -74,14 +74,17 @@ vi.mock("electron-window-state", () => ({
 }));
 
 // fs/promises mock 설정
-vi.mock("fs/promises", () => ({
-  lstat: vi.fn(),
-  readdir: vi.fn(),
-}));
+vi.mock("fs/promises", () => {
+  const lstat = vi.fn();
+  const readdir = vi.fn();
+  const rm = vi.fn();
+  return { default: { lstat, readdir, rm }, lstat, readdir, rm };
+});
 
-import { lstat, readdir } from "fs/promises";
+import { lstat, readdir, rm } from "fs/promises";
 import { shell } from "electron";
 import {
+  clearTempFiles,
   formatBytes,
   openAllowedExternalUrl,
 } from "../../../src/main/handlers/etcHandler";
@@ -89,6 +92,7 @@ import {
 // mock 함수 타입 캐스팅
 const mockLstat = lstat as unknown as ReturnType<typeof vi.fn>;
 const mockReaddir = readdir as unknown as ReturnType<typeof vi.fn>;
+const mockRm = rm as unknown as ReturnType<typeof vi.fn>;
 
 // getDirSize는 복잡한 fs 의존성 때문에 별도 mock 함수로 테스트
 async function getDirSize(dirPath: string): Promise<number> {
@@ -121,6 +125,17 @@ async function getDirSize(dirPath: string): Promise<number> {
 }
 
 describe("etcHandler", () => {
+  it("존재하지 않는 임시 폴더도 오류 없이 정리해야 함", async () => {
+    mockRm.mockResolvedValue(undefined);
+
+    await expect(clearTempFiles("/mock/user/data")).resolves.toBeUndefined();
+    expect(mockRm).toHaveBeenCalledTimes(3);
+    expect(mockRm).toHaveBeenCalledWith(
+      expect.stringContaining("temp_external"),
+      { recursive: true, force: true },
+    );
+  });
+
   it("허용된 HTTPS 호스트만 외부 브라우저로 엶", async () => {
     await expect(
       openAllowedExternalUrl("https://github.com/casm-bo/doujin-menu-V2"),
