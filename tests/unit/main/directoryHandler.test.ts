@@ -284,12 +284,13 @@ describe("extractInfoTxtAndImageCountFromZip", () => {
       { name: "img1.jpg", content: "fake" },
       { name: "img2.png", content: "fake" },
       { name: "img3.jpeg", content: "fake" },
+      { name: "img4.avif", content: "fake" },
     ]);
     createdPaths.push(zipPath);
 
     const result = await extractInfoTxtAndImageCountFromZip(zipPath);
     expect(result.infoTxt).toContain("갤러리 넘버: 123");
-    expect(result.imageCount).toBe(3);
+    expect(result.imageCount).toBe(4);
   });
 
   it("info.txt가 없으면 null, 이미지 수만 반환해야 함", async () => {

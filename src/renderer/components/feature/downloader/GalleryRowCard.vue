@@ -227,12 +227,12 @@ const {
         <Icon icon="solar:download-bold-duotone" class="h-4 w-4" />
         {{ buttonText }}
       </Button>
-      <Button v-if="isDownloadCompleted" size="sm" @click.stop="handleOpenBook">
+      <Button v-if="isInLibrary" size="sm" @click.stop="handleOpenBook">
         <Icon icon="solar:book-bold-duotone" class="h-4 w-4" />
         열기
       </Button>
       <Button
-        v-if="isDownloadCompleted"
+        v-if="isInLibrary"
         size="sm"
         variant="destructive"
         @click.stop="handleDeleteGallery"

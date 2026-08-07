@@ -361,7 +361,7 @@ app.whenReady().then(async () => {
       if (isDirectory) {
         const files = await fs.readdir(bookPath);
         const imageFiles = files
-          .filter((file) => file.match(/\.(jpg|jpeg|png|webp|gif|bmp)$/i))
+          .filter((file) => file.match(/\.(jpg|jpeg|png|webp|gif|bmp|avif)$/i))
           .sort(naturalSort);
 
         if (pageIndex >= 0 && pageIndex < imageFiles.length) {
@@ -399,9 +399,15 @@ app.whenReady().then(async () => {
                   // 폴더 엔트리 무시
                   const ext = path.extname(entry.fileName).toLowerCase();
                   if (
-                    [`.jpg`, `.jpeg`, `.png`, `.webp`, `.gif`, `.bmp`].includes(
-                      ext,
-                    )
+                    [
+                      `.jpg`,
+                      `.jpeg`,
+                      `.png`,
+                      `.webp`,
+                      `.gif`,
+                      `.bmp`,
+                      `.avif`,
+                    ].includes(ext)
                   ) {
                     imageEntries.push({ fileName: entry.fileName, entry });
                   }

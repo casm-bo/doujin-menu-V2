@@ -7,6 +7,7 @@ import path from "path";
 import { console } from "../main.js";
 import { hitomiService } from "../services/hitomi/hitomiService.js";
 import { formatDownloadFolderName } from "../utils/index.js";
+import { isPathWithinLibraryRoot } from "../utils/libraryPath.js";
 import { store as configStore } from "./configHandler.js";
 import { scanFile } from "./directoryHandler.js";
 
@@ -183,10 +184,10 @@ export const handleDownloadGallery = async (
         }
         attempt++;
 
-        // 이미지 서버 구성이 갱신될 수 있으므로 매 시도마다 URL을 다시 계산합니다.
-        const fullImageUrl = await hitomiService.resolveImageUrl(file);
         let res: Response;
         try {
+          // 이미지 서버 구성이 갱신될 수 있으므로 매 시도마다 URL을 다시 계산합니다.
+          const fullImageUrl = await hitomiService.resolveImageUrl(file);
           res = await fetch(fullImageUrl, {
             headers: {
               accept:
@@ -220,25 +221,41 @@ export const handleDownloadGallery = async (
           continue;
         }
 
-        if (res.ok) {
+        if (!res.ok) {
+          lastFailure = `HTTP ${res.status} ${res.statusText}`.trim();
+          await res.body?.cancel();
+          if (!isRetryableDownloadStatus(res.status)) {
+            throw new Error(`${fileName} 다운로드 실패: ${lastFailure}`);
+          }
+          if (attempt >= MAX_DOWNLOAD_ATTEMPTS) break;
+
+          const delayMs = getRetryDelayMs(res, attempt);
+          console.warn(
+            `[Downloader] 일시적인 이미지 서버 오류 (${attempt}/${MAX_DOWNLOAD_ATTEMPTS}): ${fileName} - ${lastFailure}. ${formatRetryDelay(delayMs)} 후 재시도합니다.`,
+          );
+          await wait(delayMs);
+          continue;
+        }
+
+        let imageBuffer: Buffer;
+        try {
           const arrayBuffer = await res.arrayBuffer();
-          await fs.writeFile(filePath, Buffer.from(arrayBuffer));
-          success = true;
-          break;
+          if (arrayBuffer.byteLength === 0) {
+            throw new Error("빈 응답을 받았습니다.");
+          }
+          imageBuffer = Buffer.from(arrayBuffer);
+        } catch (error) {
+          lastFailure = error instanceof Error ? error.message : String(error);
+          if (attempt >= MAX_DOWNLOAD_ATTEMPTS) break;
+          const delayMs = getRetryDelayMs(undefined, attempt);
+          console.warn(
+            `[Downloader] 이미지 전송 중 오류 (${attempt}/${MAX_DOWNLOAD_ATTEMPTS}): ${fileName} - ${lastFailure}. ${formatRetryDelay(delayMs)} 후 재시도합니다.`,
+          );
+          await wait(delayMs);
+          continue;
         }
-
-        lastFailure = `HTTP ${res.status} ${res.statusText}`.trim();
-        await res.body?.cancel();
-        if (!isRetryableDownloadStatus(res.status)) {
-          throw new Error(`${fileName} 다운로드 실패: ${lastFailure}`);
-        }
-        if (attempt >= MAX_DOWNLOAD_ATTEMPTS) break;
-
-        const delayMs = getRetryDelayMs(res, attempt);
-        console.warn(
-          `[Downloader] 일시적인 이미지 서버 오류 (${attempt}/${MAX_DOWNLOAD_ATTEMPTS}): ${fileName} - ${lastFailure}. ${formatRetryDelay(delayMs)} 후 재시도합니다.`,
-        );
-        await wait(delayMs);
+        await fs.writeFile(filePath, imageBuffer);
+        success = true;
       }
 
       if (!success) {
@@ -310,33 +327,18 @@ export const handleDownloadGallery = async (
       });
 
       // 에러 핸들링
-      archive.on("error", (err) => {
-        throw err;
-      });
-
-      // 스트림 연결
-      archive.pipe(output);
-
-      // 폴더 내 모든 파일 추가
-      archive.directory(galleryDownloadPath, false);
-
-      // 압축 완료
-      await archive.finalize();
-
-      // 압축 완료 대기
       await new Promise<void>((resolve, reject) => {
-        output.on("close", () => resolve());
-        output.on("error", (err) => reject(err));
+        output.once("close", resolve);
+        output.once("error", reject);
+        archive.once("error", reject);
+        archive.pipe(output);
+        archive.directory(galleryDownloadPath, false);
+        void archive.finalize().catch(reject);
       });
 
       // 원본 폴더 삭제
       await fs.rm(galleryDownloadPath, { recursive: true, force: true });
     }
-
-    webContents.send("download-progress", {
-      galleryId,
-      status: "completed",
-    });
 
     // 다운로드된 폴더/파일이 라이브러리 폴더에 포함되는지 확인
     const libraryFolders = configStore.get("libraryFolders", []);
@@ -345,14 +347,28 @@ export const handleDownloadGallery = async (
     const scanPath = compressDownload
       ? `${galleryDownloadPath}.${compressFormat}`
       : galleryDownloadPath;
+    const scanStats = await fs.stat(scanPath);
+    if (scanStats.isFile() && scanStats.size === 0) {
+      throw new Error("생성된 압축 파일이 비어 있습니다.");
+    }
 
     const isDownloadedToLibrary = libraryFolders.some((folder) =>
-      scanPath.startsWith(folder),
+      isPathWithinLibraryRoot(scanPath, folder),
     );
 
     if (isDownloadedToLibrary) {
-      await scanFile(scanPath);
+      const bookId = await scanFile(scanPath);
+      if (!bookId) {
+        throw new Error(
+          "파일 다운로드는 완료됐지만 라이브러리 등록에 실패했습니다.",
+        );
+      }
     }
+
+    webContents.send("download-progress", {
+      galleryId,
+      status: "completed",
+    });
 
     return { success: true };
   } catch (error) {

@@ -632,7 +632,7 @@ export const handleGetBookPagePaths = async (bookId: number) => {
     if (isDirectory) {
       const files = await fs.readdir(bookPath);
       const imageFiles = files
-        .filter((file) => file.match(/\.(jpg|jpeg|png|webp|gif|bmp)$/i))
+        .filter((file) => file.match(/\.(jpg|jpeg|png|webp|gif|bmp|avif)$/i))
         .sort(naturalSort);
       for (let i = 0; i < imageFiles.length; i++) {
         pagePaths.push(`doujin-menu://page/${bookId}/${i}`);
@@ -668,7 +668,15 @@ export const handleGetBookPagePaths = async (bookId: number) => {
 
               const ext = path.extname(entry.fileName).toLowerCase();
               if (
-                [".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp"].includes(ext)
+                [
+                  ".jpg",
+                  ".jpeg",
+                  ".png",
+                  ".webp",
+                  ".gif",
+                  ".bmp",
+                  ".avif",
+                ].includes(ext)
               ) {
                 imageEntries.push({ fileName: entry.fileName, entry });
               }

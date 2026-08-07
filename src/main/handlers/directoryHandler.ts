@@ -122,7 +122,7 @@ export async function extractCoverFromZip(
       zipfile.readEntry(); // 엔트리 읽기 시작
 
       zipfile.on("entry", (entry) => {
-        const isImage = entry.fileName.match(/\.(jpg|jpeg|png|webp)$/i);
+        const isImage = entry.fileName.match(/\.(jpg|jpeg|png|webp|avif)$/i);
 
         if (isImage && !foundImageAndStartedExtraction) {
           foundImageAndStartedExtraction = true; // 플래그 설정
@@ -220,7 +220,7 @@ export async function extractInfoTxtAndImageCountFromZip(
 
       zipfile.on("entry", (entry) => {
         // 이미지 개수 카운트 (처음부터 끝까지 모든 엔트리 누적)
-        if (entry.fileName.match(/\.(jpg|jpeg|png|webp|gif|bmp)$/i)) {
+        if (entry.fileName.match(/\.(jpg|jpeg|png|webp|gif|bmp|avif)$/i)) {
           imageCount++;
         }
 
@@ -358,7 +358,7 @@ async function processBookItem(
   if (isDirectory) {
     // 3-1. 항목이 폴더일 경우
     const imageFiles = (await fs.readdir(itemPath))
-      .filter((f) => RegExp(/\.(jpg|jpeg|png|webp)$/i).exec(f))
+      .filter((f) => RegExp(/\.(jpg|jpeg|png|webp|avif)$/i).exec(f))
       .sort(naturalSort); // 이미지 파일 목록을 자연어 정렬합니다.
     if (imageFiles.length > 0) {
       // 이미지가 하나 이상 있을 경우에만 책으로 간주합니다.
@@ -1414,7 +1414,7 @@ export async function scanFile(
       isFile: stats.isFile(),
       name: path.basename(filePath),
     });
-    if (!processedBook) return;
+    if (!processedBook) return null;
 
     if (syncIdOverride) {
       processedBook.bookData.sync_id = cleanValue(syncIdOverride);
@@ -1440,6 +1440,8 @@ export async function scanFile(
 
     broadcastBooksUpdated();
     notifyCompanionLibraryChanged();
+    const book = await db("Book").select("id").where("path", filePath).first();
+    return book?.id ?? null;
   } catch (error) {
     console.error(`[Main] 파일 스캔 오류 ${filePath}:`, error);
     throw error;

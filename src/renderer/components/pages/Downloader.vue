@@ -176,13 +176,10 @@ const syncQueueToStatuses = () => {
     downloadQueueStore.queue.map((item) => item.gallery_id),
   );
 
-  // downloadStatuses에서 큐에 없는 항목 제거 (단, completed 상태는 유지)
+  // 큐에서 제거된 상태는 지웁니다. 라이브러리 등록 여부는 각 카드가 별도로 확인합니다.
   Object.keys(downloadStatuses).forEach((galleryIdStr) => {
     const galleryId = Number(galleryIdStr);
-    if (
-      !queueGalleryIds.has(galleryId) &&
-      downloadStatuses[galleryId]?.status !== "completed"
-    ) {
+    if (!queueGalleryIds.has(galleryId)) {
       delete downloadStatuses[galleryId];
     }
   });
@@ -223,6 +220,10 @@ const handleDownloadProgress = (...args: unknown[]) => {
         `${completedGallery.title.display}이(가) 다운로드되었습니다.`,
       );
     }
+  } else if (status === "failed") {
+    toast.error("다운로드 실패", {
+      description: error || "다운로드 중 오류가 발생했습니다.",
+    });
   }
 };
 

@@ -57,7 +57,11 @@ export const useDownloadQueueStore = defineStore("downloadQueue", () => {
   }) => {
     try {
       const newItem = await api.addToDownloadQueue(params);
-      queue.value.push(newItem);
+      const existingIndex = queue.value.findIndex(
+        (item) => item.gallery_id === newItem.gallery_id,
+      );
+      if (existingIndex >= 0) queue.value[existingIndex] = newItem;
+      else queue.value.push(newItem);
       return newItem;
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);

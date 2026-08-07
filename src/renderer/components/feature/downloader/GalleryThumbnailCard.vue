@@ -222,12 +222,12 @@ const {
               : "다운로드"
         }}
       </Button>
-      <Button v-if="isDownloadCompleted" size="sm" @click.stop="handleOpenBook">
+      <Button v-if="isInLibrary" size="sm" @click.stop="handleOpenBook">
         <Icon icon="solar:book-bold-duotone" class="h-5 w-5" />
         열기
       </Button>
       <Button
-        v-if="isDownloadCompleted"
+        v-if="isInLibrary"
         size="sm"
         variant="destructive"
         @click.stop="handleDeleteGallery"

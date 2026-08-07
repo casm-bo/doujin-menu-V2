@@ -54,6 +54,25 @@ export const handleAddToDownloadQueue = async (params: {
       .first();
 
     if (existing) {
+      if (existing.status === "failed") {
+        await db("DownloadQueue").where("id", existing.id).update({
+          gallery_title: params.galleryTitle,
+          gallery_artist: params.galleryArtist,
+          thumbnail_url: params.thumbnailUrl,
+          download_path: params.downloadPath,
+          status: "pending",
+          progress: 0,
+          downloaded_files: 0,
+          error_message: null,
+          completed_at: null,
+        });
+        const retriedItem = await db<DownloadQueueItem>("DownloadQueue")
+          .where("id", existing.id)
+          .first();
+        if (!isProcessingQueue) processDownloadQueue();
+        broadcastQueueUpdate();
+        return { success: true, data: retriedItem };
+      }
       return {
         success: false,
         error: "이미 다운로드 큐에 존재합니다.",
