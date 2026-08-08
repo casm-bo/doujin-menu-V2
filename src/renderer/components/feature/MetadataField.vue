@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useTagDisplay } from "@/composable/useTagDisplay";
 import { Icon } from "@iconify/vue";
 import { nextTick, ref, watch } from "vue";
 
@@ -9,9 +10,12 @@ const props = withDefaults(
     values?: string[];
     editing?: boolean;
     multiple?: boolean;
+    tagStyle?: boolean;
   }>(),
-  { values: () => [], editing: false, multiple: true },
+  { values: () => [], editing: false, multiple: true, tagStyle: false },
 );
+
+const { getTagDisplayInfo } = useTagDisplay();
 
 const emit = defineEmits<{
   activate: [value: string];
@@ -67,12 +71,23 @@ watch(
           v-for="(value, index) in values"
           :key="`${value}-${index}`"
           :type="editing ? undefined : 'button'"
-          class="group/value hover:bg-accent inline-flex items-center gap-1 rounded-md px-2 py-1 text-sm transition-colors"
-          :class="{ 'px-3 py-2': editing, 'cursor-pointer': !editing }"
+          class="group/value inline-flex items-center gap-1 transition-colors"
+          :class="[
+            tagStyle && !editing
+              ? getTagDisplayInfo({ name: value }).className
+              : 'hover:bg-accent rounded-md px-2 py-1 text-sm',
+            { 'px-3 py-2': editing, 'cursor-pointer': !editing },
+          ]"
           @click="!editing && emit('activate', value)"
           @contextmenu.prevent="!editing && emit('search', value)"
         >
-          <span>{{ value }}</span>
+          <span>
+            {{
+              tagStyle && !editing
+                ? getTagDisplayInfo({ name: value }).displayText
+                : value
+            }}
+          </span>
           <button
             v-if="editing"
             type="button"

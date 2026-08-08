@@ -490,6 +490,7 @@ const excludeBookIds = computed(() => books.value.map((book) => book.id));
                   label="태그"
                   icon="solar:tag-bold-duotone"
                   :values="seriesTags"
+                  tag-style
                   @activate="searchInDownloader($event, 'tag')"
                   @search="searchInDownloader($event, 'tag')"
                 />

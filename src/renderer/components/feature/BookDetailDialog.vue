@@ -329,6 +329,7 @@ const searchInDownloader = (text: string, prefix: string) => {
             label="태그"
             icon="solar:tag-bold-duotone"
             :values="values('tags')"
+            tag-style
             :editing="isEditing"
             @activate="copyToClipboard($event, 'tag')"
             @search="searchInDownloader($event, 'tag')"
