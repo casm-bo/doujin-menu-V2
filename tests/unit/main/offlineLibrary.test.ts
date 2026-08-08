@@ -199,6 +199,78 @@ describe("오프라인 라이브러리 보존", () => {
     });
   });
 
+  describe("Hitomi ID identity", () => {
+    let tmpDir: string;
+
+    beforeEach(async () => {
+      tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "hitomi-identity-"));
+    });
+
+    afterEach(async () => {
+      await fs.rm(tmpDir, { recursive: true, force: true });
+    });
+
+    it("moves a missing book record to the new path and preserves its state", async () => {
+      const archivePath = path.join(tmpDir, "renamed.cbz");
+      const existing = await seedBook(db, {
+        path: path.join(tmpDir, "missing.cbz"),
+        hitomi_id: "3713170",
+        current_page: 9,
+        is_favorite: true,
+      });
+      await writeTestArchive(archivePath, "제목: moved\n갤러리 넘버: 3713170");
+
+      await scanFile(archivePath);
+
+      const copies = await db("Book").where("hitomi_id", "3713170");
+      expect(copies).toHaveLength(1);
+      expect(copies[0]).toMatchObject({
+        id: existing.id,
+        path: archivePath,
+        current_page: 9,
+        is_favorite: 1,
+      });
+    });
+
+    it("keeps both copies when both paths still exist", async () => {
+      const originalPath = path.join(tmpDir, "original.cbz");
+      const copyPath = path.join(tmpDir, "copy.cbz");
+      await writeTestArchive(originalPath, "갤러리 넘버: 2994679");
+      await writeTestArchive(copyPath, "갤러리 넘버: 2994679");
+      await seedBook(db, {
+        path: originalPath,
+        hitomi_id: "2994679",
+      });
+
+      await scanFile(copyPath);
+
+      expect(await db("Book").where("hitomi_id", "2994679")).toHaveLength(2);
+    });
+
+    it("records supplied downloader metadata even without info.txt", async () => {
+      const archivePath = path.join(tmpDir, "no-info.cbz");
+      await writeTestArchive(archivePath, "제목: fallback");
+
+      await scanFile(archivePath, undefined, "soft", {
+        hitomi_id: "1234567",
+        title: "API title",
+        artists: [{ name: "API artist" }],
+      });
+
+      const stored = await db("Book").where("path", archivePath).first();
+      expect(stored).toMatchObject({
+        hitomi_id: "1234567",
+        title: "API title",
+      });
+      const artist = await db("Artist").where("name", "API artist").first();
+      expect(
+        await db("BookArtist")
+          .where({ book_id: stored.id, artist_id: artist.id })
+          .first(),
+      ).toBeTruthy();
+    });
+  });
+
   describe("metadata rescan modes", () => {
     let tmpDir: string;
 

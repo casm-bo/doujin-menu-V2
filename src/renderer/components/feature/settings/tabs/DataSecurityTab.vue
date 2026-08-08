@@ -40,6 +40,15 @@ const saveConfig = async (key: string, value: unknown) => {
 
 // 임시 파일 관리 상태
 const tempFilesSize = ref("0 Bytes");
+const tempFileLocations = ref<
+  {
+    key: string;
+    label: string;
+    description: string;
+    path: string;
+    size: string;
+  }[]
+>([]);
 
 // 보안(앱 잠금) 상태
 const useAppLock = ref(false);
@@ -60,6 +69,7 @@ const getTempFilesSize = async () => {
   const result = await ipcRenderer.invoke("get-temp-files-size");
   if (result.success && result.data !== undefined) {
     tempFilesSize.value = result.data;
+    tempFileLocations.value = result.locations ?? [];
   } else {
     toast.error("임시 파일 크기 조회에 실패했습니다.", {
       description: result.error,
@@ -194,6 +204,27 @@ const resetAllData = async () => {
             </AlertDialog>
           </div>
         </SettingItem>
+        <div class="mt-4 space-y-3 border-t pt-4">
+          <div
+            v-for="location in tempFileLocations"
+            :key="location.key"
+            class="flex items-start justify-between gap-4 text-sm"
+          >
+            <div class="min-w-0">
+              <p class="font-medium">{{ location.label }}</p>
+              <p class="text-muted-foreground">{{ location.description }}</p>
+              <p
+                class="text-muted-foreground truncate text-xs"
+                :title="location.path"
+              >
+                {{ location.path }}
+              </p>
+            </div>
+            <span class="text-muted-foreground shrink-0">{{
+              location.size
+            }}</span>
+          </div>
+        </div>
       </CardContent>
     </Card>
 

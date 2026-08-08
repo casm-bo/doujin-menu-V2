@@ -158,6 +158,10 @@ export function useGalleryCard(
         return "일시정지";
       case "progress":
         return `${props.downloadStatus.progress || 0}%`;
+      case "compressing":
+        return "압축 중...";
+      case "finalizing":
+        return "마무리 중...";
       case "completed":
         return "완료";
       case "failed":
@@ -173,6 +177,8 @@ export function useGalleryCard(
       !bookId.value &&
       (props.downloadStatus.status === "starting" ||
         props.downloadStatus.status === "progress" ||
+        props.downloadStatus.status === "compressing" ||
+        props.downloadStatus.status === "finalizing" ||
         props.downloadStatus.status === "pending" ||
         props.downloadStatus.status === "paused")
     );

@@ -498,13 +498,18 @@ async function resolveExistingBookForScan(
   candidates: ExistingScanBook[],
   bookPath: string,
   syncId: string | null | undefined,
+  hitomiId: string | null | undefined,
   thumbnailRemovals: Pick<Book, "cover_path">[],
 ) {
   const existingByPath = candidates.find((book) => book.path === bookPath);
-  if (!syncId) return existingByPath;
+  const cleanSyncId = cleanValue(syncId);
+  const identity = cleanSyncId || cleanValue(hitomiId);
+  if (!identity) return existingByPath;
 
   const sameIdentity = candidates.filter(
-    (book) => book.sync_id === syncId && book.path !== bookPath,
+    (book) =>
+      (cleanSyncId ? book.sync_id === identity : book.hitomi_id === identity) &&
+      book.path !== bookPath,
   );
   const staleCopies: ExistingScanBook[] = [];
   for (const candidate of sameIdentity) {
@@ -576,6 +581,9 @@ async function processBatchInTransaction(
   const batchSyncIds = batch
     .map((p) => p.bookData.sync_id)
     .filter((id): id is string => Boolean(id));
+  const batchHitomiIds = batch
+    .map((p) => p.bookData.hitomi_id)
+    .filter((id): id is string => Boolean(id));
   const existingBooksInBatch: ExistingScanBook[] = await trx("Book")
     .select(
       "id",
@@ -593,6 +601,8 @@ async function processBatchInTransaction(
     .where((query) => {
       query.whereIn("path", batchPaths);
       if (batchSyncIds.length > 0) query.orWhereIn("sync_id", batchSyncIds);
+      if (batchHitomiIds.length > 0)
+        query.orWhereIn("hitomi_id", batchHitomiIds);
     });
 
   for (const processedBook of batch) {
@@ -602,6 +612,7 @@ async function processBatchInTransaction(
       existingBooksInBatch,
       bookData.path,
       bookData.sync_id,
+      bookData.hitomi_id,
       thumbnailRemovals,
     );
 
@@ -1406,6 +1417,7 @@ export async function scanFile(
   filePath: string,
   syncIdOverride?: string,
   metadataMode: MetadataRescanMode = "soft",
+  metadataOverride?: ParsedMetadata,
 ) {
   try {
     const stats = await fs.stat(filePath);
@@ -1418,6 +1430,22 @@ export async function scanFile(
 
     if (syncIdOverride) {
       processedBook.bookData.sync_id = cleanValue(syncIdOverride);
+    }
+    if (metadataOverride) {
+      processedBook.infoMetadata = {
+        ...processedBook.infoMetadata,
+        ...metadataOverride,
+      };
+      processedBook.bookData.title =
+        cleanValue(metadataOverride.title) || processedBook.bookData.title;
+      processedBook.bookData.hitomi_id =
+        cleanValue(metadataOverride.hitomi_id) ||
+        processedBook.bookData.hitomi_id;
+      processedBook.bookData.type =
+        cleanValue(metadataOverride.type) || processedBook.bookData.type;
+      processedBook.bookData.language_name_local =
+        cleanValue(metadataOverride.language) ||
+        processedBook.bookData.language_name_local;
     }
     const result = await db.transaction((trx) =>
       processBatchInTransaction(

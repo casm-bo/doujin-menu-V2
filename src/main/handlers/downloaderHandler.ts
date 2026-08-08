@@ -12,7 +12,53 @@ import {
 } from "../utils/index.js";
 import { isPathWithinLibraryRoot } from "../utils/libraryPath.js";
 import { store as configStore } from "./configHandler.js";
-import { scanFile } from "./directoryHandler.js";
+import {
+  extractInfoTxtAndImageCountFromZip,
+  scanFile,
+} from "./directoryHandler.js";
+import { parseInfoTxt, type ParsedMetadata } from "../parsers/infoTxtParser.js";
+
+export async function createDownloadArchive(
+  sourcePath: string,
+  finalPath: string,
+): Promise<void> {
+  const pendingPath = `${finalPath}.part`;
+  await fs.rm(pendingPath, { force: true });
+
+  const existing = await fs
+    .stat(finalPath)
+    .catch((error: NodeJS.ErrnoException) => {
+      if (error.code === "ENOENT") return null;
+      throw error;
+    });
+  if (existing) {
+    throw new Error(`같은 이름의 다운로드 파일이 이미 있습니다: ${finalPath}`);
+  }
+
+  const output = createWriteStream(pendingPath, { flags: "wx" });
+  const archive = archiver("zip", { zlib: { level: 0 } });
+
+  try {
+    await new Promise<void>((resolve, reject) => {
+      output.once("close", resolve);
+      output.once("error", reject);
+      archive.once("error", reject);
+      archive.once("warning", reject);
+      archive.pipe(output);
+      archive.directory(sourcePath, false);
+      void archive.finalize().catch(reject);
+    });
+
+    const stats = await fs.stat(pendingPath);
+    if (stats.size === 0) throw new Error("생성된 압축 파일이 비어 있습니다.");
+    await fs.rename(pendingPath, finalPath);
+  } catch (error) {
+    archive.abort();
+    output.destroy();
+    await fs.rm(pendingPath, { force: true }).catch(() => undefined);
+    throw error;
+  }
+}
 
 export const handleSearchGalleries = async ({
   query,
@@ -75,6 +121,26 @@ export const handleDownloadGallery = async (
     });
 
     const gallery = await hitomiService.getGallery(galleryId);
+    const compressDownload = configStore.get("compressDownload", false);
+    const compressFormat = configStore.get("compressFormat", "cbz");
+    const libraryFolders = configStore.get("libraryFolders", []);
+    const downloadedMetadata: ParsedMetadata = {
+      hitomi_id: String(gallery.id),
+      title: gallery.title.display,
+      artists: gallery.artists.map((tag) => ({ name: tag.name })),
+      groups: gallery.groups.map((tag) => ({ name: tag.name })),
+      type: gallery.type,
+      series: gallery.series.map((tag) => ({ name: tag.name })),
+      characters: gallery.characters.map((tag) => ({ name: tag.name })),
+      tags:
+        gallery.tags?.map((tag) => ({
+          name:
+            tag.type === "male" || tag.type === "female"
+              ? `${tag.type}:${tag.name}`
+              : tag.name,
+        })) ?? [],
+      language: gallery.language?.name,
+    };
 
     const downloadPattern = configStore.get(
       "downloadPattern",
@@ -109,6 +175,55 @@ export const handleDownloadGallery = async (
       maxLength: 100,
       replacement: "_",
     });
+
+    const archiveFilePath = `${galleryDownloadPath}.${compressFormat}`;
+    if (compressDownload) {
+      await fs.rm(`${archiveFilePath}.part`, { force: true });
+      const existingArchive = await fs
+        .stat(archiveFilePath)
+        .catch((error: NodeJS.ErrnoException) => {
+          if (error.code === "ENOENT") return null;
+          throw error;
+        });
+      if (existingArchive) {
+        const { infoTxt, imageCount } =
+          await extractInfoTxtAndImageCountFromZip(archiveFilePath);
+        const existingHitomiId = infoTxt
+          ? parseInfoTxt(infoTxt).hitomi_id?.trim()
+          : null;
+        if (existingHitomiId !== String(gallery.id) || imageCount === 0) {
+          throw new Error(
+            `같은 이름의 다른 파일이 이미 있습니다. 덮어쓰지 않았습니다: ${archiveFilePath}`,
+          );
+        }
+
+        let bookId: number | null = null;
+        if (
+          libraryFolders.some((folder) =>
+            isPathWithinLibraryRoot(archiveFilePath, folder),
+          )
+        ) {
+          bookId = await scanFile(
+            archiveFilePath,
+            undefined,
+            "soft",
+            downloadedMetadata,
+          );
+          if (!bookId) {
+            throw new Error(
+              "다운로드 파일은 확인했지만 라이브러리 등록에 실패했습니다.",
+            );
+          }
+        }
+
+        webContents.send("download-progress", {
+          galleryId,
+          status: "completed",
+          bookId,
+        });
+        return { success: true, bookId };
+      }
+    }
 
     await fs.mkdir(galleryDownloadPath, { recursive: true });
 
@@ -316,37 +431,25 @@ export const handleDownloadGallery = async (
       await fs.writeFile(infoFilePath, infoContent);
     }
 
-    // 압축 설정 확인 및 처리
-    const compressDownload = configStore.get("compressDownload", false);
-    const compressFormat = configStore.get("compressFormat", "cbz");
-
     if (compressDownload) {
-      // 압축 파일 경로 생성
-      const archiveFilePath = `${galleryDownloadPath}.${compressFormat}`;
-
-      // 압축 스트림 생성
-      const output = createWriteStream(archiveFilePath);
-      const archive = archiver("zip", {
-        zlib: { level: 0 }, // 압축률 0 (무압축, 속도 우선)
+      webContents.send("download-progress", {
+        galleryId,
+        status: "compressing",
+        progress: 100,
       });
-
-      // 에러 핸들링
-      await new Promise<void>((resolve, reject) => {
-        output.once("close", resolve);
-        output.once("error", reject);
-        archive.once("error", reject);
-        archive.pipe(output);
-        archive.directory(galleryDownloadPath, false);
-        void archive.finalize().catch(reject);
-      });
+      await createDownloadArchive(galleryDownloadPath, archiveFilePath);
 
       // 원본 폴더 삭제
       await fs.rm(galleryDownloadPath, { recursive: true, force: true });
     }
 
-    // 다운로드된 폴더/파일이 라이브러리 폴더에 포함되는지 확인
-    const libraryFolders = configStore.get("libraryFolders", []);
+    webContents.send("download-progress", {
+      galleryId,
+      status: "finalizing",
+      progress: 100,
+    });
 
+    // 다운로드된 폴더/파일이 라이브러리 폴더에 포함되는지 확인
     // 압축된 경우 압축 파일 경로로, 아닌 경우 폴더 경로로 스캔
     const scanPath = compressDownload
       ? `${galleryDownloadPath}.${compressFormat}`
@@ -362,7 +465,7 @@ export const handleDownloadGallery = async (
 
     let bookId: number | null = null;
     if (isDownloadedToLibrary) {
-      bookId = await scanFile(scanPath);
+      bookId = await scanFile(scanPath, undefined, "soft", downloadedMetadata);
       if (!bookId) {
         throw new Error(
           "파일 다운로드는 완료됐지만 라이브러리 등록에 실패했습니다.",

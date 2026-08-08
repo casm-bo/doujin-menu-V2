@@ -424,7 +424,7 @@ async function processDownloadQueue() {
         );
 
         // 일시정지 처리
-        if (shouldCancelCurrentDownload || result.paused) {
+        if (result.paused) {
           await updateQueueItemStatus(nextItem.id, "paused");
         } else if (result.success) {
           await updateQueueItemStatus(nextItem.id, "completed");

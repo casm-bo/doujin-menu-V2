@@ -86,6 +86,7 @@ import { shell } from "electron";
 import {
   clearTempFiles,
   formatBytes,
+  getTempFilesSummary,
   openAllowedExternalUrl,
 } from "../../../src/main/handlers/etcHandler";
 
@@ -134,6 +135,23 @@ describe("etcHandler", () => {
       expect.stringContaining("temp_external"),
       { recursive: true, force: true },
     );
+  });
+
+  it("세 임시 위치의 용도와 크기를 각각 반환해야 함", async () => {
+    mockLstat.mockRejectedValue(new Error("ENOENT"));
+
+    const summary = await getTempFilesSummary("/mock/user/data");
+
+    expect(summary.total).toBe("0 Bytes");
+    expect(summary.locations).toHaveLength(3);
+    expect(summary.locations.map((location) => location.key)).toEqual([
+      "downloader_temp_thumbnails",
+      "temp_cover",
+      "temp_external",
+    ]);
+    expect(
+      summary.locations.every((location) => location.size === "0 Bytes"),
+    ).toBe(true);
   });
 
   it("허용된 HTTPS 호스트만 외부 브라우저로 엶", async () => {

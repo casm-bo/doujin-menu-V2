@@ -71,10 +71,51 @@ export function formatBytes(bytes: number, decimals = 2) {
   return `${(bytes / Math.pow(k, i)).toFixed(dm)} ${sizes[i]}`;
 }
 
+const TEMP_FILE_LOCATIONS = [
+  {
+    key: "downloader_temp_thumbnails",
+    label: "다운로더 미리보기",
+    description: "검색 결과와 다운로드 미리보기용 썸네일 캐시",
+  },
+  {
+    key: "temp_cover",
+    label: "표지 추출",
+    description: "압축 파일에서 썸네일을 만들 때 추출한 임시 표지",
+  },
+  {
+    key: "temp_external",
+    label: "외부 뷰어",
+    description: "외부 이미지 뷰어로 열기 위해 압축에서 꺼낸 임시 파일",
+  },
+] as const;
+
+export async function getTempFilesSummary(
+  userDataPath = app.getPath("userData"),
+) {
+  const locations = await Promise.all(
+    TEMP_FILE_LOCATIONS.map(async ({ key, label, description }) => {
+      const locationPath = path.join(userDataPath, key);
+      const bytes = await getDirSize(locationPath);
+      return {
+        key,
+        label,
+        description,
+        path: locationPath,
+        size: formatBytes(bytes),
+        bytes,
+      };
+    }),
+  );
+  const totalBytes = locations.reduce((total, location) => {
+    return total + location.bytes;
+  }, 0);
+  return { total: formatBytes(totalBytes), locations };
+}
+
 export async function clearTempFiles(userDataPath = app.getPath("userData")) {
   await Promise.all(
-    ["downloader_temp_thumbnails", "temp_cover", "temp_external"].map((name) =>
-      fs.rm(path.join(userDataPath, name), { recursive: true, force: true }),
+    TEMP_FILE_LOCATIONS.map(({ key }) =>
+      fs.rm(path.join(userDataPath, key), { recursive: true, force: true }),
     ),
   );
 }
@@ -244,15 +285,12 @@ export function registerEtcHandlers(win: BrowserWindow) {
 
   ipcMain.handle("get-temp-files-size", async () => {
     try {
-      const tempPath = [
-        path.join(app.getPath("userData"), "downloader_temp_thumbnails"),
-        path.join(app.getPath("userData"), "temp_cover"),
-        path.join(app.getPath("userData"), "temp_external"),
-      ];
-      const totalSize = (
-        await Promise.all(tempPath.map((path) => getDirSize(path)))
-      ).reduce((p, c) => p + c, 0);
-      return { success: true, data: formatBytes(totalSize) };
+      const summary = await getTempFilesSummary();
+      return {
+        success: true,
+        data: summary.total,
+        locations: summary.locations,
+      };
     } catch (error) {
       return { success: false, error: (error as Error).message };
     }
