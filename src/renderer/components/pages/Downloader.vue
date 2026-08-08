@@ -3,12 +3,7 @@ import { ipcRenderer } from "@/api";
 import HelpDialog from "@/components/common/HelpDialog.vue"; // HelpDialog 임포트
 import SmartSearchInput from "@/components/common/SmartSearchInput.vue";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -86,7 +81,12 @@ const handleViewModeChange = (value: AcceptableValue | AcceptableValue[]) => {
 
 // 각 갤러리 ID별 다운로드 상태를 저장하는 객체
 const downloadStatuses = reactive<{
-  [key: number]: { status: string; progress?: number; error?: string };
+  [key: number]: {
+    status: string;
+    progress?: number;
+    error?: string;
+    bookId?: number | null;
+  };
 }>({});
 
 // 다운로드 큐 store
@@ -194,22 +194,30 @@ const syncQueueToStatuses = () => {
       mappedStatus = "progress";
     }
 
+    const currentStatus = downloadStatuses[queueItem.gallery_id];
     downloadStatuses[queueItem.gallery_id] = {
       status: mappedStatus,
       progress: queueItem.progress,
       error: queueItem.error_message,
+      bookId: currentStatus?.bookId,
     };
   });
 };
 
 const handleDownloadProgress = (...args: unknown[]) => {
-  const { galleryId, status, progress, error } = args[0] as {
+  const { galleryId, status, progress, error, bookId } = args[0] as {
     galleryId: number;
     status: string;
     progress?: number;
     error?: string;
+    bookId?: number | null;
   };
-  downloadStatuses[galleryId] = { status, progress, error };
+  downloadStatuses[galleryId] = {
+    status,
+    progress,
+    error,
+    bookId: bookId ?? downloadStatuses[galleryId]?.bookId,
+  };
 
   if (status === "completed") {
     const completedGallery = allGalleries.value.find(
@@ -411,9 +419,7 @@ useSearchPersistence(searchQuery, "downloader-search-query");
 
     <div class="flex flex-1 flex-col gap-6 overflow-y-auto">
       <!-- Left Column: Search & Settings -->
-      <div
-        class="flex flex-col gap-6"
-      >
+      <div class="flex flex-col gap-6">
         <Card>
           <CardHeader>
             <CardTitle class="flex items-center justify-between">
@@ -463,7 +469,10 @@ useSearchPersistence(searchQuery, "downloader-search-query");
               <div class="flex flex-col space-y-1.5">
                 <Label>&nbsp;</Label>
                 <Button @click="handleSearch">
-                  <Icon icon="solar:magnifer-bold-duotone" class="h-5 w-5" />검색
+                  <Icon
+                    icon="solar:magnifer-bold-duotone"
+                    class="h-5 w-5"
+                  />검색
                 </Button>
               </div>
             </div>

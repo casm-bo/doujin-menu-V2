@@ -100,6 +100,13 @@ const { data: seriesDetail, refetch } = useQuery({
   enabled: computed(() => props.open && !!props.series),
 });
 
+watch(
+  () => props.open,
+  (open) => {
+    if (open && props.series) void refetch();
+  },
+);
+
 // 시리즈가 변경되면 기존 데이터 초기화
 watch(
   () => props.series?.id,

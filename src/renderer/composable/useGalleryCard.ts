@@ -8,7 +8,12 @@ import { toast } from "vue-sonner";
 
 interface GalleryCardProps {
   gallery: HitomiGalleryDetails;
-  downloadStatus: { status: string; progress?: number; error?: string };
+  downloadStatus: {
+    status: string;
+    progress?: number;
+    error?: string;
+    bookId?: number | null;
+  };
 }
 
 interface GalleryCardEmits {
@@ -196,10 +201,14 @@ export function useGalleryCard(
     }
   });
 
-  // 다운로드 상태가 completed로 변경되면 bookId 다시 확인
+  // 완료 이벤트의 등록 ID를 즉시 반영하고, 구버전 이벤트면 DB에서 다시 확인
   watch(
-    () => props.downloadStatus.status,
-    async (newStatus) => {
+    () => [props.downloadStatus.status, props.downloadStatus.bookId] as const,
+    async ([newStatus, registeredBookId]) => {
+      if (registeredBookId) {
+        bookId.value = registeredBookId;
+        return;
+      }
       if (newStatus === "completed" && !bookId.value) {
         await checkBookExists();
       }

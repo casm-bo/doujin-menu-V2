@@ -356,8 +356,9 @@ export const handleDownloadGallery = async (
       isPathWithinLibraryRoot(scanPath, folder),
     );
 
+    let bookId: number | null = null;
     if (isDownloadedToLibrary) {
-      const bookId = await scanFile(scanPath);
+      bookId = await scanFile(scanPath);
       if (!bookId) {
         throw new Error(
           "파일 다운로드는 완료됐지만 라이브러리 등록에 실패했습니다.",
@@ -368,9 +369,10 @@ export const handleDownloadGallery = async (
     webContents.send("download-progress", {
       galleryId,
       status: "completed",
+      bookId,
     });
 
-    return { success: true };
+    return { success: true, bookId };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     console.error(`Error downloading gallery ${galleryId}:`, error);

@@ -11,4 +11,14 @@ describe("useTagDisplay", () => {
     expect(result.displayText).toBe(displayText);
     expect(result.className).toContain(color);
   });
+
+  it.each([
+    ["female", "glasses", "bg-pink-100"],
+    ["male", "muscle", "bg-blue-100"],
+  ])("다운로더 태그 타입을 색상으로 표시한다", (type, name, color) => {
+    const result = useTagDisplay().getTagDisplayInfo({ name, type });
+
+    expect(result.displayText).toBe(name);
+    expect(result.className).toContain(color);
+  });
 });

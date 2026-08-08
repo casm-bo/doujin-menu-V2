@@ -513,6 +513,8 @@ const handleBookDeleted = (bookId: number) => {
 
 const handleBooksUpdated = () => {
   void queryClient.invalidateQueries({ queryKey: ["books"] });
+  void queryClient.invalidateQueries({ queryKey: ["seriesCollection"] });
+  void queryClient.invalidateQueries({ queryKey: ["seriesCollections"] });
 };
 
 const handleSeriesCreated = () => {

@@ -13,6 +13,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useGalleryCard } from "@/composable/useGalleryCard";
+import { useTagDisplay } from "@/composable/useTagDisplay";
 import { formatPublishDate } from "@/lib/formatDate";
 import { Icon } from "@iconify/vue";
 import { computed } from "vue";
@@ -20,7 +21,12 @@ import type { HitomiGalleryDetails } from "../../../../types/hitomi.js";
 
 interface Props {
   gallery: HitomiGalleryDetails;
-  downloadStatus?: { status: string; progress?: number; error?: string };
+  downloadStatus?: {
+    status: string;
+    progress?: number;
+    error?: string;
+    bookId?: number | null;
+  };
   selected?: boolean;
 }
 
@@ -39,6 +45,7 @@ const emit = defineEmits<{
 const formattedDate = computed(() =>
   formatPublishDate(props.gallery.publishedDate),
 );
+const { getTagDisplayInfo } = useTagDisplay();
 
 // composable 사용
 const {
@@ -193,8 +200,8 @@ const {
       <div class="flex flex-wrap gap-1">
         <Badge
           v-for="tag in props.gallery.tags"
-          :key="tag.name"
-          variant="secondary"
+          :key="`${tag.type}:${tag.name}`"
+          :class="getTagDisplayInfo(tag).className"
           class="cursor-pointer hover:underline"
           @click.stop="
             copyToClipboard(
@@ -206,7 +213,7 @@ const {
               `-${tag.type === 'male' || tag.type === 'female' ? tag.type : 'tag'}:${tag.name}`,
             )
           "
-          >{{ tag.name }}</Badge
+          >{{ getTagDisplayInfo(tag).displayText }}</Badge
         >
       </div>
     </div>

@@ -19,7 +19,12 @@ import type { HitomiGalleryDetails } from "../../../../types/hitomi.js";
 
 interface Props {
   gallery: HitomiGalleryDetails;
-  downloadStatus?: { status: string; progress?: number; error?: string };
+  downloadStatus?: {
+    status: string;
+    progress?: number;
+    error?: string;
+    bookId?: number | null;
+  };
   selected?: boolean;
 }
 

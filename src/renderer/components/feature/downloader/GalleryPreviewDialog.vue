@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/dialog";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { usePreviewViewMode } from "@/composables/usePreviewViewMode";
+import { useTagDisplay } from "@/composable/useTagDisplay";
 import { computed, nextTick, ref, watch } from "vue";
 
 const props = defineProps({
@@ -27,6 +28,7 @@ const props = defineProps({
 const emit = defineEmits(["update:open"]);
 
 const { viewMode, setViewMode } = usePreviewViewMode();
+const { getTagDisplayInfo } = useTagDisplay();
 
 const dialogOpen = computed({
   get: () => props.open,
@@ -176,10 +178,10 @@ watch(viewMode, () => {
           <div class="flex flex-wrap gap-1">
             <Badge
               v-for="tag in displayTags"
-              :key="tag.name"
-              variant="secondary"
+              :key="`${tag.type}:${tag.name}`"
+              :class="getTagDisplayInfo(tag).className"
             >
-              {{ tag.name }}
+              {{ getTagDisplayInfo(tag).displayText }}
             </Badge>
           </div>
         </div>
