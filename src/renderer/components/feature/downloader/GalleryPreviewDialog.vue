@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { ipcRenderer } from "@/api";
+import { getBook, ipcRenderer } from "@/api";
 import ProxiedImage from "@/components/common/ProxiedImage.vue";
+import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
@@ -9,8 +10,10 @@ import {
 } from "@/components/ui/dialog";
 import { formatPublishDate } from "@/lib/formatDate";
 import { computed, ref, watch } from "vue";
+import { useRouter } from "vue-router";
 import { toast } from "vue-sonner";
 import type { HitomiGalleryDetails } from "../../../../types/hitomi.js";
+import type { Book } from "../../../../types/ipc";
 import MetadataField from "../MetadataField.vue";
 import PagePreview from "../PagePreview.vue";
 
@@ -22,6 +25,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   "update:open": [value: boolean];
 }>();
+const router = useRouter();
 
 const dialogOpen = computed({
   get: () => props.open,
@@ -44,6 +48,18 @@ const formattedDate = computed(() =>
 const previewImageUrls = ref<string[]>([]);
 const isLoadingImages = ref(false);
 const imageLoadError = ref<string | null>(null);
+const libraryBook = ref<Book | null>(null);
+let previewRequest = 0;
+
+const openReader = (page: number) => {
+  if (!libraryBook.value) return;
+  dialogOpen.value = false;
+  router.push({
+    name: "Viewer",
+    params: { id: libraryBook.value.id },
+    query: { start: String(page) },
+  });
+};
 
 const copyMetadata = async (text: string, prefix: string) => {
   const isGenderTag = text.startsWith("male:") || text.startsWith("female:");
@@ -59,27 +75,36 @@ const copyMetadata = async (text: string, prefix: string) => {
 watch(
   () => [props.open, props.gallery?.id] as const,
   async ([open]) => {
+    const request = ++previewRequest;
     if (!open || !props.gallery) return;
+    const galleryId = props.gallery.id;
     isLoadingImages.value = true;
     imageLoadError.value = null;
     previewImageUrls.value = [];
+    libraryBook.value = null;
 
     try {
-      const result = await ipcRenderer.invoke(
-        "get-gallery-image-urls",
-        props.gallery.id,
-      );
+      const [result, existingBook] = await Promise.all([
+        ipcRenderer.invoke("get-gallery-image-urls", galleryId),
+        ipcRenderer.invoke("check-book-exists-by-hitomi-id", galleryId),
+      ]);
+      if (request !== previewRequest) return;
       if (result.success && result.data) {
         previewImageUrls.value = result.data;
       } else {
         imageLoadError.value =
           result.error || "미리보기 URL을 가져오지 못했습니다.";
       }
+      if (existingBook.success && existingBook.bookId) {
+        const book = await getBook(existingBook.bookId);
+        if (request === previewRequest) libraryBook.value = book;
+      }
     } catch (error) {
+      if (request !== previewRequest) return;
       const message = error instanceof Error ? error.message : String(error);
       imageLoadError.value = `미리보기 로드 중 오류 발생: ${message}`;
     } finally {
-      isLoadingImages.value = false;
+      if (request === previewRequest) isLoadingImages.value = false;
     }
   },
   { immediate: true },
@@ -175,6 +200,16 @@ watch(
                 @activate="copyMetadata($event, 'character')"
               />
             </div>
+            <div v-if="libraryBook" class="mt-auto flex justify-end gap-2">
+              <Button variant="outline" @click="openReader(1)">
+                처음부터 읽기
+              </Button>
+              <Button
+                @click="openReader(Math.max(1, libraryBook.current_page || 1))"
+              >
+                계속 읽기
+              </Button>
+            </div>
           </div>
         </div>
 
@@ -189,10 +224,25 @@ watch(
               <span class="text-muted-foreground">발행일</span>
               <span class="font-medium">{{ formattedDate || "N/A" }}</span>
             </div>
+            <div
+              v-if="libraryBook?.last_read_at"
+              class="flex items-center justify-between text-sm"
+            >
+              <span class="text-muted-foreground">마지막 읽은 날짜</span>
+              <span class="font-medium">
+                {{ new Date(libraryBook.last_read_at).toLocaleDateString() }}
+              </span>
+            </div>
             <div class="flex items-center justify-between text-sm">
               <span class="text-muted-foreground">일본어 제목</span>
               <span class="max-w-[70%] text-right font-medium">
                 {{ gallery.title.japanese || "N/A" }}
+              </span>
+            </div>
+            <div v-if="libraryBook" class="flex flex-col gap-1 text-sm">
+              <span class="text-muted-foreground">경로</span>
+              <span class="font-mono text-xs break-all">
+                {{ libraryBook.path }}
               </span>
             </div>
           </div>
