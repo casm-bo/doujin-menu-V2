@@ -2,12 +2,14 @@
 
 ![image](screenshots.webp)
 
+> 이 프로젝트는 [qqoro/doujin-menu](https://github.com/qqoro/doujin-menu)를 기반으로 `casm`이 개발하고 유지보수하는 포크입니다. 2026년 이후 이 포크에 추가된 변경 사항의 저작권은 `casm`에게 있습니다.
+
 [![GitHub latest release](https://img.shields.io/github/v/release/casm-bo/doujin-menu-V2)](https://github.com/casm-bo/doujin-menu-V2/releases/latest)
 [![GitHub Downloads](https://img.shields.io/github/downloads/casm-bo/doujin-menu-V2/total)](https://github.com/casm-bo/doujin-menu-V2/releases/latest)
 
-## **Android 앱 안내:** Android 앱은 데스크톱 앱과 기능 구성이 다르며, 단독으로 사용하지 않고 데스크톱 앱의 Companion Server와 페어링해 사용합니다. 설치 및 페어링 방법은 [doujin-menu-android](https://github.com/casm-bo/doujin-menu-android)를 확인하세요.
+## **Android 앱 안내:** 
+- Android 앱은 데스크톱 앱과 기능 구성이 다르며, 단독으로 사용하지 않고 데스크톱 앱의 Companion Server와 페어링해 사용합니다. 설치 및 페어링 방법은 [doujin-menu-android](https://github.com/casm-bo/doujin-menu-android)를 확인하세요.
 
-> 이 프로젝트는 [qqoro/doujin-menu](https://github.com/qqoro/doujin-menu)를 기반으로 `casm`이 개조하고 유지보수하는 포크입니다. 2026년 이후 이 포크에 추가된 변경 사항의 저작권은 `casm`에게 있습니다.
 
 **만화책 라이브러리 관리 및 뷰어 데스크톱 애플리케이션. 대용량 만화 파일 컬렉션을 효율적으로 관리하고, 사용자 친화적인 뷰잉 경험을 제공합니다.**
 
@@ -17,6 +19,10 @@
 2. 다운로드한 파일을 실행합니다.
 
 ## ✨ 주요 기능
+
+- **Android 앱 연동**
+  - Companion Server를 통해 같은 사설 네트워크의 Android 장치와 6자리 코드로 페어링
+  - [Android 앱](https://github.com/casm-bo/doujin-menu-android)에서 Hitomi 검색, 갤러리 조회 및 원격 리더 지원
 
 - **라이브러리 관리**
   - 폴더 및 ZIP/CBZ 파일 형식 지원
@@ -48,9 +54,6 @@
   - 책의 첫 페이지 파일에서 썸네일 자동 추출
   - 비동기 썸네일 생성 (워커 스레드)
 - **다크모드 지원**
-- **Android 앱 연동**
-  - Companion Server를 통해 같은 사설 네트워크의 Android 장치와 6자리 코드로 페어링
-  - [Android 앱](https://github.com/casm-bo/doujin-menu-android)에서 Hitomi 검색, 갤러리 조회 및 원격 리더 지원
 - **설정 및 유지보수**
   - 다중 라이브러리 폴더 지정
   - 데이터베이스 백업/복원 (.db 파일)
