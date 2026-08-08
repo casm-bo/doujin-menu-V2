@@ -3,6 +3,8 @@ import type { HitomiGallery as SerializableHitomiGallery } from "../../types/hit
 
 type GalleryMetadata = string | { name: string };
 
+export const DEFAULT_DOWNLOAD_PATTERN = "[%artist%][%id%] %title%";
+
 function metadataNames(
   values: readonly GalleryMetadata[] | undefined,
 ): string[] {

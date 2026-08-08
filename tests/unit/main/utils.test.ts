@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { formatDownloadFolderName } from "../../../src/main/utils/index.js";
+import { filenamifyPath } from "filenamify";
+import {
+  DEFAULT_DOWNLOAD_PATTERN,
+  formatDownloadFolderName,
+} from "../../../src/main/utils/index.js";
 import type { HitomiGallery } from "../../../src/types/hitomi.js";
 
 describe("formatDownloadFolderName", () => {
@@ -24,6 +28,33 @@ describe("formatDownloadFolderName", () => {
   });
 
   describe("기본 변수 치환", () => {
+    it("기본 패턴은 ID를 제목 앞에 둔다", () => {
+      const gallery = createGallery({
+        id: 3713170,
+        artists: ["ArtistA"],
+        title: { display: "A".repeat(200), japanese: null },
+      });
+      expect(
+        formatDownloadFolderName(gallery, DEFAULT_DOWNLOAD_PATTERN),
+      ).toMatch(/^\[ArtistA\]\[3713170\] /);
+    });
+
+    it("긴 제목이 잘려도 서로 다른 ID는 같은 경로가 되지 않는다", () => {
+      const title = { display: "Same Long Title ".repeat(20), japanese: null };
+      const name = (id: number) =>
+        filenamifyPath(
+          formatDownloadFolderName(
+            createGallery({ id, artists: ["ArtistA"], title }),
+            DEFAULT_DOWNLOAD_PATTERN,
+          ),
+          { maxLength: 100 },
+        );
+
+      expect(name(3713170)).not.toBe(name(2994679));
+      expect(name(3713170)).toContain("3713170");
+      expect(name(2994679)).toContain("2994679");
+    });
+
     it("artist가 있으면 artist 사용", () => {
       const gallery = createGallery({ artists: ["ArtistA"] });
       expect(formatDownloadFolderName(gallery, "%artist% - %title%")).toBe(

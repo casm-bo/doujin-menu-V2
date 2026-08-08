@@ -8,7 +8,10 @@ import type {
 } from "../../types/ipc.js";
 import db from "../db/index.js";
 import { console } from "../main.js";
-import { formatDownloadFolderName } from "../utils/index.js";
+import {
+  DEFAULT_DOWNLOAD_PATTERN,
+  formatDownloadFolderName,
+} from "../utils/index.js";
 import { hitomiService } from "../services/hitomi/hitomiService.js";
 import { store as configStore } from "./configHandler.js";
 import { handleDownloadGallery } from "./downloaderHandler.js";
@@ -144,7 +147,7 @@ export const handleRemoveFromDownloadQueue = async (queueId: number) => {
         if (gallery) {
           const downloadPattern = configStore.get(
             "downloadPattern",
-            "%artist% - %title%",
+            DEFAULT_DOWNLOAD_PATTERN,
           ) as string;
 
           // 유틸리티 함수 사용
@@ -152,7 +155,7 @@ export const handleRemoveFromDownloadQueue = async (queueId: number) => {
 
           const galleryDownloadPath = filenamifyPath(
             path.join(item.download_path, folderName),
-            { maxLength: 255, replacement: "_" },
+            { maxLength: 100, replacement: "_" },
           );
 
           // 폴더 삭제

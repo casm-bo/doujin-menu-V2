@@ -34,7 +34,7 @@ const saveConfig = async (key: string, value: unknown) => {
 };
 
 const createInfoTxtFile = ref(true);
-const downloadPattern = ref("%artist% - %title%");
+const downloadPattern = ref("[%artist%][%id%] %title%");
 const compressDownload = ref(false);
 const compressFormat = ref<"cbz" | "zip">("cbz");
 const downloadPath = ref("");
@@ -43,7 +43,7 @@ onMounted(async () => {
   const config = await ipcRenderer.invoke("get-config");
   createInfoTxtFile.value = config.createInfoTxtFile !== false;
   downloadPattern.value =
-    (config.downloadPattern as string) || "%artist% - %title%";
+    (config.downloadPattern as string) || "[%artist%][%id%] %title%";
   compressDownload.value = config.compressDownload === true;
   compressFormat.value = (config.compressFormat as "cbz" | "zip") || "cbz";
   downloadPath.value = (config.downloadPath as string) || "";
@@ -88,13 +88,23 @@ const onCompressFormatChange = (value: AcceptableValue) => {
       <CardDescription>다운로드 관련 동작을 설정합니다.</CardDescription>
     </CardHeader>
     <CardContent class="space-y-6">
-      <SettingItem title="다운로드 위치" subtitle="다운로드한 작품을 저장할 폴더입니다.">
+      <SettingItem
+        title="다운로드 위치"
+        subtitle="다운로드한 작품을 저장할 폴더입니다."
+      >
         <div class="flex min-w-0 items-center justify-end gap-2">
-          <code class="text-muted-foreground max-w-80 truncate text-xs">{{ downloadPath || "미지정" }}</code>
+          <code class="text-muted-foreground max-w-80 truncate text-xs">{{
+            downloadPath || "미지정"
+          }}</code>
           <Button variant="outline" size="sm" @click="selectDownloadPath">
             <Icon icon="solar:folder-open-bold-duotone" class="h-4 w-4" />변경
           </Button>
-          <Button v-if="downloadPath" variant="outline" size="sm" @click="openDownloadPath">
+          <Button
+            v-if="downloadPath"
+            variant="outline"
+            size="sm"
+            @click="openDownloadPath"
+          >
             열기
           </Button>
         </div>
@@ -118,7 +128,7 @@ const onCompressFormatChange = (value: AcceptableValue) => {
       >
         <Input
           id="download-pattern-input"
-          placeholder="[%artist%] %title% (%id%)"
+          placeholder="[%artist%][%id%] %title%"
           class="col-span-1"
           :model-value="downloadPattern"
           @update:model-value="onDownloadPatternChange($event as string)"

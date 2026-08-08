@@ -6,7 +6,10 @@ import fs from "fs/promises";
 import path from "path";
 import { console } from "../main.js";
 import { hitomiService } from "../services/hitomi/hitomiService.js";
-import { formatDownloadFolderName } from "../utils/index.js";
+import {
+  DEFAULT_DOWNLOAD_PATTERN,
+  formatDownloadFolderName,
+} from "../utils/index.js";
 import { isPathWithinLibraryRoot } from "../utils/libraryPath.js";
 import { store as configStore } from "./configHandler.js";
 import { scanFile } from "./directoryHandler.js";
@@ -75,7 +78,7 @@ export const handleDownloadGallery = async (
 
     const downloadPattern = configStore.get(
       "downloadPattern",
-      "%artist% - %title%",
+      DEFAULT_DOWNLOAD_PATTERN,
     );
     let galleryFolderName = formatDownloadFolderName(gallery, downloadPattern);
 
@@ -103,6 +106,7 @@ export const handleDownloadGallery = async (
 
     // 예약 문자 처리
     const galleryDownloadPath = filenamifyPath(tempPath, {
+      maxLength: 100,
       replacement: "_",
     });
 

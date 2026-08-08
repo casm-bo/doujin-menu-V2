@@ -7,6 +7,7 @@ import knex from "knex";
 import path from "path";
 import db, { closeDbConnection } from "../db/index.js";
 import { filterLibraryPathRows } from "../utils/libraryPath.js";
+import { DEFAULT_DOWNLOAD_PATTERN } from "../utils/index.js";
 import {
   cleanupMissingBooks,
   forgetBooksUnderPath,
@@ -91,7 +92,7 @@ const defaults: Config = {
   viewerExcludeCompleted: false,
   downloadPath: "",
   downloaderLanguage: "all",
-  downloadPattern: "[%artist%] %title% (%id%)",
+  downloadPattern: DEFAULT_DOWNLOAD_PATTERN,
   createInfoTxtFile: true,
   compressDownload: false,
   compressFormat: "cbz",
@@ -126,6 +127,14 @@ const defaults: Config = {
 export const store = new Store<Config>({
   defaults,
 });
+
+const legacyDownloadPattern = store.get("downloadPattern");
+if (
+  legacyDownloadPattern === "[%artist%] %title% (%id%)" ||
+  legacyDownloadPattern === "%artist% - %title%"
+) {
+  store.set("downloadPattern", DEFAULT_DOWNLOAD_PATTERN);
+}
 
 // externalProgramPath → externalImageViewerPath 마이그레이션
 const legacyStore = store as unknown as {
