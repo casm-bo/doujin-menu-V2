@@ -12,6 +12,7 @@ import {
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { usePreviewViewMode } from "@/composables/usePreviewViewMode";
 import { useTagDisplay } from "@/composable/useTagDisplay";
+import { formatPublishDate } from "@/lib/formatDate";
 import { computed, nextTick, ref, watch } from "vue";
 
 const props = defineProps({
@@ -42,6 +43,18 @@ const displayTitle = computed(() => {
 const displayArtists = computed(() => {
   return props.gallery?.artists?.join(", ") || "알 수 없음";
 });
+
+const displayLanguage = computed(() => {
+  return (
+    props.gallery?.languageName?.local ||
+    props.gallery?.languageName?.english ||
+    "N/A"
+  );
+});
+
+const formattedDate = computed(() =>
+  formatPublishDate(props.gallery?.publishedDate),
+);
 
 const displayTags = computed(() => {
   return props.gallery?.tags || [];
@@ -172,9 +185,39 @@ watch(viewMode, () => {
       </DialogHeader>
       <div v-if="gallery" class="flex flex-1 flex-col overflow-hidden">
         <div class="mb-4 flex-shrink-0 space-y-2">
-          <p class="text-muted-foreground text-sm">
-            작가: {{ displayArtists }}
-          </p>
+          <div
+            class="text-muted-foreground grid grid-cols-2 gap-x-6 gap-y-1 text-sm sm:grid-cols-4"
+          >
+            <p>
+              <span class="text-foreground">Hitomi ID:</span> {{ gallery.id }}
+            </p>
+            <p><span class="text-foreground">유형:</span> {{ gallery.type }}</p>
+            <p>
+              <span class="text-foreground">언어:</span> {{ displayLanguage }}
+            </p>
+            <p>
+              <span class="text-foreground">페이지:</span>
+              {{ gallery.files?.length || 0 }}
+            </p>
+            <p v-if="formattedDate">
+              <span class="text-foreground">발행일:</span> {{ formattedDate }}
+            </p>
+            <p class="col-span-full">
+              <span class="text-foreground">작가:</span> {{ displayArtists }}
+            </p>
+            <p v-if="gallery.groups?.length" class="col-span-full">
+              <span class="text-foreground">그룹:</span>
+              {{ gallery.groups.join(", ") }}
+            </p>
+            <p v-if="gallery.series?.length" class="col-span-full">
+              <span class="text-foreground">시리즈:</span>
+              {{ gallery.series.join(", ") }}
+            </p>
+            <p v-if="gallery.characters?.length" class="col-span-full">
+              <span class="text-foreground">캐릭터:</span>
+              {{ gallery.characters.join(", ") }}
+            </p>
+          </div>
           <div class="flex flex-wrap gap-1">
             <Badge
               v-for="tag in displayTags"
