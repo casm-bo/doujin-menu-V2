@@ -96,7 +96,7 @@ const searchKey = ref(0); // 검색 트리거를 위한 키
 
 // 미리보기 다이얼로그 관련 상태
 const isPreviewDialogOpen = ref(false);
-const selectedGallery = ref<HitomiGalleryDetails>();
+const selectedGallery = ref<HitomiGalleryDetails | null>(null);
 
 const {
   data,

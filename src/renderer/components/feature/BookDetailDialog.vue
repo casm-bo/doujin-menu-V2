@@ -4,20 +4,18 @@ import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Separator } from "@/components/ui/separator";
 import { Input } from "@/components/ui/input";
-import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
-import { usePreviewViewMode } from "@/composables/usePreviewViewMode";
 import { Icon } from "@iconify/vue";
 import { computed, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { toast } from "vue-sonner";
 import type { Book } from "../../../types/ipc";
 import MetadataField from "./MetadataField.vue";
+import PagePreview from "./PagePreview.vue";
 
 const props = defineProps<{
   modelValue: boolean;
@@ -32,7 +30,6 @@ const emit = defineEmits<{
 
 const router = useRouter();
 const route = useRoute();
-const { viewMode, setViewMode } = usePreviewViewMode();
 const detailBook = ref<Book | null>(null);
 const book = computed(() => detailBook.value || props.book);
 const isEditing = ref(false);
@@ -197,22 +194,17 @@ const searchInDownloader = (text: string, prefix: string) => {
       class="flex max-h-[90vh] w-[calc(100vw-2rem)] flex-col overflow-hidden sm:max-w-[900px]"
     >
       <DialogHeader>
-        <DialogTitle>상세 정보</DialogTitle>
-        <DialogDescription>
-          선택한 만화책의 상세 정보를 확인합니다. 클릭 시 검색어 형식으로 복사 /
-          우클릭 시 다운로더에서 검색
-        </DialogDescription>
+        <DialogTitle>책 상세</DialogTitle>
       </DialogHeader>
       <div
         v-if="book"
         class="min-h-0 flex-1 space-y-6 overflow-y-auto py-2 pr-2"
       >
-        <!-- 커버 이미지와 기본 정보 -->
-        <div class="flex gap-6">
+        <div class="flex gap-5">
           <img
             :src="getThumbnailUrl(book.cover_path)"
             alt="Book Cover"
-            class="h-64 w-auto rounded-lg object-cover shadow-lg"
+            class="h-56 w-40 shrink-0 rounded-lg object-cover shadow"
           />
           <div class="flex flex-1 flex-col gap-3">
             <div class="flex items-start justify-between gap-3">
@@ -309,14 +301,45 @@ const searchInDownloader = (text: string, prefix: string) => {
                 @remove="removeValue('language', $event)"
                 @add="addValue('language', $event)"
               />
+              <MetadataField
+                label="그룹"
+                icon="solar:users-group-rounded-bold-duotone"
+                :values="values('groups')"
+                :editing="isEditing"
+                @activate="copyToClipboard($event, 'group')"
+                @search="searchInDownloader($event, 'group')"
+                @remove="removeValue('groups', $event)"
+                @add="addValue('groups', $event)"
+              />
+              <MetadataField
+                label="태그"
+                icon="solar:tag-bold-duotone"
+                :values="values('tags')"
+                tag-style
+                :editing="isEditing"
+                @activate="copyToClipboard($event, 'tag')"
+                @search="searchInDownloader($event, 'tag')"
+                @remove="removeValue('tags', $event)"
+                @add="addValue('tags', $event)"
+              />
+              <MetadataField
+                label="캐릭터"
+                icon="solar:user-speak-bold-duotone"
+                :values="values('characters')"
+                :editing="isEditing"
+                @activate="copyToClipboard($event, 'character')"
+                @search="searchInDownloader($event, 'character')"
+                @remove="removeValue('characters', $event)"
+                @add="addValue('characters', $event)"
+              />
             </div>
 
             <div class="mt-auto flex justify-end gap-2">
               <Button variant="outline" @click="openReader(1)">
-                처음부터 보기
+                처음부터 읽기
               </Button>
               <Button @click="openReader(Math.max(1, book.current_page || 1))">
-                이어서 보기
+                계속 읽기
               </Button>
             </div>
           </div>
@@ -324,156 +347,59 @@ const searchInDownloader = (text: string, prefix: string) => {
 
         <Separator />
 
-        <div class="space-y-2" :class="{ 'space-y-3': isEditing }">
-          <MetadataField
-            label="태그"
-            icon="solar:tag-bold-duotone"
-            :values="values('tags')"
-            tag-style
-            :editing="isEditing"
-            @activate="copyToClipboard($event, 'tag')"
-            @search="searchInDownloader($event, 'tag')"
-            @remove="removeValue('tags', $event)"
-            @add="addValue('tags', $event)"
-          />
-          <MetadataField
-            label="그룹"
-            icon="solar:users-group-rounded-bold-duotone"
-            :values="values('groups')"
-            :editing="isEditing"
-            @activate="copyToClipboard($event, 'group')"
-            @search="searchInDownloader($event, 'group')"
-            @remove="removeValue('groups', $event)"
-            @add="addValue('groups', $event)"
-          />
-          <MetadataField
-            label="캐릭터"
-            icon="solar:user-speak-bold-duotone"
-            :values="values('characters')"
-            :editing="isEditing"
-            @activate="copyToClipboard($event, 'character')"
-            @search="searchInDownloader($event, 'character')"
-            @remove="removeValue('characters', $event)"
-            @add="addValue('characters', $event)"
-          />
-        </div>
-
-        <Separator />
-
-        <!-- 기타 정보 -->
-        <div class="bg-muted/50 space-y-2 rounded-lg p-4">
-          <div class="flex items-center justify-between text-sm">
-            <span class="text-muted-foreground">페이지 수</span>
-            <span class="font-medium">{{ book.page_count || "N/A" }}</span>
-          </div>
-          <div class="flex items-center justify-between text-sm">
-            <span class="text-muted-foreground">추가된 날짜</span>
-            <span class="font-medium">
-              {{
-                book.added_at
-                  ? new Date(book.added_at).toLocaleDateString()
-                  : "N/A"
-              }}
-            </span>
-          </div>
-          <div class="flex items-center justify-between text-sm">
-            <span class="text-muted-foreground">마지막 읽은 날짜</span>
-            <span class="font-medium">
-              {{
-                book.last_read_at
-                  ? new Date(book.last_read_at).toLocaleDateString()
-                  : "N/A"
-              }}
-            </span>
-          </div>
-          <div class="flex items-center justify-between text-sm">
-            <span class="text-muted-foreground">즐겨찾기</span>
-            <span class="font-medium">
-              <Icon
-                v-if="book.is_favorite"
-                icon="solar:star-bold"
-                class="text-yellow-500"
-              />
-              <span v-else>N/A</span>
-            </span>
-          </div>
-          <div class="flex flex-col gap-1 text-sm">
-            <span class="text-muted-foreground">경로</span>
-            <span class="font-mono text-xs break-all">{{
-              displayPath || "N/A"
-            }}</span>
+        <div class="space-y-2">
+          <h4 class="font-semibold">상세정보</h4>
+          <div class="bg-muted/50 space-y-2 rounded-lg p-4">
+            <div class="flex items-center justify-between text-sm">
+              <span class="text-muted-foreground">페이지 수</span>
+              <span class="font-medium">{{ book.page_count || "N/A" }}</span>
+            </div>
+            <div class="flex items-center justify-between text-sm">
+              <span class="text-muted-foreground">추가된 날짜</span>
+              <span class="font-medium">
+                {{
+                  book.added_at
+                    ? new Date(book.added_at).toLocaleDateString()
+                    : "N/A"
+                }}
+              </span>
+            </div>
+            <div class="flex items-center justify-between text-sm">
+              <span class="text-muted-foreground">마지막 읽은 날짜</span>
+              <span class="font-medium">
+                {{
+                  book.last_read_at
+                    ? new Date(book.last_read_at).toLocaleDateString()
+                    : "N/A"
+                }}
+              </span>
+            </div>
+            <div class="flex items-center justify-between text-sm">
+              <span class="text-muted-foreground">즐겨찾기</span>
+              <span class="font-medium">
+                <Icon
+                  v-if="book.is_favorite"
+                  icon="solar:star-bold"
+                  class="text-yellow-500"
+                />
+                <span v-else>N/A</span>
+              </span>
+            </div>
+            <div class="flex flex-col gap-1 text-sm">
+              <span class="text-muted-foreground">경로</span>
+              <span class="font-mono text-xs break-all">{{
+                displayPath || "N/A"
+              }}</span>
+            </div>
           </div>
         </div>
 
         <Separator />
 
-        <div class="space-y-3">
-          <div class="flex items-center justify-between gap-3">
-            <h4 class="font-semibold">미리보기</h4>
-            <ToggleGroup
-              type="single"
-              :model-value="viewMode"
-              variant="outline"
-              size="sm"
-              @update:model-value="setViewMode"
-            >
-              <ToggleGroupItem
-                value="scroll"
-                aria-label="크게 보기"
-                title="크게 보기"
-              >
-                <Icon icon="solar:gallery-wide-bold-duotone" class="h-4 w-4" />
-              </ToggleGroupItem>
-              <ToggleGroupItem
-                value="grid"
-                aria-label="여러 개 보기"
-                title="여러 개 보기"
-              >
-                <Icon icon="solar:widget-5-bold-duotone" class="h-4 w-4" />
-              </ToggleGroupItem>
-            </ToggleGroup>
-          </div>
-          <div
-            v-if="viewMode === 'scroll'"
-            class="flex h-64 gap-3 overflow-x-auto rounded-md border p-2"
-          >
-            <button
-              v-for="(page, index) in previewPages"
-              :key="page"
-              type="button"
-              class="h-full shrink-0 cursor-pointer"
-              :title="`${index + 1}페이지부터 보기`"
-              @click="openReader(index + 1)"
-            >
-              <img
-                :src="page"
-                :alt="`${index + 1}페이지`"
-                class="h-full w-auto rounded object-contain"
-                loading="lazy"
-              />
-            </button>
-          </div>
-          <div
-            v-else
-            class="grid max-h-80 grid-cols-3 gap-2 overflow-y-auto rounded-md border p-2 sm:grid-cols-5"
-          >
-            <button
-              v-for="(page, index) in previewPages"
-              :key="page"
-              type="button"
-              class="cursor-pointer"
-              :title="`${index + 1}페이지부터 보기`"
-              @click="openReader(index + 1)"
-            >
-              <img
-                :src="page"
-                :alt="`${index + 1}페이지`"
-                class="aspect-[3/4] w-full rounded object-cover"
-                loading="lazy"
-              />
-            </button>
-          </div>
-        </div>
+        <PagePreview
+          :pages="previewPages"
+          @select-page="openReader($event + 1)"
+        />
       </div>
       <div v-else class="text-muted-foreground py-8 text-center">
         책 정보를 불러올 수 없습니다.

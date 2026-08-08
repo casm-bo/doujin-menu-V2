@@ -525,7 +525,7 @@ const excludeBookIds = computed(() => books.value.map((book) => book.id));
                   :disabled="!firstBook"
                   @click="openReader(firstBook, 1)"
                 >
-                  처음부터 보기
+                  처음부터 읽기
                 </Button>
                 <Button
                   :disabled="!resumeTarget"
@@ -534,7 +534,7 @@ const excludeBookIds = computed(() => books.value.map((book) => book.id));
                     openReader(resumeTarget.book, resumeTarget.page)
                   "
                 >
-                  이어서 보기
+                  계속 읽기
                 </Button>
               </div>
             </div>

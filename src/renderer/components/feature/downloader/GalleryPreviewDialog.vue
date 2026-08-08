@@ -1,327 +1,214 @@
 <script setup lang="ts">
 import { ipcRenderer } from "@/api";
 import ProxiedImage from "@/components/common/ProxiedImage.vue";
-import { Icon } from "@iconify/vue";
-import { Badge } from "@/components/ui/badge";
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
-import { usePreviewViewMode } from "@/composables/usePreviewViewMode";
-import { useTagDisplay } from "@/composable/useTagDisplay";
 import { formatPublishDate } from "@/lib/formatDate";
-import { computed, nextTick, ref, watch } from "vue";
+import { computed, ref, watch } from "vue";
+import { toast } from "vue-sonner";
+import type { HitomiGalleryDetails } from "../../../../types/hitomi.js";
+import MetadataField from "../MetadataField.vue";
+import PagePreview from "../PagePreview.vue";
 
-const props = defineProps({
-  open: {
-    type: Boolean,
-    required: true,
-  },
-  gallery: {
-    type: Object,
-    default: null,
-  },
-});
+const props = defineProps<{
+  open: boolean;
+  gallery: HitomiGalleryDetails | null;
+}>();
 
-const emit = defineEmits(["update:open"]);
-
-const { viewMode, setViewMode } = usePreviewViewMode();
-const { getTagDisplayInfo } = useTagDisplay();
+const emit = defineEmits<{
+  "update:open": [value: boolean];
+}>();
 
 const dialogOpen = computed({
   get: () => props.open,
   set: (value) => emit("update:open", value),
 });
 
-const displayTitle = computed(() => {
-  return props.gallery?.title?.display || "N/A";
-});
-
-const displayArtists = computed(() => {
-  return props.gallery?.artists?.join(", ") || "알 수 없음";
-});
-
-const displayLanguage = computed(() => {
-  return (
-    props.gallery?.languageName?.local ||
-    props.gallery?.languageName?.english ||
-    "N/A"
-  );
-});
-
+const refererUrl = computed(() =>
+  props.gallery?.id ? `https://hitomi.la/reader/${props.gallery.id}.html` : "",
+);
+const displayLanguage = computed(
+  () =>
+    [
+      props.gallery?.languageName?.local ||
+        props.gallery?.languageName?.english,
+    ].filter(Boolean) as string[],
+);
 const formattedDate = computed(() =>
   formatPublishDate(props.gallery?.publishedDate),
 );
-
-const displayTags = computed(() => {
-  return props.gallery?.tags || [];
-});
-
-const refererUrl = computed(() => {
-  return props.gallery?.id
-    ? `https://hitomi.la/reader/${props.gallery.id}.html`
-    : "";
-});
-
 const previewImageUrls = ref<string[]>([]);
 const isLoadingImages = ref(false);
 const imageLoadError = ref<string | null>(null);
 
-// 가로 스크롤 핸들러 (속도 배율 적용)
-const SCROLL_SPEED_MULTIPLIER = 3;
-const handleWheelScroll = (event: WheelEvent) => {
-  const container = event.currentTarget as HTMLElement;
-  event.preventDefault();
-  container.scrollLeft +=
-    (event.deltaY + event.deltaX) * SCROLL_SPEED_MULTIPLIER;
-};
-
-// Intersection Observer 관련
-const imageRefs = ref<HTMLElement[]>([]);
-const loadedImages = ref<Set<number>>(new Set());
-let observer: IntersectionObserver | null = null;
-
-const getObserverRoot = () => {
-  if (viewMode.value === "scroll") {
-    return document.querySelector(".image-scroll-container");
+const copyMetadata = async (text: string, prefix: string) => {
+  const isGenderTag = text.startsWith("male:") || text.startsWith("female:");
+  const query = prefix === "tag" && isGenderTag ? text : `${prefix}:${text}`;
+  try {
+    await navigator.clipboard.writeText(query);
+    toast.success(`${query}가 복사되었습니다.`);
+  } catch {
+    toast.error("복사 실패");
   }
-  return document.querySelector(".image-grid-container");
-};
-
-const initIntersectionObserver = () => {
-  if (observer) {
-    observer.disconnect();
-  }
-  observer = new IntersectionObserver(
-    (entries) => {
-      entries.forEach((entry) => {
-        if (entry.isIntersecting) {
-          const index = parseInt(
-            entry.target.getAttribute("data-index") || "-1",
-          );
-          if (index !== -1 && !loadedImages.value.has(index)) {
-            loadedImages.value.add(index);
-          }
-        }
-      });
-    },
-    {
-      root: getObserverRoot(),
-      rootMargin: "0px",
-      threshold: 0.1,
-    },
-  );
-
-  nextTick(() => {
-    imageRefs.value.forEach((imgRef) => {
-      if (imgRef) {
-        observer?.observe(imgRef);
-      }
-    });
-  });
 };
 
 watch(
-  () => props.open,
-  async (newVal) => {
-    if (newVal && props.gallery) {
-      isLoadingImages.value = true;
-      imageLoadError.value = null;
-      previewImageUrls.value = [];
-      loadedImages.value.clear();
+  () => [props.open, props.gallery?.id] as const,
+  async ([open]) => {
+    if (!open || !props.gallery) return;
+    isLoadingImages.value = true;
+    imageLoadError.value = null;
+    previewImageUrls.value = [];
 
-      try {
-        const result = await ipcRenderer.invoke(
-          "get-gallery-image-urls",
-          props.gallery.id,
-        );
-        if (result.success && result.data) {
-          previewImageUrls.value = result.data;
-          nextTick(() => {
-            initIntersectionObserver();
-          });
-        } else {
-          imageLoadError.value =
-            result.error || "미리보기 URL을 가져오지 못했습니다.";
-        }
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        imageLoadError.value = `미리보기 로드 중 오류 발생: ${message}`;
-      } finally {
-        isLoadingImages.value = false;
+    try {
+      const result = await ipcRenderer.invoke(
+        "get-gallery-image-urls",
+        props.gallery.id,
+      );
+      if (result.success && result.data) {
+        previewImageUrls.value = result.data;
+      } else {
+        imageLoadError.value =
+          result.error || "미리보기 URL을 가져오지 못했습니다.";
       }
-    } else if (!newVal) {
-      // 다이얼로그 닫힐 때 observer 해제
-      if (observer) {
-        observer.disconnect();
-        observer = null;
-      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      imageLoadError.value = `미리보기 로드 중 오류 발생: ${message}`;
+    } finally {
+      isLoadingImages.value = false;
     }
   },
   { immediate: true },
 );
-
-// 뷰 모드 전환 시 Observer 재초기화
-watch(viewMode, () => {
-  if (props.open && previewImageUrls.value.length > 0) {
-    nextTick(() => {
-      initIntersectionObserver();
-    });
-  }
-});
 </script>
 
 <template>
   <Dialog v-model:open="dialogOpen">
     <DialogContent
-      class="flex h-[90vh] flex-col sm:max-w-[90vw]"
+      class="flex max-h-[90vh] w-[calc(100vw-2rem)] flex-col overflow-hidden sm:max-w-[900px]"
       @close-auto-focus.prevent
     >
       <DialogHeader>
-        <DialogTitle>미리보기: {{ displayTitle }}</DialogTitle>
+        <DialogTitle>다운로드 상세</DialogTitle>
       </DialogHeader>
-      <div v-if="gallery" class="flex flex-1 flex-col overflow-hidden">
-        <div class="mb-4 flex-shrink-0 space-y-2">
-          <div
-            class="text-muted-foreground grid grid-cols-2 gap-x-6 gap-y-1 text-sm sm:grid-cols-4"
-          >
-            <p>
-              <span class="text-foreground">Hitomi ID:</span> {{ gallery.id }}
-            </p>
-            <p><span class="text-foreground">유형:</span> {{ gallery.type }}</p>
-            <p>
-              <span class="text-foreground">언어:</span> {{ displayLanguage }}
-            </p>
-            <p>
-              <span class="text-foreground">페이지:</span>
-              {{ gallery.files?.length || 0 }}
-            </p>
-            <p v-if="formattedDate">
-              <span class="text-foreground">발행일:</span> {{ formattedDate }}
-            </p>
-            <p class="col-span-full">
-              <span class="text-foreground">작가:</span> {{ displayArtists }}
-            </p>
-            <p v-if="gallery.groups?.length" class="col-span-full">
-              <span class="text-foreground">그룹:</span>
-              {{ gallery.groups.join(", ") }}
-            </p>
-            <p v-if="gallery.series?.length" class="col-span-full">
-              <span class="text-foreground">시리즈:</span>
-              {{ gallery.series.join(", ") }}
-            </p>
-            <p v-if="gallery.characters?.length" class="col-span-full">
-              <span class="text-foreground">캐릭터:</span>
-              {{ gallery.characters.join(", ") }}
-            </p>
-          </div>
-          <div class="flex flex-wrap gap-1">
-            <Badge
-              v-for="tag in displayTags"
-              :key="`${tag.type}:${tag.name}`"
-              :class="getTagDisplayInfo(tag).className"
-            >
-              {{ getTagDisplayInfo(tag).displayText }}
-            </Badge>
-          </div>
-        </div>
 
-        <div class="mb-2 flex items-center justify-end">
-          <ToggleGroup
-            type="single"
-            :model-value="viewMode"
-            variant="outline"
-            size="sm"
-            @update:model-value="setViewMode"
-          >
-            <ToggleGroupItem value="scroll">
-              <Icon icon="solar:gallery-wide-bold-duotone" class="h-4 w-4" />
-            </ToggleGroupItem>
-            <ToggleGroupItem value="grid">
-              <Icon icon="solar:widget-5-bold-duotone" class="h-4 w-4" />
-            </ToggleGroupItem>
-          </ToggleGroup>
-        </div>
+      <div
+        v-if="gallery"
+        class="min-h-0 flex-1 space-y-6 overflow-y-auto py-2 pr-2"
+      >
+        <div class="flex gap-5">
+          <div class="h-56 w-40 shrink-0 overflow-hidden rounded-lg shadow">
+            <ProxiedImage
+              :id="gallery.id"
+              :url="gallery.thumbnailUrl"
+              :referer="refererUrl"
+              :alt="gallery.title.display"
+              :lazy="false"
+            />
+          </div>
 
-        <div class="flex-1 overflow-y-auto">
-          <div
-            v-if="isLoadingImages"
-            class="flex h-full items-center justify-center"
-          >
-            <p class="text-muted-foreground">미리보기 이미지 불러오는 중...</p>
-          </div>
-          <div
-            v-else-if="imageLoadError"
-            class="text-destructive flex h-full items-center justify-center"
-          >
-            <p>{{ imageLoadError }}</p>
-          </div>
-          <!-- 가로 스크롤 뷰 -->
-          <div
-            v-else-if="previewImageUrls.length > 0 && viewMode === 'scroll'"
-            class="image-scroll-container flex h-full space-x-4 overflow-x-auto rounded-md border p-2"
-            @wheel="handleWheelScroll"
-          >
-            <div
-              v-for="(url, index) in previewImageUrls"
-              :key="index"
-              ref="imageRefs"
-              :data-index="index"
-              class="flex h-full flex-shrink-0 cursor-zoom-out items-center justify-center"
-              @click="dialogOpen = false"
-            >
-              <ProxiedImage
-                :id="gallery.id"
-                :url="url"
-                :referer="refererUrl"
-                :alt="`Preview Image ${index + 1}`"
-                :lazy="!loadedImages.has(index)"
-                class="max-h-full w-auto object-contain"
+          <div class="flex min-w-0 flex-1 flex-col gap-3">
+            <h2 class="text-2xl leading-tight font-bold">
+              {{ gallery.title.display || "N/A" }}
+            </h2>
+            <p class="text-muted-foreground text-xs">
+              메타데이터를 클릭하면 검색어 형식으로 복사합니다.
+            </p>
+            <div class="grid gap-2">
+              <MetadataField
+                label="Hitomi ID"
+                icon="solar:hashtag-circle-bold-duotone"
+                :values="[String(gallery.id)]"
+                @activate="copyMetadata($event, 'id')"
+              />
+              <MetadataField
+                label="작가"
+                icon="solar:user-bold-duotone"
+                :values="gallery.artists"
+                @activate="copyMetadata($event, 'artist')"
+              />
+              <MetadataField
+                label="시리즈"
+                icon="solar:library-bold-duotone"
+                :values="gallery.series"
+                @activate="copyMetadata($event, 'series')"
+              />
+              <MetadataField
+                label="유형"
+                icon="solar:bookmark-bold-duotone"
+                :values="[gallery.type]"
+                @activate="copyMetadata($event, 'type')"
+              />
+              <MetadataField
+                label="언어"
+                icon="solar:translation-bold-duotone"
+                :values="displayLanguage"
+                @activate="copyMetadata($event, 'language')"
+              />
+              <MetadataField
+                label="그룹"
+                icon="solar:users-group-rounded-bold-duotone"
+                :values="gallery.groups"
+                @activate="copyMetadata($event, 'group')"
+              />
+              <MetadataField
+                label="태그"
+                icon="solar:tag-bold-duotone"
+                :values="
+                  gallery.tags.map((tag) =>
+                    tag.type === 'male' || tag.type === 'female'
+                      ? `${tag.type}:${tag.name}`
+                      : tag.name,
+                  )
+                "
+                tag-style
+                @activate="copyMetadata($event, 'tag')"
+              />
+              <MetadataField
+                label="캐릭터"
+                icon="solar:user-speak-bold-duotone"
+                :values="gallery.characters"
+                @activate="copyMetadata($event, 'character')"
               />
             </div>
           </div>
-          <!-- 그리드 뷰 -->
-          <div
-            v-else-if="previewImageUrls.length > 0 && viewMode === 'grid'"
-            class="image-grid-container grid grid-cols-5 gap-2 rounded-md border p-2"
-          >
-            <div
-              v-for="(url, index) in previewImageUrls"
-              :key="'grid-' + index"
-              ref="imageRefs"
-              :data-index="index"
-              class="cursor-pointer overflow-hidden rounded"
-              @click="setViewMode('scroll')"
-            >
-              <ProxiedImage
-                v-if="loadedImages.has(index)"
-                :id="gallery.id"
-                :url="url"
-                :referer="refererUrl"
-                :alt="`Preview Image ${index + 1}`"
-                :lazy="false"
-                class="aspect-[3/4] w-full object-cover transition-transform duration-200 hover:scale-105"
-              />
-              <div
-                v-else
-                class="bg-muted flex aspect-[3/4] w-full items-center justify-center"
-              >
-                <p class="text-muted-foreground text-sm">로딩 중...</p>
-              </div>
+        </div>
+
+        <div class="space-y-2">
+          <h4 class="font-semibold">상세정보</h4>
+          <div class="bg-muted/50 space-y-2 rounded-lg p-4">
+            <div class="flex items-center justify-between text-sm">
+              <span class="text-muted-foreground">페이지 수</span>
+              <span class="font-medium">{{ gallery.files.length }}</span>
+            </div>
+            <div class="flex items-center justify-between text-sm">
+              <span class="text-muted-foreground">발행일</span>
+              <span class="font-medium">{{ formattedDate || "N/A" }}</span>
+            </div>
+            <div class="flex items-center justify-between text-sm">
+              <span class="text-muted-foreground">일본어 제목</span>
+              <span class="max-w-[70%] text-right font-medium">
+                {{ gallery.title.japanese || "N/A" }}
+              </span>
             </div>
           </div>
-          <div
-            v-else
-            class="text-muted-foreground flex h-full items-center justify-center"
-          >
-            <p>미리보기 이미지가 없습니다.</p>
-          </div>
         </div>
+
+        <PagePreview
+          :pages="previewImageUrls"
+          :proxy-id="gallery.id"
+          :referer="refererUrl"
+          :loading="isLoadingImages"
+          :error="imageLoadError"
+          :interactive="false"
+        />
       </div>
-      <div v-else class="text-muted-foreground text-center">
+
+      <div v-else class="text-muted-foreground py-8 text-center">
         선택된 갤러리가 없습니다.
       </div>
     </DialogContent>
