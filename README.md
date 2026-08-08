@@ -5,7 +5,7 @@
 [![GitHub latest release](https://img.shields.io/github/v/release/casm-bo/doujin-menu-V2)](https://github.com/casm-bo/doujin-menu-V2/releases/latest)
 [![GitHub Downloads](https://img.shields.io/github/downloads/casm-bo/doujin-menu-V2/total)](https://github.com/casm-bo/doujin-menu-V2/releases/latest)
 
-> **Android 앱 안내:** Android 앱은 데스크톱 앱과 기능 구성이 다르며, 단독으로 사용하지 않고 데스크톱 앱의 Companion Server와 페어링해 사용합니다. 설치 및 페어링 방법은 [doujin-menu-android](https://github.com/casm-bo/doujin-menu-android)를 확인하세요.
+## **Android 앱 안내:** Android 앱은 데스크톱 앱과 기능 구성이 다르며, 단독으로 사용하지 않고 데스크톱 앱의 Companion Server와 페어링해 사용합니다. 설치 및 페어링 방법은 [doujin-menu-android](https://github.com/casm-bo/doujin-menu-android)를 확인하세요.
 
 > 이 프로젝트는 [qqoro/doujin-menu](https://github.com/qqoro/doujin-menu)를 기반으로 `casm`이 개조하고 유지보수하는 포크입니다. 2026년 이후 이 포크에 추가된 변경 사항의 저작권은 `casm`에게 있습니다.
 
