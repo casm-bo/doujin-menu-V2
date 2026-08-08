@@ -63,7 +63,8 @@ jobs:
           tag_name: ${{ github.ref_name }}
           name: ${{ github.ref_name }}
           prerelease: ${{ contains(github.ref_name, '-alpha') || contains(github.ref_name, '-beta') || contains(github.ref_name, '-rc') }}
-          generate_release_notes: true
+          body_path: RELEASE_NOTES.md
+          generate_release_notes: false
           files: |
             artifacts/build_win/doujin-menu-setup-*.exe
             artifacts/build_win/*.blockmap
