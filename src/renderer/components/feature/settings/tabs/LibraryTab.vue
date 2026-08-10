@@ -340,9 +340,9 @@ const generateMissingInfoFiles = async () => {
         </AlertDialogHeader>
         <AlertDialogFooter>
           <AlertDialogCancel>취소</AlertDialogCancel>
-          <AlertDialogAction @click="removeLibraryFolder">
+          <Button @click="removeLibraryFolder">
             앱에서 제거
-          </AlertDialogAction>
+          </Button>
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>
