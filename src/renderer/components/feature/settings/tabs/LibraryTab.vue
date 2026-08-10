@@ -37,6 +37,12 @@ interface LibraryFolder {
   lastScanned: string | null;
 }
 
+interface ArchivedLibraryFolder {
+  path: string;
+  removedAt: string;
+  bookCount: number;
+}
+
 const queryClient = useQueryClient();
 const isRegeneratingThumbnails = ref(false);
 const saveConfig = async (key: string, value: unknown) => {
@@ -48,7 +54,9 @@ const saveConfig = async (key: string, value: unknown) => {
 };
 
 const libraryFolders = ref<LibraryFolder[]>([]);
+const archivedLibraryFolders = ref<ArchivedLibraryFolder[]>([]);
 const folderToRemove = ref<string | null>(null);
+const folderToForget = ref<string | null>(null);
 const prioritizeKoreanTitles = ref(false);
 const hideLibraryTags = ref(false);
 const showRescanModeDialog = ref(false);
@@ -105,6 +113,18 @@ const loadLibraryFolders = async () => {
     };
   });
   libraryFolders.value = await Promise.all(folderPromises);
+  archivedLibraryFolders.value = await Promise.all(
+    (config.archivedLibraryFolders || []).map(async (folder) => {
+      const stats = await ipcRenderer.invoke(
+        "get-library-folder-stats",
+        folder.path,
+      );
+      return {
+        ...folder,
+        bookCount: stats.data?.bookCount || 0,
+      };
+    }),
+  );
 };
 
 // 라이브러리 폴더 추가
@@ -112,6 +132,7 @@ const addLibraryFolder = async () => {
   const result = await ipcRenderer.invoke("add-library-folder");
   if (result.success) {
     await loadLibraryFolders();
+    await queryClient.invalidateQueries({ queryKey: ["config"] });
     if (result.added && result.added.length > 0) {
       toast.success(
         `${result.added.length}개의 라이브러리 폴더가 추가되었습니다.`,
@@ -134,6 +155,7 @@ const removeLibraryFolder = async () => {
   );
   if (result.success) {
     await loadLibraryFolders();
+    await queryClient.invalidateQueries({ queryKey: ["config"] });
     toast.success("라이브러리 폴더가 제거되었습니다.", {
       description: `${result.archivedBooks || 0}권의 책 기록을 보관했습니다. 실제 파일과 DB 정보는 삭제하지 않았습니다.`,
     });
@@ -143,6 +165,41 @@ const removeLibraryFolder = async () => {
     });
   }
   folderToRemove.value = null;
+};
+
+const restoreLibraryFolder = async (folderPath: string) => {
+  const result = await ipcRenderer.invoke("restore-library-folder", folderPath);
+  if (result.success) {
+    await loadLibraryFolders();
+    await queryClient.invalidateQueries({ queryKey: ["config"] });
+    toast.success("라이브러리 폴더를 복원했습니다.", {
+      description: "변경된 파일을 반영하려면 폴더를 다시 스캔하세요.",
+    });
+  } else {
+    toast.error("라이브러리 폴더를 복원하지 못했습니다.", {
+      description: result.error,
+    });
+  }
+};
+
+const forgetLibraryFolder = async () => {
+  if (!folderToForget.value) return;
+  const result = await ipcRenderer.invoke(
+    "forget-library-folder",
+    folderToForget.value,
+  );
+  if (result.success) {
+    await loadLibraryFolders();
+    await queryClient.invalidateQueries({ queryKey: ["books"] });
+    toast.success("보관된 라이브러리 정보를 삭제했습니다.", {
+      description: `${result.removedBooks || 0}권의 DB 기록을 삭제했습니다. 실제 파일은 유지됩니다.`,
+    });
+  } else {
+    toast.error("보관된 라이브러리 정보를 삭제하지 못했습니다.", {
+      description: result.error,
+    });
+  }
+  folderToForget.value = null;
 };
 
 // 라이브러리 폴더 다시 스캔
@@ -334,13 +391,76 @@ const generateMissingInfoFiles = async () => {
             >라이브러리 폴더를 제거하시겠습니까?</AlertDialogTitle
           >
           <AlertDialogDescription>
-            실제 파일은 삭제하지 않습니다. 이 경로의 책 정보, 읽기 기록,
-            즐겨찾기와 썸네일만 앱에서 제거합니다.
+            폴더만 라이브러리에서 제거합니다. 책 정보, 읽기 기록, 즐겨찾기,
+            시리즈와 실제 파일은 보관됩니다.
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
           <AlertDialogCancel>취소</AlertDialogCancel>
-          <Button @click="removeLibraryFolder"> 앱에서 제거 </Button>
+          <Button @click="removeLibraryFolder"> 보관하고 제거 </Button>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+
+    <Card v-if="archivedLibraryFolders.length > 0">
+      <CardHeader>
+        <CardTitle>보관된 라이브러리</CardTitle>
+        <CardDescription>
+          제거한 폴더의 DB 정보입니다. 폴더를 복원하거나 정보를 영구적으로
+          삭제할 수 있습니다.
+        </CardDescription>
+      </CardHeader>
+      <CardContent class="space-y-3">
+        <div
+          v-for="folder in archivedLibraryFolders"
+          :key="folder.path"
+          class="flex items-center justify-between rounded-md border p-4"
+        >
+          <div class="min-w-0 truncate pr-4">
+            <p class="truncate font-mono text-sm" :title="folder.path">
+              {{ folder.path }}
+            </p>
+            <p class="text-muted-foreground text-xs">
+              {{ folder.bookCount }}권 | 제거됨:
+              {{ new Date(folder.removedAt).toLocaleString() }}
+            </p>
+          </div>
+          <div class="flex flex-shrink-0 items-center gap-2">
+            <Button
+              variant="outline"
+              @click="restoreLibraryFolder(folder.path)"
+            >
+              <Icon icon="solar:restart-bold-duotone" class="h-4 w-4" />
+              복원
+            </Button>
+            <Button variant="destructive" @click="folderToForget = folder.path">
+              <Icon icon="solar:trash-bin-trash-bold-duotone" class="h-4 w-4" />
+              정보 삭제
+            </Button>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+
+    <AlertDialog
+      :open="folderToForget !== null"
+      @update:open="(open) => !open && (folderToForget = null)"
+    >
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle
+            >보관된 정보를 영구적으로 삭제하시겠습니까?</AlertDialogTitle
+          >
+          <AlertDialogDescription>
+            책 정보, 읽기 기록, 즐겨찾기, 시리즈와 썸네일을 DB에서 삭제합니다.
+            실제 파일은 삭제하지 않지만 이 작업은 되돌릴 수 없습니다.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>취소</AlertDialogCancel>
+          <Button variant="destructive" @click="forgetLibraryFolder">
+            정보 영구 삭제
+          </Button>
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>
