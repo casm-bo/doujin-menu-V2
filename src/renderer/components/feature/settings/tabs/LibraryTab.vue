@@ -135,7 +135,7 @@ const removeLibraryFolder = async () => {
   if (result.success) {
     await loadLibraryFolders();
     toast.success("라이브러리 폴더가 제거되었습니다.", {
-      description: `${result.removedBooks || 0}권의 앱 기록을 정리했습니다. 실제 파일은 삭제하지 않았습니다.`,
+      description: `${result.archivedBooks || 0}권의 책 기록을 보관했습니다. 실제 파일과 DB 정보는 삭제하지 않았습니다.`,
     });
   } else {
     toast.error("라이브러리 폴더를 제거하지 못했습니다.", {
@@ -340,9 +340,7 @@ const generateMissingInfoFiles = async () => {
         </AlertDialogHeader>
         <AlertDialogFooter>
           <AlertDialogCancel>취소</AlertDialogCancel>
-          <Button @click="removeLibraryFolder">
-            앱에서 제거
-          </Button>
+          <Button @click="removeLibraryFolder"> 앱에서 제거 </Button>
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>

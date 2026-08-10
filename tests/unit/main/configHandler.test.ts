@@ -22,6 +22,7 @@ const mockStoreInstance = {
   store: {
     theme: "auto",
     libraryFolders: [],
+    archivedLibraryFolders: [],
     prioritizeKoreanTitles: false,
   },
   get: mockGet,
@@ -80,6 +81,7 @@ vi.mock("fs/promises", () => ({
 vi.mock("../../../src/main/handlers/directoryHandler.js", () => ({
   cleanupMissingBooks: vi.fn(),
   forgetBooksUnderPath: vi.fn(),
+  markBooksOfflineUnderPath: vi.fn(),
   scanDirectory: vi.fn(),
 }));
 
@@ -97,12 +99,17 @@ const {
   handleClearLockPassword,
   handleRestoreDatabase,
   handleResetAllData,
+  handleRemoveLibraryFolder,
+  handleRestoreLibraryFolder,
+  handleForgetLibraryFolder,
   restartApp,
 } = await import("../../../src/main/handlers/configHandler.js");
 const { app, dialog } = await import("electron");
 const { existsSync } = await import("fs");
 const { default: fs } = await import("fs/promises");
 const { closeDbConnection } = await import("../../../src/main/db/index.js");
+const { forgetBooksUnderPath, markBooksOfflineUnderPath } =
+  await import("../../../src/main/handlers/directoryHandler.js");
 
 describe("configHandler", () => {
   beforeEach(() => {
@@ -186,6 +193,54 @@ describe("configHandler", () => {
 
       expect(result.success).toBe(false);
       expect(result.error).toBe(errorMessage);
+    });
+  });
+
+  describe("library folder archive lifecycle", () => {
+    const folderPath = "C:\\library";
+    const archivedFolder = {
+      path: folderPath,
+      removedAt: "2026-08-10T00:00:00.000Z",
+    };
+
+    it("archives records when removing a registered folder", async () => {
+      mockGet.mockImplementation((key: string) =>
+        key === "libraryFolders" ? [folderPath] : [],
+      );
+      vi.mocked(markBooksOfflineUnderPath).mockResolvedValue(3);
+
+      const result = await handleRemoveLibraryFolder(folderPath);
+
+      expect(result).toMatchObject({ success: true, archivedBooks: 3 });
+      expect(markBooksOfflineUnderPath).toHaveBeenCalledWith(folderPath);
+      expect(forgetBooksUnderPath).not.toHaveBeenCalled();
+      expect(mockSet).toHaveBeenCalledWith("libraryFolders", []);
+      expect(mockSet).toHaveBeenCalledWith("archivedLibraryFolders", [
+        expect.objectContaining({ path: folderPath }),
+      ]);
+    });
+
+    it("restores an archived folder to active configuration", async () => {
+      mockGet.mockImplementation((key: string) =>
+        key === "libraryFolders" ? [] : [archivedFolder],
+      );
+
+      const result = await handleRestoreLibraryFolder(folderPath);
+
+      expect(result).toEqual({ success: true, folders: [folderPath] });
+      expect(mockSet).toHaveBeenCalledWith("libraryFolders", [folderPath]);
+      expect(mockSet).toHaveBeenCalledWith("archivedLibraryFolders", []);
+    });
+
+    it("permanently forgets records only from an archived folder", async () => {
+      mockGet.mockReturnValue([archivedFolder]);
+      vi.mocked(forgetBooksUnderPath).mockResolvedValue(3);
+
+      const result = await handleForgetLibraryFolder(folderPath);
+
+      expect(result).toEqual({ success: true, removedBooks: 3 });
+      expect(forgetBooksUnderPath).toHaveBeenCalledWith(folderPath);
+      expect(mockSet).toHaveBeenCalledWith("archivedLibraryFolders", []);
     });
   });
 

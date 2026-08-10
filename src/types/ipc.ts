@@ -439,6 +439,22 @@ export interface IpcChannels {
     response: {
       success: boolean;
       folders?: string[];
+      archivedBooks?: number;
+      error?: string;
+    };
+  };
+  "restore-library-folder": {
+    request: string;
+    response: {
+      success: boolean;
+      folders?: string[];
+      error?: string;
+    };
+  };
+  "forget-library-folder": {
+    request: string;
+    response: {
+      success: boolean;
       removedBooks?: number;
       error?: string;
     };

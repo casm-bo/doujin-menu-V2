@@ -11,6 +11,7 @@ import { DEFAULT_DOWNLOAD_PATTERN } from "../utils/index.js";
 import {
   cleanupMissingBooks,
   forgetBooksUnderPath,
+  markBooksOfflineUnderPath,
   scanDirectory,
 } from "./directoryHandler.js";
 import { handleGenerateThumbnail } from "./thumbnailHandler.js";
@@ -43,6 +44,7 @@ export interface Config {
   colorTheme?: string; // 모든 tweakcn 테마 지원
   autoLoadLibrary?: boolean;
   libraryFolders?: string[];
+  archivedLibraryFolders?: { path: string; removedAt: string }[];
   viewerReadingDirection?: "ltr" | "rtl" | "webtoon";
   viewerDoublePageView?: boolean;
   viewerAutoFitZoom?: boolean;
@@ -85,6 +87,7 @@ const defaults: Config = {
   colorTheme: "cosmic-night",
   autoLoadLibrary: true,
   libraryFolders: [],
+  archivedLibraryFolders: [],
   viewerReadingDirection: "rtl",
   viewerDoublePageView: true,
   viewerAutoFitZoom: true,
@@ -325,6 +328,16 @@ export const handleAddLibraryFolder = async () => {
   store.set("libraryFolders", currentFolders);
 
   if (addedFolders.length > 0) {
+    const added = new Set(addedFolders);
+    store.set(
+      "archivedLibraryFolders",
+      store
+        .get("archivedLibraryFolders", [])
+        .filter((folder) => !added.has(folder.path)),
+    );
+  }
+
+  if (addedFolders.length > 0) {
     return {
       success: true,
       folders: currentFolders,
@@ -342,17 +355,66 @@ export const handleAddLibraryFolder = async () => {
 
 export const handleRemoveLibraryFolder = async (folderPath: string) => {
   const currentFolders = store.get("libraryFolders", []);
+  if (!currentFolders.includes(folderPath)) {
+    return { success: false, error: "Library folder not found." };
+  }
   const newFolders = currentFolders.filter((p) => p !== folderPath);
 
   try {
-    const removedBooks = await forgetBooksUnderPath(folderPath);
+    const archivedBooks = await markBooksOfflineUnderPath(folderPath);
+    const archivedFolders = store
+      .get("archivedLibraryFolders", [])
+      .filter((folder) => folder.path !== folderPath);
+    archivedFolders.push({
+      path: folderPath,
+      removedAt: new Date().toISOString(),
+    });
+    store.set("archivedLibraryFolders", archivedFolders);
     store.set("libraryFolders", newFolders);
-    return { success: true, folders: newFolders, removedBooks };
+    return { success: true, folders: newFolders, archivedBooks };
   } catch (error) {
     console.error(
       `[ConfigHandler] Failed to remove library folder ${folderPath} or associated books:`,
       error,
     );
+    return { success: false, error: (error as Error).message };
+  }
+};
+
+export const handleRestoreLibraryFolder = async (folderPath: string) => {
+  try {
+    const currentFolders = store.get("libraryFolders", []);
+    const archivedFolders = store.get("archivedLibraryFolders", []);
+    if (!archivedFolders.some((folder) => folder.path === folderPath)) {
+      return { success: false, error: "Archived library folder not found." };
+    }
+    const newFolders = currentFolders.includes(folderPath)
+      ? currentFolders
+      : [...currentFolders, folderPath];
+    store.set("libraryFolders", newFolders);
+    store.set(
+      "archivedLibraryFolders",
+      archivedFolders.filter((folder) => folder.path !== folderPath),
+    );
+    return { success: true, folders: newFolders };
+  } catch (error) {
+    return { success: false, error: (error as Error).message };
+  }
+};
+
+export const handleForgetLibraryFolder = async (folderPath: string) => {
+  try {
+    const archivedFolders = store.get("archivedLibraryFolders", []);
+    if (!archivedFolders.some((folder) => folder.path === folderPath)) {
+      return { success: false, error: "Archived library folder not found." };
+    }
+    const removedBooks = await forgetBooksUnderPath(folderPath);
+    store.set(
+      "archivedLibraryFolders",
+      archivedFolders.filter((folder) => folder.path !== folderPath),
+    );
+    return { success: true, removedBooks };
+  } catch (error) {
     return { success: false, error: (error as Error).message };
   }
 };
@@ -578,6 +640,12 @@ export function registerConfigHandlers() {
   // 라이브러리 폴더 삭제
   ipcMain.handle("remove-library-folder", (_event, folderPath) =>
     handleRemoveLibraryFolder(folderPath),
+  );
+  ipcMain.handle("restore-library-folder", (_event, folderPath) =>
+    handleRestoreLibraryFolder(folderPath),
+  );
+  ipcMain.handle("forget-library-folder", (_event, folderPath) =>
+    handleForgetLibraryFolder(folderPath),
   );
   // 데이터베이스 백업
   ipcMain.handle("backup-database", (event) => handleBackupDatabase(event));
