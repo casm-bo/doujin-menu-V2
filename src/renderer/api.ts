@@ -1,4 +1,5 @@
 import type {
+  Book,
   DeleteDuplicatesResult,
   EditableBookMetadata,
   FilterParams,
@@ -88,6 +89,17 @@ export async function deleteBook(bookId: number) {
   } else {
     throw new Error(result.error || "Failed to delete book");
   }
+}
+
+export async function deleteBookOrSeries(
+  book: Pick<Book, "id" | "series_collection_id">,
+) {
+  const books = book.series_collection_id
+    ? await getSeriesBooks(book.series_collection_id)
+    : [book];
+  if (!books) throw new Error("Failed to load series books");
+  for (const item of books) await deleteBook(item.id);
+  return books.length;
 }
 
 export async function updateBookMetadata(

@@ -86,7 +86,7 @@ const handleCardClick = (event: MouseEvent) => {
     emit("toggle-select", event);
     return;
   }
-  if (isOffline.value) {
+  if (isOffline.value && !props.book.series_collection_id) {
     showOfflineToast();
     return;
   }
@@ -238,12 +238,14 @@ const handleDeleteBook = async () => {
 
 const confirmDeleteBook = async () => {
   try {
-    // Call the main process to delete the book
-    await api.deleteBook(props.book.id);
+    const deletedCount = await api.deleteBookOrSeries(props.book);
     emit("deleted", props.book.id);
-    toast.success("책 삭제 완료", {
-      description: `${props.book.title}이(가) 삭제되었습니다.`,
-    });
+    toast.success(
+      props.book.series_collection_id ? "시리즈 삭제 완료" : "책 삭제 완료",
+      {
+        description: `${deletedCount}권이 삭제되었습니다.`,
+      },
+    );
     queryClient.invalidateQueries({ queryKey: ["books"] }); // Invalidate the query
   } catch (error) {
     console.error("책 삭제 실패:", error);
@@ -484,9 +486,19 @@ const confirmDeleteBook = async () => {
   >
     <AlertDialogContent>
       <AlertDialogHeader>
-        <AlertDialogTitle>책을 삭제하시겠습니까?</AlertDialogTitle>
+        <AlertDialogTitle>
+          {{
+            book.series_collection_id
+              ? "시리즈를 삭제하시겠습니까?"
+              : "책을 삭제하시겠습니까?"
+          }}
+        </AlertDialogTitle>
         <AlertDialogDescription>
-          데이터베이스에서 책 정보가 삭제되고, 파일은 휴지통으로 이동합니다.
+          {{
+            book.series_collection_id
+              ? "시리즈의 모든 에피소드 정보가 삭제되고, 파일은 휴지통으로 이동합니다."
+              : "데이터베이스에서 책 정보가 삭제되고, 파일은 휴지통으로 이동합니다."
+          }}
         </AlertDialogDescription>
       </AlertDialogHeader>
       <AlertDialogFooter>
