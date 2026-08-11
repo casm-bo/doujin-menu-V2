@@ -474,6 +474,43 @@ describe("오프라인 라이브러리 보존", () => {
     });
   });
 
+  describe("file modification time scanning", () => {
+    it("stores folder mtime without a meaningless folder size", async () => {
+      const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "mtime-folder-"));
+      try {
+        const bookPath = path.join(tempRoot, "book");
+        await fs.mkdir(bookPath);
+        await fs.writeFile(path.join(bookPath, "001.jpg"), "image");
+
+        await scanDirectory(tempRoot);
+
+        const stat = await fs.stat(bookPath);
+        const book = await db("Book").where("path", bookPath).first();
+        expect(book.file_mtime).toBe(stat.mtimeMs);
+        expect(book.file_size).toBeNull();
+      } finally {
+        await fs.rm(tempRoot, { recursive: true, force: true });
+      }
+    });
+
+    it("stores archive mtime and size during an individual scan", async () => {
+      const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "mtime-file-"));
+      try {
+        const archivePath = path.join(tempRoot, "book.cbz");
+        await writeTestArchive(archivePath);
+
+        await scanFile(archivePath);
+
+        const stat = await fs.stat(archivePath);
+        const book = await db("Book").where("path", archivePath).first();
+        expect(book.file_mtime).toBe(stat.mtimeMs);
+        expect(book.file_size).toBe(stat.size);
+      } finally {
+        await fs.rm(tempRoot, { recursive: true, force: true });
+      }
+    });
+  });
+
   describe("forgetBooksUnderPath", () => {
     it("실제 파일은 유지하고 앱 기록만 제거", async () => {
       const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "forget-test-"));

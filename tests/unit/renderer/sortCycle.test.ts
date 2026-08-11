@@ -3,11 +3,19 @@ import {
   nextSortBy,
   toggledSortOrder,
   SORT_CYCLE,
+  SORT_LABELS,
 } from "../../../src/renderer/store/sortCycle";
 
 describe("nextSortBy", () => {
   it("advances to the next criterion in the cycle", () => {
-    expect(nextSortBy("added_at", SORT_CYCLE)).toBe("title");
+    expect(nextSortBy("added_at", SORT_CYCLE)).toBe("file_mtime");
+    expect(nextSortBy("file_mtime", SORT_CYCLE)).toBe("title");
+  });
+
+  it("provides a label for every criterion", () => {
+    for (const criterion of SORT_CYCLE) {
+      expect(SORT_LABELS[criterion]).toBeTruthy();
+    }
   });
 
   it("wraps around from the last criterion to the first", () => {

@@ -1792,6 +1792,54 @@ describe("handleGetBooks - 통합 테스트", () => {
     });
   });
 
+  describe("file modification time sort", () => {
+    it("sorts by file_mtime with nulls following SQLite order", async () => {
+      const oldBook = await seedBook(db, { path: "/mtime-old", file_mtime: 1000 });
+      const newBook = await seedBook(db, { path: "/mtime-new", file_mtime: 2000 });
+      const nullBook = await seedBook(db, { path: "/mtime-null" });
+
+      const descending = await handleGetBooks({
+        sortBy: "file_mtime",
+        sortOrder: "desc",
+        pageSize: 1000,
+      });
+      const ascending = await handleGetBooks({
+        sortBy: "file_mtime",
+        sortOrder: "asc",
+        pageSize: 1000,
+      });
+
+      expect(descending.data.map((book: { id: number }) => book.id)).toEqual([
+        newBook.id,
+        oldBook.id,
+        nullBook.id,
+      ]);
+      expect(ascending.data.map((book: { id: number }) => book.id)).toEqual([
+        nullBook.id,
+        oldBook.id,
+        newBook.id,
+      ]);
+    });
+
+    it("uses file_mtime order in viewer navigation", async () => {
+      const oldBook = await seedBook(db, { path: "/nav-old", file_mtime: 1000 });
+      const newBook = await seedBook(db, { path: "/nav-new", file_mtime: 2000 });
+
+      const next = await handleGetNextBook({
+        currentBookId: newBook.id,
+        mode: "next",
+        filter: { sortBy: "file_mtime", sortOrder: "desc" },
+      });
+      const previous = await handleGetPrevBook({
+        currentBookId: oldBook.id,
+        filter: { sortBy: "file_mtime", sortOrder: "desc" },
+      });
+
+      expect(next.nextBookId).toBe(oldBook.id);
+      expect(previous.prevBookId).toBe(newBook.id);
+    });
+  });
+
   describe("seeded random sort", () => {
     const seed = 424242;
 
