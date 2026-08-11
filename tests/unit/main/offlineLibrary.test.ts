@@ -262,7 +262,7 @@ describe("오프라인 라이브러리 보존", () => {
         hitomi_id: "1234567",
         title: "API title",
       });
-      const artist = await db("Artist").where("name", "API artist").first();
+      const artist = await db("Artist").where("name", "API_artist").first();
       expect(
         await db("BookArtist")
           .where({ book_id: stored.id, artist_id: artist.id })
