@@ -130,7 +130,7 @@ describe("etcHandler", () => {
     mockRm.mockResolvedValue(undefined);
 
     await expect(clearTempFiles("/mock/user/data")).resolves.toBeUndefined();
-    expect(mockRm).toHaveBeenCalledTimes(3);
+    expect(mockRm).toHaveBeenCalledTimes(4);
     expect(mockRm).toHaveBeenCalledWith(
       expect.stringContaining("temp_external"),
       { recursive: true, force: true },
@@ -143,11 +143,12 @@ describe("etcHandler", () => {
     const summary = await getTempFilesSummary("/mock/user/data");
 
     expect(summary.total).toBe("0 Bytes");
-    expect(summary.locations).toHaveLength(3);
+    expect(summary.locations).toHaveLength(4);
     expect(summary.locations.map((location) => location.key)).toEqual([
       "downloader_temp_thumbnails",
       "temp_cover",
       "temp_external",
+      "hdd_downloads",
     ]);
     expect(
       summary.locations.every((location) => location.size === "0 Bytes"),

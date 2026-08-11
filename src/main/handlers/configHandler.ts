@@ -55,6 +55,7 @@ export interface Config {
   createInfoTxtFile?: boolean;
   compressDownload?: boolean;
   compressFormat?: "cbz" | "zip";
+  hddDownloadMode?: boolean;
   libraryViewSettings?: LibraryViewSettings;
   seriesDetectionSettings?: SeriesDetectionSettings;
   seriesViewSettings?: SeriesViewSettings;
@@ -99,6 +100,7 @@ const defaults: Config = {
   createInfoTxtFile: true,
   compressDownload: false,
   compressFormat: "cbz",
+  hddDownloadMode: false,
   libraryViewSettings: {
     sortBy: "added_at",
     sortOrder: "desc",

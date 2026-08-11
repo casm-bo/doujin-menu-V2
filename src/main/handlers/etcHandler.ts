@@ -11,6 +11,7 @@ import db from "../db/index.js";
 import { naturalSort } from "../utils/index.js";
 import { console } from "../main.js";
 import { store as configStore } from "./configHandler.js";
+import { getDownloadStagingRoot } from "../utils/downloadStaging.js";
 
 const ALLOWED_EXTERNAL_HOSTS = new Set([
   "forms.gle",
@@ -89,22 +90,42 @@ const TEMP_FILE_LOCATIONS = [
   },
 ] as const;
 
+const HDD_DOWNLOAD_TEMP_LOCATION = {
+  key: "hdd_downloads",
+  label: "HDD 다운로드 임시 파일",
+  description: "HDD 모드 다운로드 작업 파일",
+} as const;
+
 export async function getTempFilesSummary(
   userDataPath = app.getPath("userData"),
+  tempPath = app.getPath("temp"),
 ) {
+  const locationDefinitions = [
+    ...TEMP_FILE_LOCATIONS.map(({ key, label, description }) => ({
+      key,
+      label,
+      description,
+      path: path.join(userDataPath, key),
+    })),
+    {
+      ...HDD_DOWNLOAD_TEMP_LOCATION,
+      path: getDownloadStagingRoot(tempPath),
+    },
+  ];
   const locations = await Promise.all(
-    TEMP_FILE_LOCATIONS.map(async ({ key, label, description }) => {
-      const locationPath = path.join(userDataPath, key);
-      const bytes = await getDirSize(locationPath);
-      return {
-        key,
-        label,
-        description,
-        path: locationPath,
-        size: formatBytes(bytes),
-        bytes,
-      };
-    }),
+    locationDefinitions.map(
+      async ({ key, label, description, path: locationPath }) => {
+        const bytes = await getDirSize(locationPath);
+        return {
+          key,
+          label,
+          description,
+          path: locationPath,
+          size: formatBytes(bytes),
+          bytes,
+        };
+      },
+    ),
   );
   const totalBytes = locations.reduce((total, location) => {
     return total + location.bytes;
@@ -112,10 +133,17 @@ export async function getTempFilesSummary(
   return { total: formatBytes(totalBytes), locations };
 }
 
-export async function clearTempFiles(userDataPath = app.getPath("userData")) {
+export async function clearTempFiles(
+  userDataPath = app.getPath("userData"),
+  tempPath = app.getPath("temp"),
+) {
+  const paths = [
+    ...TEMP_FILE_LOCATIONS.map(({ key }) => path.join(userDataPath, key)),
+    getDownloadStagingRoot(tempPath),
+  ];
   await Promise.all(
-    TEMP_FILE_LOCATIONS.map(({ key }) =>
-      fs.rm(path.join(userDataPath, key), { recursive: true, force: true }),
+    paths.map((locationPath) =>
+      fs.rm(locationPath, { recursive: true, force: true }),
     ),
   );
 }

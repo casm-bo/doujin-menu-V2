@@ -37,6 +37,7 @@ const invokeChannels = new Set([
   "get-config",
   "get-config-value",
   "get-download-queue",
+  "get-download-staging-path",
   "get-duplicate-groups",
   "get-gallery-details",
   "get-gallery-image-urls",
