@@ -294,7 +294,13 @@ function buildFilteredQuery(filter: FilterParams | null) {
     }
     if (titleTerms.length > 0) {
       for (const titleTerm of titleTerms) {
-        mainQuery.whereRaw("LOWER(sub.title) LIKE ?", [`%${titleTerm}%`]);
+        mainQuery.where((builder) => {
+          builder
+            .whereRaw("LOWER(sub.title) LIKE ?", [`%${titleTerm}%`])
+            .orWhereRaw("LOWER(sub.series_collection_name) LIKE ?", [
+              `%${titleTerm}%`,
+            ]);
+        });
       }
     }
 
@@ -371,7 +377,10 @@ function buildFilteredQuery(filter: FilterParams | null) {
     }
     if (exclude.titleTerms.length > 0) {
       for (const titleTerm of exclude.titleTerms) {
-        mainQuery.whereRaw("LOWER(sub.title) NOT LIKE ?", [`%${titleTerm}%`]);
+        mainQuery.whereRaw(
+          "LOWER(sub.title) NOT LIKE ? AND (sub.series_collection_name IS NULL OR LOWER(sub.series_collection_name) NOT LIKE ?)",
+          [`%${titleTerm}%`, `%${titleTerm}%`],
+        );
       }
     }
   }

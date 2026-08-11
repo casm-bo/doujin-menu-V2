@@ -695,6 +695,26 @@ describe("handleGetBooks - 통합 테스트", () => {
       const ids = await getResultIds({ searchQuery: "테스트" });
       expect(ids).toHaveLength(1);
     });
+
+    it("일반 검색어 → 시리즈 컬렉션 이름 검색", async () => {
+      const [seriesId] = await db("SeriesCollection").insert({
+        name: "검색할 시리즈",
+      });
+      const first = await seedBook(db, {
+        path: "/series-search/1",
+        title: "첫 번째 책",
+        series_collection_id: seriesId,
+        series_order_index: 0,
+      });
+      await seedBook(db, {
+        path: "/series-search/2",
+        title: "두 번째 책",
+        series_collection_id: seriesId,
+        series_order_index: 1,
+      });
+
+      expect(await getResultIds({ searchQuery: "검색할" })).toEqual([first.id]);
+    });
   });
 
   describe("관계 데이터 정확 일치 (EXISTS 서브쿼리)", () => {
