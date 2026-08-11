@@ -133,6 +133,7 @@ export interface DownloadQueueItem {
   gallery_artist?: string;
   thumbnail_url?: string;
   download_path: string;
+  resolved_path?: string;
   status: DownloadQueueStatus;
   progress: number;
   total_files: number;

@@ -1,5 +1,4 @@
 import { app, BrowserWindow, ipcMain } from "electron";
-import { filenamifyPath } from "filenamify";
 import fs from "fs/promises";
 import path from "path";
 import PQueue from "p-queue";
@@ -10,9 +9,10 @@ import type {
 import db from "../db/index.js";
 import { console } from "../main.js";
 import {
+  buildGalleryDownloadPath,
   DEFAULT_DOWNLOAD_PATTERN,
-  formatDownloadFolderName,
 } from "../utils/index.js";
+import { isPathWithinLibraryRoot } from "../utils/libraryPath.js";
 import { hitomiService } from "../services/hitomi/hitomiService.js";
 import { store as configStore } from "./configHandler.js";
 import {
@@ -30,6 +30,28 @@ let isProcessingQueue = false;
 let currentDownloadId: number | null = null;
 const transferQueue = new PQueue({ concurrency: 1 });
 let shouldCancelCurrentDownload = false; // 현재 다운로드 취소 플래그
+
+const removeEmptyParents = async (startPath: string, rootPath: string) => {
+  const root = path.resolve(rootPath);
+  const normalize = (value: string) =>
+    process.platform === "win32" ? value.toLowerCase() : value;
+  const normalizedRoot = normalize(root);
+  let current = path.dirname(path.resolve(startPath));
+
+  while (
+    normalize(current) !== normalizedRoot &&
+    isPathWithinLibraryRoot(current, root)
+  ) {
+    try {
+      if ((await fs.readdir(current)).length > 0) break;
+      await fs.rmdir(current);
+    } catch (error) {
+      console.warn(`[DownloadQueue] 빈 부모 폴더 정리 중단:`, error);
+      break;
+    }
+    current = path.dirname(current);
+  }
+};
 
 /**
  * 다운로드 큐 전체 목록 조회
@@ -77,6 +99,7 @@ export const handleAddToDownloadQueue = async (params: {
           downloaded_files: 0,
           error_message: null,
           completed_at: null,
+          resolved_path: null,
         });
         const retriedItem = await db<DownloadQueueItem>("DownloadQueue")
           .where("id", existing.id)
@@ -151,41 +174,40 @@ export const handleRemoveFromDownloadQueue = async (queueId: number) => {
 
     if (shouldDeleteFiles && item.download_path) {
       try {
-        // 갤러리 정보 가져오기
-        const gallery = await hitomiService.getGallery(item.gallery_id);
-        if (gallery) {
+        let galleryDownloadPath = item.resolved_path as string | undefined;
+        if (!galleryDownloadPath) {
+          const gallery = await hitomiService.getGallery(item.gallery_id);
           const downloadPattern = configStore.get(
             "downloadPattern",
             DEFAULT_DOWNLOAD_PATTERN,
           ) as string;
-
-          // 유틸리티 함수 사용
-          const folderName = formatDownloadFolderName(gallery, downloadPattern);
-
-          const galleryDownloadPath = filenamifyPath(
-            path.join(item.download_path, folderName),
-            { maxLength: 100, replacement: "_" },
+          const capitalizeNames = configStore.get(
+            "capitalizeNames",
+            false,
+          ) as boolean;
+          galleryDownloadPath = buildGalleryDownloadPath(
+            item.download_path,
+            gallery,
+            downloadPattern,
+            { capitalizeNames },
           );
-
-          // 폴더 삭제
-          try {
-            await fs.rm(galleryDownloadPath, { recursive: true, force: true });
-          } catch (deleteError) {
-            console.warn(`[DownloadQueue] 파일 삭제 실패 (무시):`, deleteError);
-          }
-
-          // 압축 파일도 삭제 시도
-          const compressFormat = configStore.get(
-            "compressFormat",
-            "cbz",
-          ) as string;
-          const archiveFilePath = `${galleryDownloadPath}.${compressFormat}`;
-          try {
-            await fs.unlink(archiveFilePath);
-          } catch {
-            // 압축 파일이 없으면 무시
-          }
         }
+
+        if (
+          path.resolve(galleryDownloadPath) ===
+            path.resolve(item.download_path) ||
+          !isPathWithinLibraryRoot(galleryDownloadPath, item.download_path)
+        ) {
+          throw new Error("다운로드 루트 밖의 삭제 경로를 거부했습니다.");
+        }
+
+        await fs.rm(galleryDownloadPath, { recursive: true, force: true });
+        await Promise.all(
+          ["cbz", "zip"].map((extension) =>
+            fs.rm(`${galleryDownloadPath}.${extension}`, { force: true }),
+          ),
+        );
+        await removeEmptyParents(galleryDownloadPath, item.download_path);
       } catch (error) {
         console.warn(`[DownloadQueue] 파일 삭제 중 오류 (계속 진행):`, error);
       }

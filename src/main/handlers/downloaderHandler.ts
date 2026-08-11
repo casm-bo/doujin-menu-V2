@@ -1,14 +1,13 @@
 import archiver from "archiver";
 import { app, ipcMain } from "electron";
-import { filenamifyPath } from "filenamify";
 import { createWriteStream } from "fs";
 import fs from "fs/promises";
 import path from "path";
 import { console } from "../main.js";
 import { hitomiService } from "../services/hitomi/hitomiService.js";
 import {
+  buildGalleryDownloadPath,
   DEFAULT_DOWNLOAD_PATTERN,
-  formatDownloadFolderName,
 } from "../utils/index.js";
 import { isPathWithinLibraryRoot } from "../utils/libraryPath.js";
 import {
@@ -225,41 +224,19 @@ export const handleDownloadGallery = async (
       "downloadPattern",
       DEFAULT_DOWNLOAD_PATTERN,
     );
-    let galleryFolderName = formatDownloadFolderName(gallery, downloadPattern);
-
-    // Windows MAX_PATH 제한(260자)을 고려한 전체 경로 길이 검증
-    // 파일명을 위한 여유 공간 확보 (예: "000001.webp" = 12자)
-    const MAX_SAFE_PATH_LENGTH = 245; // 260 - 30 (파일명 + 여유)
-    let finalFolderPath = path.join(downloadPath, galleryFolderName);
-
-    // 전체 경로가 너무 길면 폴더명을 줄임
-    if (finalFolderPath.length > MAX_SAFE_PATH_LENGTH) {
-      const idSuffix = `... (${gallery.id})`;
-      const availableLength =
-        MAX_SAFE_PATH_LENGTH - downloadPath.length - idSuffix.length - 1; // -1 for path separator
-
-      if (availableLength > 0 && galleryFolderName.length > availableLength) {
-        galleryFolderName =
-          galleryFolderName.substring(0, availableLength).trim() + idSuffix;
-      } else if (availableLength <= 0) {
-        // 다운로드 경로 자체가 너무 길어서 공간이 없는 경우
-        galleryFolderName = `${gallery.id}`;
-      }
-
-      finalFolderPath = path.join(downloadPath, galleryFolderName);
-    }
-
-    // 예약 문자 처리
-    const finalGalleryPath = filenamifyPath(finalFolderPath, {
-      maxLength: 100,
-      replacement: "_",
-    });
+    const capitalizeNames = configStore.get("capitalizeNames", false);
+    const finalGalleryPath = buildGalleryDownloadPath(
+      downloadPath,
+      gallery,
+      downloadPattern,
+      { capitalizeNames },
+    );
 
     const stagingJobPath = hddDownloadMode
       ? getDownloadStagingJobPath(app.getPath("temp"), gallery.id)
       : null;
     const galleryDownloadPath = stagingJobPath
-      ? path.join(stagingJobPath, path.basename(finalGalleryPath))
+      ? path.join(stagingJobPath, path.relative(downloadPath, finalGalleryPath))
       : finalGalleryPath;
 
     const archiveFilePath = `${galleryDownloadPath}.${compressFormat}`;
@@ -396,6 +373,7 @@ export const handleDownloadGallery = async (
       const db = (await import("../db/index.js")).default;
       await db("DownloadQueue").where("id", queueId).update({
         total_files: totalFiles,
+        resolved_path: finalGalleryPath,
       });
     }
 

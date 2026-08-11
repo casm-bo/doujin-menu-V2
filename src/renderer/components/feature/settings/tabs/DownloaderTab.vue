@@ -39,6 +39,7 @@ const compressDownload = ref(false);
 const compressFormat = ref<"cbz" | "zip">("cbz");
 const downloadPath = ref("");
 const hddDownloadMode = ref(false);
+const capitalizeNames = ref(false);
 
 onMounted(async () => {
   const config = await ipcRenderer.invoke("get-config");
@@ -49,6 +50,7 @@ onMounted(async () => {
   compressFormat.value = (config.compressFormat as "cbz" | "zip") || "cbz";
   downloadPath.value = (config.downloadPath as string) || "";
   hddDownloadMode.value = config.hddDownloadMode === true;
+  capitalizeNames.value = config.capitalizeNames === true;
 });
 
 const selectDownloadPath = async () => {
@@ -85,6 +87,11 @@ const onCompressFormatChange = (value: AcceptableValue) => {
 const onHddDownloadModeChange = (value: boolean) => {
   hddDownloadMode.value = value;
   saveConfig("hddDownloadMode", value);
+};
+
+const onCapitalizeNamesChange = (value: boolean) => {
+  capitalizeNames.value = value;
+  saveConfig("capitalizeNames", value);
 };
 </script>
 
@@ -175,7 +182,23 @@ const onHddDownloadModeChange = (value: boolean) => {
           <li><code>%artist|groups|series%</code>: 작가 → 그룹 → 시리즈 순</li>
         </ul>
         <p class="mt-2">예시: <code>[%artist|groups%] %title% (%id%)</code></p>
+        <p class="mt-2 font-semibold">폴더 구분자</p>
+        <p class="mt-1">
+          <code>\</code> 또는 <code>/</code>를 쓰면 하위 폴더가 만들어집니다.
+        </p>
       </div>
+      <SettingItem
+        label-for="capitalize-names"
+        title="작가·그룹명 첫 글자 대문자"
+        subtitle="영문 작가명·그룹명의 각 단어 첫 글자를 대문자로 바꿉니다."
+      >
+        <Switch
+          id="capitalize-names"
+          :model-value="capitalizeNames"
+          class="justify-self-end"
+          @update:model-value="onCapitalizeNamesChange"
+        />
+      </SettingItem>
       <SettingItem
         label-for="compress-download"
         title="다운로드 후 압축"

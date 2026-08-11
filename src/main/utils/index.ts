@@ -1,9 +1,16 @@
+import filenamify from "filenamify";
 import type { Gallery as NativeHitomiGallery } from "node-hitomi";
+import path from "path";
 import type { HitomiGallery as SerializableHitomiGallery } from "../../types/hitomi.js";
 
 type GalleryMetadata = string | { name: string };
 
 export const DEFAULT_DOWNLOAD_PATTERN = "[%artist%][%id%] %title%";
+export const MAX_SAFE_PATH_LENGTH = 245;
+
+export interface FolderNameOptions {
+  capitalizeNames?: boolean;
+}
 
 function metadataNames(
   values: readonly GalleryMetadata[] | undefined,
@@ -42,15 +49,26 @@ export function naturalSort(a: string, b: string): number {
   return aArr.length - bArr.length;
 }
 
-/**
- * 갤러리 정보와 패턴을 기반으로 다운로드 폴더명을 생성합니다.
- * @param gallery - 히토미 갤러리 객체
- * @param pattern - 폴더명 패턴 (예: "%artist% - %title%", "%artist|groups% - %title%")
- * @returns 생성된 폴더명 (Windows 호환)
- */
+export function capitalizeWords(value: string): string {
+  return value.replaceAll(
+    /\S+/g,
+    (word) => word.charAt(0).toUpperCase() + word.slice(1),
+  );
+}
+
+function sanitizeSegment(segment: string): string {
+  return segment
+    .replace(/\|/g, "｜")
+    .replace(/\//g, "／")
+    .replace(/[<>:"\\?*]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 export function formatDownloadFolderName(
   gallery: NativeHitomiGallery | SerializableHitomiGallery,
   pattern: string,
+  options: FolderNameOptions = {},
 ): string {
   const artists = metadataNames(gallery.artists);
   const groups = metadataNames(gallery.groups);
@@ -60,11 +78,12 @@ export function formatDownloadFolderName(
     "languageName" in gallery
       ? gallery.languageName.english
       : gallery.language?.name;
+  const applyCase = (value: string) =>
+    options.capitalizeNames ? capitalizeWords(value) : value;
 
-  // 기본 변수 값들
   const variables: Record<string, string> = {
-    artist: artists[0] || "N/A",
-    groups: groups.join(", ") || "N/A",
+    artist: applyCase(artists[0] || "N/A"),
+    groups: applyCase(groups.join(", ") || "N/A"),
     title: gallery.title.display || `ID_${gallery.id}`,
     id: String(gallery.id),
     language: language || "N/A",
@@ -73,29 +92,53 @@ export function formatDownloadFolderName(
     type: gallery.type || "N/A",
   };
 
-  // Fallback 패턴 처리: %var1|var2|var3%
-  // 왼쪽 변수부터 순서대로 확인하여 "N/A"가 아닌 첫 번째 값을 사용
-  let folderName = pattern.replaceAll(
-    /%([a-zA-Z|]+)%/g,
-    (_match, fallbackChain) => {
-      const vars = fallbackChain.split("|");
-      for (const varName of vars) {
-        const value = variables[varName];
-        if (value && value !== "N/A") {
-          return value;
+  const segments = pattern
+    .split(/[\\/]+/)
+    .map((segment) =>
+      segment.replaceAll(/%([a-zA-Z|]+)%/g, (_match, fallbackChain: string) => {
+        for (const variableName of fallbackChain.split("|")) {
+          const value = variables[variableName];
+          if (value && value !== "N/A") return value;
         }
-      }
-      return "N/A"; // 모든 fallback이 실패하면 N/A
-    },
+        return "N/A";
+      }),
+    )
+    .map(sanitizeSegment)
+    .filter((segment) => segment !== "" && segment !== "." && segment !== "..")
+    .map((segment) =>
+      filenamify(segment, {
+        maxLength: MAX_SAFE_PATH_LENGTH,
+        replacement: "_",
+      }),
+    );
+
+  return segments.length > 0 ? path.join(...segments) : String(gallery.id);
+}
+
+export function buildGalleryDownloadPath(
+  downloadPath: string,
+  gallery: NativeHitomiGallery | SerializableHitomiGallery,
+  pattern: string,
+  options: FolderNameOptions = {},
+): string {
+  const segments = formatDownloadFolderName(gallery, pattern, options).split(
+    path.sep,
   );
+  const fullPath = path.join(downloadPath, ...segments);
+  if (fullPath.length <= MAX_SAFE_PATH_LENGTH) return fullPath;
 
-  // Windows에서 사용할 수 없는 문자 제거
-  folderName = folderName
-    .replace(/\|/g, "｜")
-    .replace(/\//g, "／")
-    .replace(/[<>:"\\?*]/g, "")
-    .replace(/\s+/g, " ") // 여러 공백을 하나로
-    .trim();
+  const parentSegments = segments.slice(0, -1);
+  const parentPath =
+    parentSegments.length > 0 ? path.join(...parentSegments) : "";
+  const suffix = `... (${gallery.id})`;
+  const prefixLength =
+    downloadPath.length + (parentPath ? parentPath.length + 1 : 0) + 1;
+  const available = MAX_SAFE_PATH_LENGTH - prefixLength - suffix.length;
+  if (available <= 0) return path.join(downloadPath, String(gallery.id));
 
-  return folderName;
+  const finalSegment = filenamify(
+    segments.at(-1)!.substring(0, available).trim() + suffix,
+    { maxLength: MAX_SAFE_PATH_LENGTH, replacement: "_" },
+  );
+  return path.join(downloadPath, ...parentSegments, finalSegment);
 }

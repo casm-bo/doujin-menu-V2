@@ -1,8 +1,11 @@
+import path from "path";
 import { describe, expect, it } from "vitest";
 import { filenamifyPath } from "filenamify";
 import {
+  buildGalleryDownloadPath,
   DEFAULT_DOWNLOAD_PATTERN,
   formatDownloadFolderName,
+  MAX_SAFE_PATH_LENGTH,
 } from "../../../src/main/utils/index.js";
 import type { HitomiGallery } from "../../../src/types/hitomi.js";
 
@@ -193,6 +196,57 @@ describe("formatDownloadFolderName", () => {
     it("앞뒤 공백 제거", () => {
       const gallery = createGallery({ artists: ["  Artist A  "] });
       expect(formatDownloadFolderName(gallery, "%artist%")).toBe("Artist A");
+    });
+  });
+
+  describe("nested paths", () => {
+    it("creates sanitized child folders from either separator", () => {
+      const gallery = createGallery({
+        artists: ["Artist/A"],
+        groups: ["GroupA"],
+      });
+      const expected = path.join("GroupA", "Artist／A");
+      expect(formatDownloadFolderName(gallery, "%groups%\\%artist%")).toBe(
+        expected,
+      );
+      expect(formatDownloadFolderName(gallery, "%groups%/%artist%")).toBe(
+        expected,
+      );
+    });
+
+    it("drops traversal and empty pattern segments", () => {
+      const gallery = createGallery({ artists: ["ArtistA"] });
+      expect(formatDownloadFolderName(gallery, "..\\\\%artist%")).toBe(
+        "ArtistA",
+      );
+    });
+
+    it("capitalizes names without changing titles or acronyms", () => {
+      const gallery = createGallery({
+        artists: ["hitomi SDF"],
+        title: { display: "lower title", japanese: null },
+      });
+      expect(
+        formatDownloadFolderName(gallery, "%artist%\\%title%", {
+          capitalizeNames: true,
+        }),
+      ).toBe(path.join("Hitomi SDF", "lower title"));
+    });
+
+    it("truncates only the final segment within the path budget", () => {
+      const gallery = createGallery({
+        groups: ["GroupA"],
+        title: { display: "A".repeat(300), japanese: null },
+      });
+      const result = buildGalleryDownloadPath(
+        "C:\\dl",
+        gallery,
+        "%groups%\\%title%",
+      );
+
+      expect(result.length).toBeLessThanOrEqual(MAX_SAFE_PATH_LENGTH);
+      expect(result.startsWith(path.join("C:\\dl", "GroupA"))).toBe(true);
+      expect(result.endsWith("... (123)")).toBe(true);
     });
   });
 });

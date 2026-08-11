@@ -22,6 +22,13 @@ vi.mock("../../../src/main/handlers/directoryHandler.js", () => ({
   extractInfoTxtAndImageCountFromZip: vi.fn(),
 }));
 
+const { updateQueue } = vi.hoisted(() => ({ updateQueue: vi.fn() }));
+vi.mock("../../../src/main/db/index.js", () => ({
+  default: vi.fn(() => ({
+    where: vi.fn(() => ({ update: updateQueue })),
+  })),
+}));
+
 import {
   createDownloadArchive,
   finalizeDownloadTransfer,
@@ -142,7 +149,8 @@ describe("safe download archive", () => {
     const tempPath = path.join(dir, "temp");
     const downloadPath = path.join(dir, "library");
     await fs.mkdir(downloadPath);
-    const finalPath = path.join(downloadPath, "3713171.cbz");
+    const finalPath = path.join(downloadPath, "Circle", "3713171.cbz");
+    await fs.mkdir(path.dirname(finalPath), { recursive: true });
     await fs.writeFile(`${finalPath}.part`, "active transfer");
 
     vi.mocked(app.getPath).mockReturnValue(tempPath);
@@ -150,7 +158,7 @@ describe("safe download archive", () => {
       id: 3713171,
       title: { display: "Staged" },
       artists: [],
-      groups: [],
+      groups: [{ name: "Circle" }],
       series: [],
       characters: [],
       tags: [],
@@ -167,7 +175,7 @@ describe("safe download archive", () => {
         compressFormat: "cbz",
         hddDownloadMode: true,
         libraryFolders: [],
-        downloadPattern: "%id%",
+        downloadPattern: "%groups%\\%id%",
         createInfoTxtFile: true,
       };
       return values[key] ?? fallback;
@@ -177,10 +185,15 @@ describe("safe download archive", () => {
     const result = await handleDownloadGallery({ sender: { send } } as never, {
       galleryId: 3713171,
       downloadPath,
+      queueId: 77,
     });
 
     expect(result.success).toBe(true);
     expect("transfer" in result && result.transfer?.finalPath).toBe(finalPath);
+    expect(updateQueue).toHaveBeenCalledWith({
+      total_files: 0,
+      resolved_path: path.join(downloadPath, "Circle", "3713171"),
+    });
     expect(await fs.readFile(`${finalPath}.part`, "utf8")).toBe(
       "active transfer",
     );
