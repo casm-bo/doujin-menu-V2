@@ -615,11 +615,6 @@ export interface IpcChannels {
     request: { url: string; referer: string; galleryId: number };
     response: { success: boolean; data?: string; error?: string };
   };
-  "get-download-staging-path": {
-    request: void;
-    response: string;
-  };
-
   // Download Queue handlers
   "get-download-queue": {
     request: void;

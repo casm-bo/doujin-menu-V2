@@ -13,7 +13,6 @@ import {
 import { isPathWithinLibraryRoot } from "../utils/libraryPath.js";
 import {
   getDownloadStagingJobPath,
-  getDownloadStagingRoot,
   publishStagedDownload,
 } from "../utils/downloadStaging.js";
 import { store as configStore } from "./configHandler.js";
@@ -778,9 +777,6 @@ export const handleDownloadTempThumbnail = async ({
  * 다운로더 관련 IPC 통신 핸들러를 등록합니다.
  */
 export async function registerDownloaderHandlers() {
-  ipcMain.handle("get-download-staging-path", () =>
-    getDownloadStagingRoot(app.getPath("temp")),
-  );
   // 작품 검색 핸들러
   ipcMain.handle("search-galleries", (_event, params) =>
     handleSearchGalleries(params),

@@ -39,7 +39,6 @@ const compressDownload = ref(false);
 const compressFormat = ref<"cbz" | "zip">("cbz");
 const downloadPath = ref("");
 const hddDownloadMode = ref(false);
-const downloadStagingPath = ref("");
 
 onMounted(async () => {
   const config = await ipcRenderer.invoke("get-config");
@@ -50,9 +49,6 @@ onMounted(async () => {
   compressFormat.value = (config.compressFormat as "cbz" | "zip") || "cbz";
   downloadPath.value = (config.downloadPath as string) || "";
   hddDownloadMode.value = config.hddDownloadMode === true;
-  downloadStagingPath.value = await ipcRenderer.invoke(
-    "get-download-staging-path",
-  );
 });
 
 const selectDownloadPath = async () => {
@@ -120,19 +116,16 @@ const onHddDownloadModeChange = (value: boolean) => {
           </Button>
         </div>
       </SettingItem>
-      <SettingItem label-for="hdd-download-mode" title="HDD 모드">
+      <SettingItem
+        label-for="hdd-download-mode"
+        title="HDD 모드"
+        subtitle="임시 폴더에서 다운로드와 압축을 완료한 후 다운로드 폴더로 옮깁니다."
+      >
         <Switch
           id="hdd-download-mode"
           :model-value="hddDownloadMode"
           class="justify-self-end"
           @update:model-value="onHddDownloadModeChange"
-        />
-      </SettingItem>
-      <SettingItem label-for="download-staging-path" title="임시 작업 폴더">
-        <Input
-          id="download-staging-path"
-          :model-value="downloadStagingPath"
-          readonly
         />
       </SettingItem>
       <SettingItem

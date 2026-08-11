@@ -40,6 +40,7 @@ const saveConfig = async (key: string, value: unknown) => {
 
 // 임시 파일 관리 상태
 const tempFilesSize = ref("0 Bytes");
+const hddDownloadMode = ref(false);
 const tempFileLocations = ref<
   {
     key: string;
@@ -61,6 +62,7 @@ const isLicenseViewDialogOpen = ref(false);
 onMounted(async () => {
   const config = await ipcRenderer.invoke("get-config");
   useAppLock.value = config.useAppLock === true;
+  hddDownloadMode.value = config.hddDownloadMode === true;
   await getTempFilesSize();
 });
 
@@ -214,6 +216,7 @@ const resetAllData = async () => {
               <p class="font-medium">{{ location.label }}</p>
               <p class="text-muted-foreground">{{ location.description }}</p>
               <p
+                v-if="location.key !== 'hdd_downloads' || hddDownloadMode"
                 class="text-muted-foreground truncate text-xs"
                 :title="location.path"
               >
