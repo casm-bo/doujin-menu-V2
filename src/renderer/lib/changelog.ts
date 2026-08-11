@@ -15,6 +15,27 @@ export interface Changelog {
  */
 export const changelogData: Changelog[] = [
   {
+    version: "2.3.0",
+    changes: [
+      {
+        type: "fix",
+        title: "🔎 시리즈 이름 검색 개선",
+        items: [
+          "라이브러리 검색창의 일반 검색어로 작품 제목뿐 아니라 시리즈 이름도 찾을 수 있습니다.",
+          "시리즈 이름이 검색어와 일치하면 기존처럼 대표 카드 하나로 표시됩니다.",
+        ],
+      },
+      {
+        type: "fix",
+        title: "🛡️ 보안 및 실행 환경 업데이트",
+        items: [
+          "파일 경로와 압축 파일 이름 처리의 안전성을 강화했습니다.",
+          "Electron, Vite, 압축 및 빌드 관련 의존성을 보안 수정 버전으로 업데이트했습니다.",
+        ],
+      },
+    ],
+  },
+  {
     version: "2.2.0",
     changes: [
       {
