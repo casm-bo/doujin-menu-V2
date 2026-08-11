@@ -128,9 +128,10 @@ async function getDirSize(dirPath: string): Promise<number> {
 describe("etcHandler", () => {
   it("존재하지 않는 임시 폴더도 오류 없이 정리해야 함", async () => {
     mockRm.mockResolvedValue(undefined);
+    mockReaddir.mockRejectedValue({ code: "ENOENT" });
 
     await expect(clearTempFiles("/mock/user/data")).resolves.toBeUndefined();
-    expect(mockRm).toHaveBeenCalledTimes(4);
+    expect(mockRm).toHaveBeenCalledTimes(3);
     expect(mockRm).toHaveBeenCalledWith(
       expect.stringContaining("temp_external"),
       { recursive: true, force: true },

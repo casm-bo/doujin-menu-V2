@@ -40,6 +40,12 @@ const getStatusInfo = (status: DownloadQueueItem["status"]) => {
         color: "text-green-500",
         icon: "solar:download-minimalistic-bold-duotone",
       };
+    case "transferring":
+      return {
+        label: "HDD로 이동 중",
+        color: "text-cyan-500",
+        icon: "solar:transfer-horizontal-bold-duotone",
+      };
     case "completed":
       return {
         label: "완료",
@@ -257,7 +263,9 @@ const sortedQueue = computed(() => {
               <!-- 진행률 -->
               <span
                 v-if="
-                  item.status === 'downloading' || item.status === 'completed'
+                  item.status === 'downloading' ||
+                  item.status === 'transferring' ||
+                  item.status === 'completed'
                 "
                 class="text-muted-foreground text-xs"
               >
@@ -268,7 +276,9 @@ const sortedQueue = computed(() => {
             <!-- 진행 바 -->
             <div
               v-if="
-                item.status === 'downloading' || item.status === 'completed'
+                item.status === 'downloading' ||
+                item.status === 'transferring' ||
+                item.status === 'completed'
               "
               class="bg-muted mt-2 h-1.5 w-full rounded-full"
             >
@@ -325,7 +335,9 @@ const sortedQueue = computed(() => {
 
             <!-- 제거 -->
             <Button
-              v-if="item.status !== 'downloading'"
+              v-if="
+                item.status !== 'downloading' && item.status !== 'transferring'
+              "
               variant="ghost"
               size="icon"
               class="text-destructive h-7 w-7"

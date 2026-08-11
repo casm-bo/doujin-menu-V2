@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import fs from "fs/promises";
 import os from "os";
 import path from "path";
+import { app } from "electron";
 
 vi.mock("electron", () => ({
   app: { getPath: vi.fn(() => "") },
@@ -23,6 +24,7 @@ vi.mock("../../../src/main/handlers/directoryHandler.js", () => ({
 
 import {
   createDownloadArchive,
+  finalizeDownloadTransfer,
   handleDownloadGallery,
 } from "../../../src/main/handlers/downloaderHandler.js";
 import { hitomiService } from "../../../src/main/services/hitomi/hitomiService.js";
@@ -131,6 +133,73 @@ describe("safe download archive", () => {
       galleryId: 3713170,
       status: "completed",
       bookId: 42,
+    });
+  });
+
+  it("stages an HDD-mode archive before publishing it", async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "download-hdd-mode-"));
+    createdDirs.push(dir);
+    const tempPath = path.join(dir, "temp");
+    const downloadPath = path.join(dir, "library");
+    await fs.mkdir(downloadPath);
+    const finalPath = path.join(downloadPath, "3713171.cbz");
+    await fs.writeFile(`${finalPath}.part`, "active transfer");
+
+    vi.mocked(app.getPath).mockReturnValue(tempPath);
+    vi.mocked(hitomiService.getGallery).mockResolvedValue({
+      id: 3713171,
+      title: { display: "Staged" },
+      artists: [],
+      groups: [],
+      series: [],
+      characters: [],
+      tags: [],
+      type: "doujinshi",
+      language: { name: "korean" },
+      files: [],
+    } as never);
+    vi.mocked(store.get).mockImplementation(((
+      key: string,
+      fallback: unknown,
+    ) => {
+      const values: Record<string, unknown> = {
+        compressDownload: true,
+        compressFormat: "cbz",
+        hddDownloadMode: true,
+        libraryFolders: [],
+        downloadPattern: "%id%",
+        createInfoTxtFile: true,
+      };
+      return values[key] ?? fallback;
+    }) as typeof store.get);
+    const send = vi.fn();
+
+    const result = await handleDownloadGallery({ sender: { send } } as never, {
+      galleryId: 3713171,
+      downloadPath,
+    });
+
+    expect(result.success).toBe(true);
+    expect("transfer" in result && result.transfer?.finalPath).toBe(finalPath);
+    expect(await fs.readFile(`${finalPath}.part`, "utf8")).toBe(
+      "active transfer",
+    );
+    if (!("transfer" in result) || !result.transfer) {
+      throw new Error("Expected a prepared transfer");
+    }
+
+    await finalizeDownloadTransfer({ send } as never, result.transfer);
+
+    expect((await fs.stat(finalPath)).size).toBeGreaterThan(0);
+    await expect(fs.stat(result.transfer.stagingJobPath)).rejects.toMatchObject(
+      {
+        code: "ENOENT",
+      },
+    );
+    expect(send).toHaveBeenLastCalledWith("download-progress", {
+      galleryId: 3713171,
+      status: "completed",
+      bookId: null,
     });
   });
 });

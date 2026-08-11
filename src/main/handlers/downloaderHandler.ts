@@ -11,13 +11,91 @@ import {
   formatDownloadFolderName,
 } from "../utils/index.js";
 import { isPathWithinLibraryRoot } from "../utils/libraryPath.js";
-import { getDownloadStagingRoot } from "../utils/downloadStaging.js";
+import {
+  getDownloadStagingJobPath,
+  getDownloadStagingRoot,
+  publishStagedDownload,
+} from "../utils/downloadStaging.js";
 import { store as configStore } from "./configHandler.js";
 import {
   extractInfoTxtAndImageCountFromZip,
   scanFile,
 } from "./directoryHandler.js";
 import { parseInfoTxt, type ParsedMetadata } from "../parsers/infoTxtParser.js";
+
+export interface PreparedDownloadTransfer {
+  galleryId: number;
+  stagedPath: string;
+  finalPath: string;
+  stagingJobPath: string;
+  libraryFolders: string[];
+  downloadedMetadata: ParsedMetadata;
+}
+
+async function completeDownloadedBook(
+  webContents: Electron.WebContents,
+  transfer: Omit<PreparedDownloadTransfer, "stagedPath" | "stagingJobPath">,
+): Promise<number | null> {
+  const scanStats = await fs.stat(transfer.finalPath);
+  if (scanStats.isFile() && scanStats.size === 0) {
+    throw new Error("생성된 압축 파일이 비어 있습니다.");
+  }
+  if (
+    scanStats.isDirectory() &&
+    (await fs.readdir(transfer.finalPath)).length === 0
+  ) {
+    throw new Error("생성된 책 폴더가 비어 있습니다.");
+  }
+
+  const isDownloadedToLibrary = transfer.libraryFolders.some((folder) =>
+    isPathWithinLibraryRoot(transfer.finalPath, folder),
+  );
+  let bookId: number | null = null;
+  if (isDownloadedToLibrary) {
+    bookId = await scanFile(
+      transfer.finalPath,
+      undefined,
+      "soft",
+      transfer.downloadedMetadata,
+    );
+    if (!bookId) {
+      throw new Error(
+        "파일 다운로드는 완료됐지만 라이브러리 등록에 실패했습니다.",
+      );
+    }
+  }
+
+  webContents.send("download-progress", {
+    galleryId: transfer.galleryId,
+    status: "completed",
+    bookId,
+  });
+  return bookId;
+}
+
+export async function finalizeDownloadTransfer(
+  webContents: Electron.WebContents,
+  transfer: PreparedDownloadTransfer,
+): Promise<number | null> {
+  try {
+    webContents.send("download-progress", {
+      galleryId: transfer.galleryId,
+      status: "transferring",
+      progress: 100,
+    });
+    await publishStagedDownload(transfer.stagedPath, transfer.finalPath);
+    await fs.rm(transfer.stagingJobPath, { recursive: true, force: true });
+    return await completeDownloadedBook(webContents, transfer);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    webContents.send("download-progress", {
+      galleryId: transfer.galleryId,
+      status: "failed",
+      error: message,
+    });
+    throw error;
+  }
+}
 
 export async function createDownloadArchive(
   sourcePath: string,
@@ -124,6 +202,7 @@ export const handleDownloadGallery = async (
     const gallery = await hitomiService.getGallery(galleryId);
     const compressDownload = configStore.get("compressDownload", false);
     const compressFormat = configStore.get("compressFormat", "cbz");
+    const hddDownloadMode = configStore.get("hddDownloadMode", false);
     const libraryFolders = configStore.get("libraryFolders", []);
     const downloadedMetadata: ParsedMetadata = {
       hitomi_id: String(gallery.id),
@@ -152,10 +231,10 @@ export const handleDownloadGallery = async (
     // Windows MAX_PATH 제한(260자)을 고려한 전체 경로 길이 검증
     // 파일명을 위한 여유 공간 확보 (예: "000001.webp" = 12자)
     const MAX_SAFE_PATH_LENGTH = 245; // 260 - 30 (파일명 + 여유)
-    let tempPath = path.join(downloadPath, galleryFolderName);
+    let finalFolderPath = path.join(downloadPath, galleryFolderName);
 
     // 전체 경로가 너무 길면 폴더명을 줄임
-    if (tempPath.length > MAX_SAFE_PATH_LENGTH) {
+    if (finalFolderPath.length > MAX_SAFE_PATH_LENGTH) {
       const idSuffix = `... (${gallery.id})`;
       const availableLength =
         MAX_SAFE_PATH_LENGTH - downloadPath.length - idSuffix.length - 1; // -1 for path separator
@@ -168,44 +247,54 @@ export const handleDownloadGallery = async (
         galleryFolderName = `${gallery.id}`;
       }
 
-      tempPath = path.join(downloadPath, galleryFolderName);
+      finalFolderPath = path.join(downloadPath, galleryFolderName);
     }
 
     // 예약 문자 처리
-    const galleryDownloadPath = filenamifyPath(tempPath, {
+    const finalGalleryPath = filenamifyPath(finalFolderPath, {
       maxLength: 100,
       replacement: "_",
     });
 
+    const stagingJobPath = hddDownloadMode
+      ? getDownloadStagingJobPath(app.getPath("temp"), gallery.id)
+      : null;
+    const galleryDownloadPath = stagingJobPath
+      ? path.join(stagingJobPath, path.basename(finalGalleryPath))
+      : finalGalleryPath;
+
     const archiveFilePath = `${galleryDownloadPath}.${compressFormat}`;
+    const finalArchiveFilePath = `${finalGalleryPath}.${compressFormat}`;
     if (compressDownload) {
-      await fs.rm(`${archiveFilePath}.part`, { force: true });
+      if (!stagingJobPath) {
+        await fs.rm(`${finalArchiveFilePath}.part`, { force: true });
+      }
       const existingArchive = await fs
-        .stat(archiveFilePath)
+        .stat(finalArchiveFilePath)
         .catch((error: NodeJS.ErrnoException) => {
           if (error.code === "ENOENT") return null;
           throw error;
         });
       if (existingArchive) {
         const { infoTxt, imageCount } =
-          await extractInfoTxtAndImageCountFromZip(archiveFilePath);
+          await extractInfoTxtAndImageCountFromZip(finalArchiveFilePath);
         const existingHitomiId = infoTxt
           ? parseInfoTxt(infoTxt).hitomi_id?.trim()
           : null;
         if (existingHitomiId !== String(gallery.id) || imageCount === 0) {
           throw new Error(
-            `같은 이름의 다른 파일이 이미 있습니다. 덮어쓰지 않았습니다: ${archiveFilePath}`,
+            `같은 이름의 다른 파일이 이미 있습니다. 덮어쓰지 않았습니다: ${finalArchiveFilePath}`,
           );
         }
 
         let bookId: number | null = null;
         if (
           libraryFolders.some((folder) =>
-            isPathWithinLibraryRoot(archiveFilePath, folder),
+            isPathWithinLibraryRoot(finalArchiveFilePath, folder),
           )
         ) {
           bookId = await scanFile(
-            archiveFilePath,
+            finalArchiveFilePath,
             undefined,
             "soft",
             downloadedMetadata,
@@ -221,6 +310,79 @@ export const handleDownloadGallery = async (
           galleryId,
           status: "completed",
           bookId,
+        });
+        return { success: true, bookId };
+      }
+
+      const existingStagedArchive = stagingJobPath
+        ? await fs
+            .stat(archiveFilePath)
+            .catch((error: NodeJS.ErrnoException) => {
+              if (error.code === "ENOENT") return null;
+              throw error;
+            })
+        : null;
+      if (existingStagedArchive && stagingJobPath) {
+        const { infoTxt, imageCount } =
+          await extractInfoTxtAndImageCountFromZip(archiveFilePath);
+        const stagedHitomiId = infoTxt
+          ? parseInfoTxt(infoTxt).hitomi_id?.trim()
+          : null;
+        if (
+          imageCount === 0 ||
+          (stagedHitomiId && stagedHitomiId !== String(gallery.id))
+        ) {
+          throw new Error(
+            `임시 압축 파일이 올바르지 않습니다: ${archiveFilePath}`,
+          );
+        }
+        webContents.send("download-progress", {
+          galleryId,
+          status: "transferring",
+          progress: 100,
+        });
+        return {
+          success: true,
+          transfer: {
+            galleryId,
+            stagedPath: archiveFilePath,
+            finalPath: finalArchiveFilePath,
+            stagingJobPath,
+            libraryFolders,
+            downloadedMetadata,
+          } satisfies PreparedDownloadTransfer,
+        };
+      }
+    }
+
+    if (!compressDownload && stagingJobPath) {
+      const existingFinalFolder = await fs
+        .stat(finalGalleryPath)
+        .catch((error: NodeJS.ErrnoException) => {
+          if (error.code === "ENOENT") return null;
+          throw error;
+        });
+      if (existingFinalFolder) {
+        if (!existingFinalFolder.isDirectory()) {
+          throw new Error(
+            `같은 이름의 파일이 이미 있습니다: ${finalGalleryPath}`,
+          );
+        }
+        const entries = await fs.readdir(finalGalleryPath);
+        const imageCount = entries.filter((file) =>
+          /\.(avif|webp|jpe?g|png|gif|bmp)$/i.test(file),
+        ).length;
+        if (gallery.files.length > 0 && imageCount !== gallery.files.length) {
+          throw new Error(
+            `같은 이름의 다른 폴더가 이미 있습니다: ${finalGalleryPath}`,
+          );
+        }
+
+        const bookId = await completeDownloadedBook(webContents, {
+          galleryId,
+          finalPath: finalGalleryPath,
+          libraryFolders,
+          downloadedMetadata,
         });
         return { success: true, bookId };
       }
@@ -444,17 +606,37 @@ export const handleDownloadGallery = async (
       await fs.rm(galleryDownloadPath, { recursive: true, force: true });
     }
 
-    webContents.send("download-progress", {
-      galleryId,
-      status: "finalizing",
-      progress: 100,
-    });
+    if (!stagingJobPath) {
+      webContents.send("download-progress", {
+        galleryId,
+        status: "finalizing",
+        progress: 100,
+      });
+    }
 
     // 다운로드된 폴더/파일이 라이브러리 폴더에 포함되는지 확인
     // 압축된 경우 압축 파일 경로로, 아닌 경우 폴더 경로로 스캔
     const scanPath = compressDownload
       ? `${galleryDownloadPath}.${compressFormat}`
       : galleryDownloadPath;
+    if (stagingJobPath) {
+      webContents.send("download-progress", {
+        galleryId,
+        status: "transferring",
+        progress: 100,
+      });
+      return {
+        success: true,
+        transfer: {
+          galleryId,
+          stagedPath: scanPath,
+          finalPath: compressDownload ? finalArchiveFilePath : finalGalleryPath,
+          stagingJobPath,
+          libraryFolders,
+          downloadedMetadata,
+        } satisfies PreparedDownloadTransfer,
+      };
+    }
     const scanStats = await fs.stat(scanPath);
     if (scanStats.isFile() && scanStats.size === 0) {
       throw new Error("생성된 압축 파일이 비어 있습니다.");

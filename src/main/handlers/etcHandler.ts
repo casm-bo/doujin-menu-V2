@@ -11,7 +11,10 @@ import db from "../db/index.js";
 import { naturalSort } from "../utils/index.js";
 import { console } from "../main.js";
 import { store as configStore } from "./configHandler.js";
-import { getDownloadStagingRoot } from "../utils/downloadStaging.js";
+import {
+  clearInactiveDownloadStaging,
+  getDownloadStagingRoot,
+} from "../utils/downloadStaging.js";
 
 const ALLOWED_EXTERNAL_HOSTS = new Set([
   "forms.gle",
@@ -139,13 +142,13 @@ export async function clearTempFiles(
 ) {
   const paths = [
     ...TEMP_FILE_LOCATIONS.map(({ key }) => path.join(userDataPath, key)),
-    getDownloadStagingRoot(tempPath),
   ];
-  await Promise.all(
-    paths.map((locationPath) =>
+  await Promise.all([
+    clearInactiveDownloadStaging(tempPath),
+    ...paths.map((locationPath) =>
       fs.rm(locationPath, { recursive: true, force: true }),
     ),
-  );
+  ]);
 }
 
 async function handleGenerateMissingInfoFiles(

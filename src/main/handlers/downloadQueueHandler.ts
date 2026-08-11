@@ -1,7 +1,8 @@
-import { BrowserWindow, ipcMain } from "electron";
+import { app, BrowserWindow, ipcMain } from "electron";
 import { filenamifyPath } from "filenamify";
 import fs from "fs/promises";
 import path from "path";
+import PQueue from "p-queue";
 import type {
   DownloadQueueItem,
   DownloadQueueStatus,
@@ -14,12 +15,20 @@ import {
 } from "../utils/index.js";
 import { hitomiService } from "../services/hitomi/hitomiService.js";
 import { store as configStore } from "./configHandler.js";
-import { handleDownloadGallery } from "./downloaderHandler.js";
+import {
+  finalizeDownloadTransfer,
+  handleDownloadGallery,
+} from "./downloaderHandler.js";
 import { notifyCompanionLibraryChanged } from "../services/companion/companionSyncSignal.js";
+import {
+  getDownloadStagingJobPath,
+  setDownloadStagingJobActive,
+} from "../utils/downloadStaging.js";
 
 // 다운로드 큐 처리 상태
 let isProcessingQueue = false;
 let currentDownloadId: number | null = null;
+const transferQueue = new PQueue({ concurrency: 1 });
 let shouldCancelCurrentDownload = false; // 현재 다운로드 취소 플래그
 
 /**
@@ -130,7 +139,7 @@ export const handleRemoveFromDownloadQueue = async (queueId: number) => {
     }
 
     // 현재 다운로드 중인 항목은 삭제 불가
-    if (item.status === "downloading") {
+    if (item.status === "downloading" || item.status === "transferring") {
       return {
         success: false,
         error: "다운로드 중인 항목은 삭제할 수 없습니다. 먼저 일시정지하세요.",
@@ -180,6 +189,14 @@ export const handleRemoveFromDownloadQueue = async (queueId: number) => {
       } catch (error) {
         console.warn(`[DownloadQueue] 파일 삭제 중 오류 (계속 진행):`, error);
       }
+
+      await fs.rm(
+        getDownloadStagingJobPath(app.getPath("temp"), item.gallery_id),
+        {
+          recursive: true,
+          force: true,
+        },
+      );
     }
 
     await db("DownloadQueue").where("id", queueId).delete();
@@ -405,6 +422,14 @@ async function processDownloadQueue() {
       // 다운로드 시작
       await updateQueueItemStatus(nextItem.id, "downloading");
 
+      const stagingJobPath = configStore.get("hddDownloadMode", false)
+        ? getDownloadStagingJobPath(app.getPath("temp"), nextItem.gallery_id)
+        : null;
+      let transferQueued = false;
+      if (stagingJobPath) {
+        setDownloadStagingJobActive(stagingJobPath, true);
+      }
+
       try {
         // 메인 윈도우 가져오기
         const mainWindow = BrowserWindow.getAllWindows()[0];
@@ -426,6 +451,26 @@ async function processDownloadQueue() {
         // 일시정지 처리
         if (result.paused) {
           await updateQueueItemStatus(nextItem.id, "paused");
+        } else if (result.success && result.transfer) {
+          const transfer = result.transfer;
+          transferQueued = true;
+          await updateQueueItemStatus(nextItem.id, "transferring", {
+            progress: 100,
+          });
+          void transferQueue.add(async () => {
+            try {
+              await finalizeDownloadTransfer(mainWindow.webContents, transfer);
+              await updateQueueItemStatus(nextItem.id, "completed");
+            } catch (error) {
+              const message =
+                error instanceof Error ? error.message : String(error);
+              await updateQueueItemStatus(nextItem.id, "failed", {
+                errorMessage: message,
+              });
+            } finally {
+              setDownloadStagingJobActive(transfer.stagingJobPath, false);
+            }
+          });
         } else if (result.success) {
           await updateQueueItemStatus(nextItem.id, "completed");
         } else {
@@ -445,6 +490,10 @@ async function processDownloadQueue() {
           // 취소된 경우 paused로 처리
           await updateQueueItemStatus(nextItem.id, "paused");
         }
+      }
+
+      if (stagingJobPath && !transferQueued) {
+        setDownloadStagingJobActive(stagingJobPath, false);
       }
 
       currentDownloadId = null;
@@ -508,7 +557,7 @@ export async function initializeDownloadQueue() {
     // downloading 상태인 항목만 pending으로 변경 (앱이 종료되었을 때)
     // paused 상태는 그대로 유지
     await db("DownloadQueue")
-      .where("status", "downloading")
+      .whereIn("status", ["downloading", "transferring"])
       .update({ status: "pending" });
 
     // 큐 처리 시작
