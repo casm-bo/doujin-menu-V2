@@ -130,6 +130,14 @@ export function parseSearchQuery(searchQuery: string): ParsedSearchTerms {
 
 const createKoreanRegexp = () => /^.+\|\s?(.+)$/;
 
+function isPlaceholderCover(coverPath: string): boolean {
+  try {
+    return new URL(coverPath).hostname === "via.placeholder.com";
+  } catch {
+    return false;
+  }
+}
+
 // 한국어 우선 제목 설정이 활성화된 경우 "영어 | 한글" 형식에서 한글 부분만 추출
 export function extractKoreanTitle(
   title: string,
@@ -1327,10 +1335,7 @@ export const handleDeleteBook = async (
     });
 
     // 썸네일은 캐시 파일이므로 즉시 삭제 (플레이스홀더 제외)
-    if (
-      book.cover_path &&
-      !book.cover_path.startsWith("https://via.placeholder.com")
-    ) {
+    if (book.cover_path && !isPlaceholderCover(book.cover_path)) {
       try {
         await fs.unlink(book.cover_path);
       } catch {

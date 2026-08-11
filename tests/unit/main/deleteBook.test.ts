@@ -178,4 +178,23 @@ describe("handleDeleteBook 휴지통 기본화", () => {
     expect(result.success).toBe(true);
     expect(await db("BookHistory").where("book_id", book.id)).toHaveLength(0);
   });
+
+  it("플레이스홀더와 비슷한 외부 호스트를 로컬 표지로 처리", async () => {
+    const coverPath = "https://via.placeholder.com.evil/cover.jpg";
+    const book = await seedBook(db, {
+      path: path.join(os.tmpdir(), "comiq-not-exists-cover.zip"),
+      cover_path: coverPath,
+    });
+    const unlinkSpy = vi
+      .spyOn(fs, "unlink")
+      .mockRejectedValueOnce(
+        Object.assign(new Error("ENOENT"), { code: "ENOENT" }),
+      );
+
+    const result = await handleDeleteBook(book.id as number);
+
+    expect(result.success).toBe(true);
+    expect(unlinkSpy).toHaveBeenCalledWith(coverPath);
+    unlinkSpy.mockRestore();
+  });
 });

@@ -558,19 +558,20 @@ function getImageContentType(filePath: string): string {
   }
 }
 
-function sanitizeArchiveName(fileName: string): string {
+export function sanitizeArchiveName(fileName: string): string {
   const extension =
     path.extname(fileName).toLowerCase() === ".zip" ? ".zip" : ".cbz";
-  const stem = path
+  const cleanedStem = path
     .basename(fileName, path.extname(fileName))
     .split("")
     .map((char) =>
       '<>:"/\\|?*'.includes(char) || char.charCodeAt(0) < 32 ? "_" : char,
     )
     .join("")
-    .replace(/[. ]+$/g, "")
-    .trim()
-    .slice(0, 160);
+    .trim();
+  let end = cleanedStem.length;
+  while (end > 0 && cleanedStem[end - 1] === ".") end--;
+  const stem = cleanedStem.slice(0, end).slice(0, 160);
   return `${stem || "android-import"}${extension}`;
 }
 
