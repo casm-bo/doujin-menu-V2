@@ -11,6 +11,7 @@ import type {
 import { console } from "../main.js";
 import { detectSeriesForBook } from "../services/seriesDetection/seriesDetector.js";
 import { computeComparisonKey } from "../services/seriesDetection/titlePatternMatcher.js";
+import { normalizeArtistName } from "../utils/artistName.js";
 import { PrefixIndex } from "../services/seriesDetection/prefixIndex.js";
 import type { SerializedIndexEntry } from "../services/seriesDetection/prefixIndex.js";
 import type { DetectionOptions } from "../services/seriesDetection/types.js";
@@ -157,7 +158,7 @@ function runSeriesDetectionInWorker(
  * 검색어 프리픽스 정규식 (artist:, tag:, type: 지원)
  */
 const SERIES_PREFIXED_TERM_REGEX =
-  /(artist|tag|type):(.+?)(?=\s+(?!(?:artist|tag|type):)|\s*(?:artist|tag|type):|$)/g;
+  /artist:(.+?)(?=\s*(?:artist|tag|type):|$)|(tag|type):\s*(\S+)/g;
 
 /**
  * 검색어 파싱 결과 타입
@@ -195,8 +196,9 @@ function parseSeriesSearchQuery(searchQuery: string): SeriesParsedSearchTerms {
   let match;
 
   while ((match = SERIES_PREFIXED_TERM_REGEX.exec(lowerCaseQuery)) !== null) {
-    const prefix = match[1];
-    const value = match[2].trim();
+    const isArtist = match[1] !== undefined;
+    const prefix = isArtist ? "artist" : match[2];
+    const value = (isArtist ? match[1] : match[3]).trim();
 
     // 프리픽스 앞에 있는 텍스트는 이름 검색어로 처리
     const leadingText = lowerCaseQuery.substring(lastIndex, match.index).trim();
@@ -206,7 +208,7 @@ function parseSeriesSearchQuery(searchQuery: string): SeriesParsedSearchTerms {
 
     switch (prefix) {
       case "artist":
-        result.artistTerms.push(value);
+        result.artistTerms.push(normalizeArtistName(value));
         break;
       case "tag":
         result.tagTerms.push(value);
@@ -341,7 +343,7 @@ export async function handleGetSeriesCollections(params: {
         const artistParts: string[] = [];
         for (const term of parsedSearch.artistTerms) {
           artistParts.push(
-            "SUM(CASE WHEN LOWER(Artist.name) LIKE ? THEN 1 ELSE 0 END) > 0",
+            "SUM(CASE WHEN LOWER(REPLACE(Artist.name, ' ', '_')) LIKE ? THEN 1 ELSE 0 END) > 0",
           );
           havingBindings.push(`%${term}%`);
         }

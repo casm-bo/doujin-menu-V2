@@ -214,10 +214,16 @@ describe("parseSearchQuery", () => {
       expect(result.artistTerms).toEqual(["작가1"]);
     });
 
-    it("프리픽스 뒤의 텍스트도 titleTerms에 포함", () => {
+    it("artist 프리픽스 뒤의 공백 텍스트는 값에 포함", () => {
       const result = parseSearchQuery("artist:작가1 태그검색");
-      expect(result.artistTerms).toEqual(["작가1"]);
-      expect(result.titleTerms).toEqual(["태그검색"]);
+      expect(result.artistTerms).toEqual(["작가1_태그검색"]);
+      expect(result.titleTerms).toEqual([]);
+    });
+
+    it("artist 외 프리픽스 뒤의 텍스트는 titleTerms에 포함", () => {
+      const result = parseSearchQuery("tag:태그1 제목검색");
+      expect(result.tagTerms).toEqual(["태그1"]);
+      expect(result.titleTerms).toEqual(["제목검색"]);
     });
   });
 
@@ -239,11 +245,16 @@ describe("parseSearchQuery", () => {
   });
 
   describe("프리픽스 값 경계", () => {
-    it("프리픽스 값에 공백이 있으면 첫 단어만 캡처", () => {
+    it("프리픽스 값의 공백을 다음 프리픽스까지 포함", () => {
       const result = parseSearchQuery("artist:작가 이름 tag:태그1");
-      expect(result.artistTerms).toEqual(["작가"]);
-      expect(result.titleTerms).toEqual(["이름"]);
+      expect(result.artistTerms).toEqual(["작가_이름"]);
+      expect(result.titleTerms).toEqual([]);
       expect(result.tagTerms).toEqual(["태그1"]);
+    });
+
+    it("artist 공백과 밑줄을 동일하게 정규화", () => {
+      expect(parseSearchQuery("artist:ab cd").artistTerms).toEqual(["ab_cd"]);
+      expect(parseSearchQuery("artist:ab_cd").artistTerms).toEqual(["ab_cd"]);
     });
 
     it("공백 없이 연속된 프리픽스도 분리", () => {
@@ -397,7 +408,7 @@ describe("handleGetBooks - 통합 테스트", () => {
       hitomi_id: "12345",
       type: "doujinshi",
       language_name_local: "한국어",
-      artists: [{ name: "new artist" }],
+      artists: [{ name: "new_artist" }],
       tags: [{ name: "tag one" }],
       series: [{ name: "source series" }],
       groups: [{ name: "group one" }],
@@ -697,6 +708,19 @@ describe("handleGetBooks - 통합 테스트", () => {
 
       const ids = await getResultIds({ searchQuery: "artist:abc" });
       expect(ids).toEqual([book1.id]);
+    });
+
+    it("artist 공백과 밑줄이 같은 책을 매칭", async () => {
+      const artist = await seedArtist(db, "ab cd");
+      const book = await seedBook(db, { path: "/artist-space" });
+      await linkBookArtist(db, book.id, artist.id);
+
+      expect(await getResultIds({ searchQuery: "artist:ab cd" })).toEqual([
+        book.id,
+      ]);
+      expect(await getResultIds({ searchQuery: "artist:ab_cd" })).toEqual([
+        book.id,
+      ]);
     });
 
     it("tag:nurse → 'nurse'만 매칭, 'unnurse' 불일치", async () => {

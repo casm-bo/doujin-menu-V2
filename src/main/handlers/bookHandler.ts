@@ -6,6 +6,7 @@ import type { EditableBookMetadata, FilterParams } from "../../types/ipc.js";
 import db from "../db/index.js";
 import { console } from "../main.js";
 import { naturalSort } from "../utils/index.js";
+import { normalizeArtistName } from "../utils/artistName.js";
 import { DesktopCompanionSyncService } from "../services/companion/companionSyncService.js";
 import { notifyCompanionLibraryChanged } from "../services/companion/companionSyncSignal.js";
 import { store as configStore } from "./configHandler.js";
@@ -27,7 +28,7 @@ export interface ParsedSearchTerms extends ExcludeTerms {
 }
 
 const PREFIXED_TERM_REGEX =
-  /(-?)(id|artist|group|type|language|series|character|tag):(.+?)(?=\s+(?!(?:-?(?:id|artist|group|type|language|series|character|tag)):)|\s*-?(?:id|artist|group|type|language|series|character|tag):|$)/g;
+  /(-?)artist:(.+?)(?=\s*-?(?:id|artist|group|type|language|series|character|tag):|$)|(-?)(id|group|type|language|series|character|tag):\s*(\S+)/g;
 
 // 검색어 문자열을 프리픽스별로 분류하여 반환
 export function parseSearchQuery(searchQuery: string): ParsedSearchTerms {
@@ -63,9 +64,10 @@ export function parseSearchQuery(searchQuery: string): ParsedSearchTerms {
   let match;
 
   while ((match = PREFIXED_TERM_REGEX.exec(lowerCaseQuery)) !== null) {
-    const isNegated = match[1] === "-";
-    const prefix = match[2];
-    const value = match[3].trim();
+    const isArtist = match[2] !== undefined;
+    const isNegated = (isArtist ? match[1] : match[3]) === "-";
+    const prefix = isArtist ? "artist" : match[4];
+    const value = (isArtist ? match[2] : match[5]).trim();
 
     const leadingText = lowerCaseQuery.substring(lastIndex, match.index).trim();
     if (leadingText) {
@@ -78,7 +80,7 @@ export function parseSearchQuery(searchQuery: string): ParsedSearchTerms {
         target.idTerms.push(value);
         break;
       case "artist":
-        target.artistTerms.push(value);
+        target.artistTerms.push(normalizeArtistName(value));
         break;
       case "group":
         target.groupTerms.push(value);
@@ -221,7 +223,7 @@ function buildFilteredQuery(filter: FilterParams | null) {
           this.from("BookArtist")
             .innerJoin("Artist", "BookArtist.artist_id", "Artist.id")
             .whereRaw("BookArtist.book_id = sub.id")
-            .whereRaw("LOWER(Artist.name) = ?", [artist]);
+            .whereRaw("LOWER(REPLACE(Artist.name, ' ', '_')) = ?", [artist]);
         });
       }
     }
@@ -298,7 +300,7 @@ function buildFilteredQuery(filter: FilterParams | null) {
           this.from("BookArtist")
             .innerJoin("Artist", "BookArtist.artist_id", "Artist.id")
             .whereRaw("BookArtist.book_id = sub.id")
-            .whereRaw("LOWER(Artist.name) = ?", [artist]);
+            .whereRaw("LOWER(REPLACE(Artist.name, ' ', '_')) = ?", [artist]);
         });
       }
     }
@@ -543,9 +545,24 @@ export const handleUpdateBookMetadata = async ({
       ] of relations) {
         await trx(junctionTable).where("book_id", bookId).delete();
         for (const name of [
-          ...new Set(values.map((value) => value.trim()).filter(Boolean)),
+          ...new Set(
+            values
+              .map((value) =>
+                entityTable === "Artist"
+                  ? normalizeArtistName(value)
+                  : value.trim(),
+              )
+              .filter(Boolean),
+          ),
         ]) {
-          let entity = await trx(entityTable).where("name", name).first();
+          let entity =
+            entityTable === "Artist"
+              ? await trx(entityTable)
+                  .whereRaw("LOWER(REPLACE(name, ' ', '_')) = ?", [
+                    name.toLowerCase(),
+                  ])
+                  .first()
+              : await trx(entityTable).where("name", name).first();
           if (!entity) {
             const [id] = await trx(entityTable).insert({ name });
             entity = { id };

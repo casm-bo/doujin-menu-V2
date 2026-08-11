@@ -16,6 +16,7 @@ import type {
   MetadataRescanMode,
 } from "../../types/ipc.js";
 import { naturalSort } from "../utils/index.js";
+import { normalizeArtistName } from "../utils/artistName.js";
 import { filterLibraryPathRows } from "../utils/libraryPath.js";
 import { notifyCompanionLibraryChanged } from "../services/companion/companionSyncSignal.js";
 import {
@@ -711,10 +712,16 @@ async function processBatchInTransaction(
 
     // 아티스트 처리
     const artistsToProcess =
-      infoMetadata.artists?.map((a) => cleanValue(a.name)).filter(Boolean) ||
-      [];
+      infoMetadata.artists
+        ?.map((a) => cleanValue(a.name))
+        .filter((name): name is string => Boolean(name))
+        .map(normalizeArtistName) || [];
     for (const artistName of artistsToProcess) {
-      let artist = await trx("Artist").where("name", artistName).first();
+      let artist = await trx("Artist")
+        .whereRaw("LOWER(REPLACE(name, ' ', '_')) = ?", [
+          artistName.toLowerCase(),
+        ])
+        .first();
       if (!artist) {
         const [newArtistId] = await trx("Artist").insert({ name: artistName });
         artist = { id: newArtistId, name: artistName };
