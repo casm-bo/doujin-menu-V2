@@ -16,6 +16,7 @@ export interface FilterParams {
   isFavorite?: boolean;
   offlineStatus?: "all" | "online" | "offline";
   seriesStatus?: "all" | "series" | "standalone";
+  randomSeed?: number;
 }
 
 export interface Preset {

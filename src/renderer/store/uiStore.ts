@@ -18,9 +18,14 @@ export const useUiStore = defineStore("ui", () => {
   const thumbnailZoom = ref(
     Number(localStorage.getItem("thumbnailZoom")) || THUMBNAIL_ZOOM_DEFAULT,
   );
+  const libraryRandomSeed = ref(Math.floor(Math.random() * 2 ** 30));
 
   function toggleSidebar() {
     isSidebarCollapsed.value = !isSidebarCollapsed.value;
+  }
+
+  function reshuffleLibraryRandomSeed() {
+    libraryRandomSeed.value = Math.floor(Math.random() * 2 ** 30);
   }
 
   function setLocked(locked: boolean) {
@@ -70,5 +75,7 @@ export const useUiStore = defineStore("ui", () => {
     setThumbnailZoom,
     zoomIn,
     zoomOut,
+    libraryRandomSeed,
+    reshuffleLibraryRandomSeed,
   };
 });

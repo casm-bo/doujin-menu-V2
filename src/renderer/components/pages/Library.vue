@@ -243,6 +243,8 @@ const queryKey = computed(
         sortBy: sortBy.value,
         sortOrder: sortOrder.value,
         isFavorite: isFavorite.value === "favorite",
+        randomSeed:
+          sortBy.value === "random" ? uiStore.libraryRandomSeed : undefined,
       },
     ] as const,
 );
@@ -623,6 +625,11 @@ const setSortBy = (column: string) => {
 
 const toggleSortOrder = () => {
   sortOrder.value = sortOrder.value === "asc" ? "desc" : "asc";
+};
+
+const reshuffleRandomOrder = () => {
+  uiStore.reshuffleLibraryRandomSeed();
+  toast.info("순서를 다시 섞었습니다.");
 };
 
 const cycleSortBy = () => {
@@ -1091,9 +1098,18 @@ useScrollRestoration(".flex-grow.overflow-y-auto");
             </DropdownMenuContent>
           </DropdownMenu>
           <Button
+            v-if="sortBy === 'random'"
             variant="outline"
             class="rounded-l-none border-l-0"
-            :disabled="sortBy === 'random'"
+            aria-label="순서 다시 섞기"
+            @click="reshuffleRandomOrder"
+          >
+            <Icon icon="solar:refresh-bold-duotone" class="h-4 w-4" />
+          </Button>
+          <Button
+            v-else
+            variant="outline"
+            class="rounded-l-none border-l-0"
             @click="toggleSortOrder"
           >
             <Icon

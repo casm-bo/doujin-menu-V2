@@ -12,6 +12,7 @@ import type { FilterParams } from "../../../src/types/ipc.js";
 import {
   parseSearchQuery,
   extractKoreanTitle,
+  seededShuffleOrderSql,
 } from "../../../src/main/handlers/bookHandler.js";
 
 // ========== 유닛 테스트: 순수 함수 ==========
@@ -1788,6 +1789,83 @@ describe("handleGetBooks - 통합 테스트", () => {
         filter: { sortBy: "page_count", sortOrder: "asc" },
       });
       expect(nextFromNullB.nextBookId).toBe(pageBook.id);
+    });
+  });
+
+  describe("seeded random sort", () => {
+    const seed = 424242;
+
+    async function orderedIds(randomSeed: number, pageSize = 1000) {
+      const result = await handleGetBooks({
+        sortBy: "random",
+        randomSeed,
+        pageSize,
+      });
+      return result.data.map((book: { id: number }) => book.id);
+    }
+
+    it("validates seed bounds", () => {
+      expect(seededShuffleOrderSql(seed)).toBeTypeOf("string");
+      expect(seededShuffleOrderSql(-1)).toBeNull();
+      expect(seededShuffleOrderSql(1.5)).toBeNull();
+      expect(seededShuffleOrderSql(2 ** 30)).toBeNull();
+    });
+
+    it("keeps worst-case hash arithmetic as a SQLite integer", async () => {
+      const sql = seededShuffleOrderSql(2 ** 30 - 1, "2147483646")!;
+      const result = await db.raw(`SELECT typeof(${sql}) AS value_type`);
+      expect(result[0].value_type).toBe("integer");
+    });
+
+    it("keeps order stable across requests and pages", async () => {
+      for (let index = 0; index < 20; index++) {
+        await seedBook(db, { path: `/random-${index}` });
+      }
+
+      const full = await orderedIds(seed);
+      const repeated = await orderedIds(seed);
+      const paged: number[] = [];
+      for (let pageParam = 0; pageParam < 4; pageParam++) {
+        const page = await handleGetBooks({
+          sortBy: "random",
+          randomSeed: seed,
+          pageParam,
+          pageSize: 5,
+        });
+        paged.push(...page.data.map((book: { id: number }) => book.id));
+      }
+
+      expect(repeated).toEqual(full);
+      expect(paged).toEqual(full);
+      expect(new Set(paged).size).toBe(20);
+    });
+
+    it("reshuffles when the seed changes", async () => {
+      for (let index = 0; index < 20; index++) {
+        await seedBook(db, { path: `/reshuffle-${index}` });
+      }
+      expect(await orderedIds(seed + 1)).not.toEqual(await orderedIds(seed));
+    });
+
+    it("uses the same order for viewer next and previous", async () => {
+      for (let index = 0; index < 10; index++) {
+        await seedBook(db, { path: `/viewer-random-${index}` });
+      }
+      const order = await orderedIds(seed);
+      const currentIndex = 4;
+
+      const next = await handleGetNextBook({
+        currentBookId: order[currentIndex],
+        mode: "next",
+        filter: { sortBy: "random", randomSeed: seed },
+      });
+      const previous = await handleGetPrevBook({
+        currentBookId: order[currentIndex],
+        filter: { sortBy: "random", randomSeed: seed },
+      });
+
+      expect(next.nextBookId).toBe(order[currentIndex + 1]);
+      expect(previous.prevBookId).toBe(order[currentIndex - 1]);
     });
   });
 });

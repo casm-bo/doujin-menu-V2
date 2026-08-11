@@ -417,6 +417,26 @@ function buildFilteredQuery(filter: FilterParams | null) {
   return mainQuery;
 }
 
+// Quadratic hash over a 31-bit prime. Every intermediate stays below SQLite's
+// signed 64-bit integer limit, unlike the upstream 32-bit multiply sequence.
+export const seededShuffleOrderSql = (
+  seed: unknown,
+  idRef = "sub.id",
+): string | null => {
+  if (
+    typeof seed !== "number" ||
+    !Number.isInteger(seed) ||
+    seed < 0 ||
+    seed >= 2 ** 30
+  ) {
+    return null;
+  }
+
+  const prime = 2147483647;
+  const value = `(((${idRef} % ${prime}) + ${seed}) % ${prime})`;
+  return `((${value}) * (${value}) + (${value}) * 1103515245 + 12345) % ${prime}`;
+};
+
 export const handleGetBooks = async (
   params: FilterParams & { pageParam?: number; pageSize?: number },
 ) => {
@@ -445,8 +465,10 @@ export const handleGetBooks = async (
 
   // 4. 정렬 및 페이지네이션 적용
   if (sortBy === "random") {
-    // 랜덤 정렬: SQLite RANDOM() 함수 사용
-    mainQuery.orderByRaw("RANDOM()");
+    const shuffleSql = seededShuffleOrderSql(params.randomSeed);
+    mainQuery.orderByRaw(
+      shuffleSql ? `${shuffleSql}, sub.id` : "RANDOM()",
+    );
   } else if (sortBy === "hitomi_id") {
     mainQuery.orderByRaw(
       `CAST(sub.hitomi_id AS INTEGER) ${sortOrder}, sub.id ${sortOrder}`,
@@ -875,8 +897,10 @@ export const handleGetNextBook = async ({
 
     const { sortBy = "added_at", sortOrder = "desc" } = filter || {};
 
-    // 랜덤 정렬이거나 random 모드인 경우 완전 랜덤 책으로 이동
-    if (mode === "random" || sortBy === "random") {
+    const shuffleSql =
+      sortBy === "random" ? seededShuffleOrderSql(filter?.randomSeed) : null;
+
+    if (mode === "random" || (sortBy === "random" && !shuffleSql)) {
       const randomBook = await mainQuery
         .whereNot("sub.id", currentBookId)
         .orderByRaw("RANDOM()")
@@ -889,6 +913,27 @@ export const handleGetNextBook = async ({
         };
       }
       return { success: true, nextBookId: null };
+    }
+
+    if (sortBy === "random" && shuffleSql) {
+      const currentHashSql = seededShuffleOrderSql(
+        filter?.randomSeed,
+        "Book.id",
+      )!;
+      const nextBook = await mainQuery
+        .whereRaw(
+          `(${shuffleSql}, sub.id) > ((SELECT ${currentHashSql} FROM Book WHERE Book.id = ?), ?)`,
+          [currentBookId, currentBookId],
+        )
+        .orderByRaw(`${shuffleSql}, sub.id`)
+        .first();
+      return nextBook
+        ? {
+            success: true,
+            nextBookId: nextBook.id,
+            nextBookTitle: nextBook.title,
+          }
+        : { success: true, nextBookId: null };
     }
 
     // Sequential mode
@@ -1045,8 +1090,10 @@ export const handleGetPrevBook = async ({
     const mainQuery = buildFilteredQuery(filter);
     const { sortBy = "added_at", sortOrder = "desc" } = filter || {};
 
-    // 랜덤 정렬인 경우 완전 랜덤 책으로 이동
-    if (sortBy === "random") {
+    const shuffleSql =
+      sortBy === "random" ? seededShuffleOrderSql(filter?.randomSeed) : null;
+
+    if (sortBy === "random" && !shuffleSql) {
       const randomBook = await mainQuery
         .whereNot("sub.id", currentBookId)
         .orderByRaw("RANDOM()")
@@ -1059,6 +1106,27 @@ export const handleGetPrevBook = async ({
         };
       }
       return { success: true, prevBookId: null };
+    }
+
+    if (sortBy === "random" && shuffleSql) {
+      const currentHashSql = seededShuffleOrderSql(
+        filter?.randomSeed,
+        "Book.id",
+      )!;
+      const prevBook = await mainQuery
+        .whereRaw(
+          `(${shuffleSql}, sub.id) < ((SELECT ${currentHashSql} FROM Book WHERE Book.id = ?), ?)`,
+          [currentBookId, currentBookId],
+        )
+        .orderByRaw(`${shuffleSql} DESC, sub.id DESC`)
+        .first();
+      return prevBook
+        ? {
+            success: true,
+            prevBookId: prevBook.id,
+            prevBookTitle: prevBook.title,
+          }
+        : { success: true, prevBookId: null };
     }
 
     const currentBook = await buildFilteredQuery(null)
