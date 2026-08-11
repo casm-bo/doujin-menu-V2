@@ -18,12 +18,15 @@ const rootDir = join(import.meta.dirname, "..");
 const markerPath = join(rootDir, "node_modules", ".native-target");
 const target = process.argv.includes("--node") ? "node" : "electron";
 const require = createRequire(import.meta.url);
+const electronVersion =
+  target === "electron" ? require("electron/package.json").version : null;
+const marker = electronVersion ? `${target}:${electronVersion}` : target;
 
 if (target === "node") {
   try {
     const Database = require("better-sqlite3");
     new Database(":memory:").close();
-    writeFileSync(markerPath, target);
+    writeFileSync(markerPath, marker);
     console.log("better-sqlite3: 이미 node용 (스킵)");
     process.exit(0);
   } catch {
@@ -31,7 +34,7 @@ if (target === "node") {
   }
 } else {
   try {
-    if (readFileSync(markerPath, "utf8").trim() === target) {
+    if (readFileSync(markerPath, "utf8").trim() === marker) {
       console.log(`better-sqlite3: 이미 ${target}용 (스킵)`);
       process.exit(0);
     }
@@ -39,14 +42,13 @@ if (target === "node") {
 }
 
 if (target === "electron") {
-  const { version } = require("electron/package.json");
-  console.log(`Rebuilding better-sqlite3 for Electron ${version}...`);
+  console.log(`Rebuilding better-sqlite3 for Electron ${electronVersion}...`);
   execSync("pnpm rebuild better-sqlite3", {
     stdio: "inherit",
     env: {
       ...process.env,
       npm_config_runtime: "electron",
-      npm_config_target: version,
+      npm_config_target: electronVersion,
     },
   });
 } else {
@@ -54,4 +56,4 @@ if (target === "electron") {
   execSync("pnpm rebuild better-sqlite3", { stdio: "inherit" });
 }
 
-writeFileSync(markerPath, target);
+writeFileSync(markerPath, marker);
