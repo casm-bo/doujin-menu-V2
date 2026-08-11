@@ -82,8 +82,14 @@ export async function rescanBookMetadata(bookId: number) {
   }
 }
 
-export async function deleteBook(bookId: number) {
-  const result = await ipcRenderer.invoke("delete-book", bookId);
+export async function deleteBook(
+  bookId: number,
+  options?: { permanent?: boolean },
+) {
+  const result = await ipcRenderer.invoke("delete-book", {
+    bookId,
+    permanent: options?.permanent,
+  });
   if (result.success) {
     return true;
   } else {
@@ -93,12 +99,13 @@ export async function deleteBook(bookId: number) {
 
 export async function deleteBookOrSeries(
   book: Pick<Book, "id" | "series_collection_id">,
+  options?: { permanent?: boolean },
 ) {
   const books = book.series_collection_id
     ? await getSeriesBooks(book.series_collection_id)
     : [book];
   if (!books) throw new Error("Failed to load series books");
-  for (const item of books) await deleteBook(item.id);
+  for (const item of books) await deleteBook(item.id, options);
   return books.length;
 }
 

@@ -1,5 +1,6 @@
 import * as api from "@/api";
 import { ipcRenderer } from "@/api";
+import { usePermanentDelete } from "@/composable/usePermanentDelete";
 import { useDownloadQueueStore } from "@/store/downloadQueueStore";
 import type { HitomiGalleryDetails } from "../../types/hitomi.js";
 import { computed, onMounted, ref, toRaw, watch } from "vue";
@@ -28,6 +29,7 @@ export function useGalleryCard(
   const router = useRouter();
   const downloadQueueStore = useDownloadQueueStore();
   const isDeleteDialogOpen = ref(false);
+  const { permanentDelete } = usePermanentDelete();
   const downloadPath = ref<string>("");
 
   // 책 존재 여부 확인
@@ -113,7 +115,9 @@ export function useGalleryCard(
     }
 
     try {
-      await api.deleteBook(result.bookId);
+      await api.deleteBook(result.bookId, {
+        permanent: permanentDelete.value,
+      });
       toast.success("책 삭제 완료", {
         description: `${props.gallery.title.display}이(가) 삭제되었습니다.`,
       });
@@ -224,6 +228,7 @@ export function useGalleryCard(
   return {
     bookId,
     isDeleteDialogOpen,
+    permanentDelete,
     viewerLink,
     buttonText,
     isDownloading,

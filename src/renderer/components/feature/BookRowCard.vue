@@ -13,6 +13,8 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
+import { usePermanentDelete } from "@/composable/usePermanentDelete";
 import { useTagDisplay } from "@/composable/useTagDisplay";
 import { Icon } from "@iconify/vue";
 import { useQueryClient } from "@tanstack/vue-query";
@@ -129,6 +131,7 @@ const openBookFolder = () => {
 };
 
 const isDeleteDialogOpen = ref(false);
+const { permanentDelete } = usePermanentDelete();
 const isRescanning = ref(false);
 
 const handleRescanMetadata = async () => {
@@ -157,7 +160,9 @@ const handleDeleteBook = async () => {
 
 const confirmDeleteBook = async () => {
   try {
-    const deletedCount = await api.deleteBookOrSeries(props.book);
+    const deletedCount = await api.deleteBookOrSeries(props.book, {
+      permanent: permanentDelete.value,
+    });
     emit("deleted", props.book.id);
     toast.success(
       props.book.series_collection_id ? "시리즈 삭제 완료" : "책 삭제 완료",
@@ -390,12 +395,20 @@ const confirmDeleteBook = async () => {
         </AlertDialogTitle>
         <AlertDialogDescription>
           {{
-            book.series_collection_id
-              ? "시리즈의 모든 에피소드 정보가 삭제되고, 파일은 휴지통으로 이동합니다."
-              : "데이터베이스에서 책 정보가 삭제되고, 파일은 휴지통으로 이동합니다."
+            permanentDelete
+              ? book.series_collection_id
+                ? "시리즈의 모든 에피소드 정보와 파일이 영구적으로 삭제됩니다."
+                : "데이터베이스의 책 정보와 파일이 영구적으로 삭제됩니다."
+              : book.series_collection_id
+                ? "시리즈의 모든 에피소드 정보가 삭제되고, 파일은 휴지통으로 이동합니다."
+                : "데이터베이스에서 책 정보가 삭제되고, 파일은 휴지통으로 이동합니다."
           }}
         </AlertDialogDescription>
       </AlertDialogHeader>
+      <Label class="flex cursor-pointer items-center gap-2 font-normal">
+        <Checkbox v-model="permanentDelete" />
+        휴지통을 거치지 않고 영구 삭제
+      </Label>
       <AlertDialogFooter>
         <AlertDialogCancel>취소</AlertDialogCancel>
         <AlertDialogAction @click="confirmDeleteBook">삭제</AlertDialogAction>

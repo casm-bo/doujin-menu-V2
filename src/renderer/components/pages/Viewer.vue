@@ -20,6 +20,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import {
   Popover,
@@ -37,6 +38,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { useKeybindings } from "@/composable/useKeybindings";
+import { usePermanentDelete } from "@/composable/usePermanentDelete";
 import { useWindowEvent } from "@/composable/useWindowEvent";
 import { useUiStore } from "@/store/uiStore";
 import { useViewerStore } from "@/store/viewerStore";
@@ -204,6 +206,7 @@ const openSetting = ref(false);
 const isHelpOpen = ref(false);
 const isDetailOpen = ref(false);
 const isDeleteDialogOpen = ref(false);
+const { permanentDelete } = usePermanentDelete();
 const externalProgramPath = ref("");
 
 // 이미지 드래그 상태
@@ -254,10 +257,6 @@ const handleDeleteBook = async () => {
 
   try {
     const currentBookId = bookId.value;
-    await deleteBook(currentBookId);
-
-    // 라이브러리 목록 쿼리 무효화
-    queryClient.invalidateQueries({ queryKey: ["books"] });
 
     // route에서 filter 가져오기
     const filter = route.query.filter;
@@ -270,12 +269,16 @@ const handleDeleteBook = async () => {
       }
     }
 
-    // 다음 책으로 이동 시도
+    // 삭제 전에 다음 책을 조회해야 현재 책을 정렬 기준점으로 사용할 수 있다.
     const result = await ipcRenderer.invoke("get-next-book", {
       currentBookId,
       mode: "next",
       filter: filterParams,
     });
+
+    await deleteBook(currentBookId, { permanent: permanentDelete.value });
+
+    queryClient.invalidateQueries({ queryKey: ["books"] });
 
     // 다음 책이 있으면 이동, 없으면 뒤로 가기
     if (result.success && result.nextBookId) {
@@ -1307,9 +1310,17 @@ useKeybindings(
         <AlertDialogHeader>
           <AlertDialogTitle>책을 삭제하시겠습니까?</AlertDialogTitle>
           <AlertDialogDescription>
-            책과 관련된 모든 데이터가 삭제되고, 파일은 휴지통으로 이동합니다.
+            {{
+              permanentDelete
+                ? "책과 관련된 모든 데이터와 파일이 영구적으로 삭제됩니다."
+                : "책과 관련된 모든 데이터가 삭제되고, 파일은 휴지통으로 이동합니다."
+            }}
           </AlertDialogDescription>
         </AlertDialogHeader>
+        <Label class="flex cursor-pointer items-center gap-2 font-normal">
+          <Checkbox v-model="permanentDelete" />
+          휴지통을 거치지 않고 영구 삭제
+        </Label>
         <AlertDialogFooter>
           <AlertDialogCancel>취소</AlertDialogCancel>
           <AlertDialogAction
