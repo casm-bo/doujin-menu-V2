@@ -24,7 +24,7 @@ import { Switch } from "@/components/ui/switch";
 import SettingItem from "@/components/feature/settings/SettingItem.vue";
 import LicenseViewDialog from "@/components/feature/settings/LicenseViewDialog.vue";
 import { Icon } from "@iconify/vue";
-import { onMounted, ref } from "vue";
+import { computed, onMounted, ref } from "vue";
 import { toast } from "vue-sonner";
 import { ipcRenderer } from "@/api";
 import { useQueryClient } from "@tanstack/vue-query";
@@ -50,6 +50,11 @@ const tempFileLocations = ref<
     size: string;
   }[]
 >([]);
+const visibleTempFileLocations = computed(() =>
+  tempFileLocations.value.filter(
+    (location) => location.key !== "hdd_downloads" || hddDownloadMode.value,
+  ),
+);
 
 // 보안(앱 잠금) 상태
 const useAppLock = ref(false);
@@ -208,7 +213,7 @@ const resetAllData = async () => {
         </SettingItem>
         <div class="mt-4 space-y-3 border-t pt-4">
           <div
-            v-for="location in tempFileLocations"
+            v-for="location in visibleTempFileLocations"
             :key="location.key"
             class="flex items-start justify-between gap-4 text-sm"
           >
@@ -216,7 +221,6 @@ const resetAllData = async () => {
               <p class="font-medium">{{ location.label }}</p>
               <p class="text-muted-foreground">{{ location.description }}</p>
               <p
-                v-if="location.key !== 'hdd_downloads' || hddDownloadMode"
                 class="text-muted-foreground truncate text-xs"
                 :title="location.path"
               >
