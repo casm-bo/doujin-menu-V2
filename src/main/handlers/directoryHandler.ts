@@ -18,6 +18,7 @@ import type {
 import { naturalSort } from "../utils/index.js";
 import { normalizeArtistName } from "../utils/artistName.js";
 import { filterLibraryPathRows } from "../utils/libraryPath.js";
+import { normalizeTagName } from "../utils/tagName.js";
 import { notifyCompanionLibraryChanged } from "../services/companion/companionSyncSignal.js";
 import {
   generateThumbnailForBook,
@@ -785,7 +786,10 @@ async function processBatchInTransaction(
 
     // 태그 처리
     const tagsToProcess =
-      infoMetadata.tags?.map((t) => cleanValue(t.name)).filter(Boolean) || [];
+      infoMetadata.tags
+        ?.map((tag) => cleanValue(tag.name))
+        .filter((name): name is string => Boolean(name))
+        .map(normalizeTagName) || [];
     for (const tagName of tagsToProcess) {
       let tag = await trx("Tag").where("name", tagName).first();
       if (!tag) {

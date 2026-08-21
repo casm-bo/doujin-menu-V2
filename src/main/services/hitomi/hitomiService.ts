@@ -9,6 +9,7 @@ import type {
   HitomiGallery as SerializableHitomiGallery,
   HitomiGalleryDetails,
 } from "../../../types/hitomi.js";
+import { normalizeTagName } from "../../utils/tagName.js";
 
 export interface SearchGalleriesParams {
   query: {
@@ -131,7 +132,7 @@ export class HitomiService {
       characters: gallery.characters.map((tag) => tag.name),
       tags: gallery.tags.map((tag) => ({
         type: tag.type,
-        name: tag.name,
+        name: normalizeTagName(tag.name),
         isNegative: tag.isNegative,
       })),
       files: gallery.files.map((file, index) => ({

@@ -14,6 +14,7 @@ import {
   getDownloadStagingJobPath,
   publishStagedDownload,
 } from "../utils/downloadStaging.js";
+import { normalizeTagName } from "../utils/tagName.js";
 import { store as configStore } from "./configHandler.js";
 import {
   extractInfoTxtAndImageCountFromZip,
@@ -214,8 +215,8 @@ export const handleDownloadGallery = async (
         gallery.tags?.map((tag) => ({
           name:
             tag.type === "male" || tag.type === "female"
-              ? `${tag.type}:${tag.name}`
-              : tag.name,
+              ? `${tag.type}:${normalizeTagName(tag.name)}`
+              : normalizeTagName(tag.name),
         })) ?? [],
       language: gallery.language?.name,
     };

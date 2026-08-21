@@ -7,6 +7,7 @@ import db from "../db/index.js";
 import { console } from "../main.js";
 import { naturalSort } from "../utils/index.js";
 import { normalizeArtistName } from "../utils/artistName.js";
+import { normalizeTagName } from "../utils/tagName.js";
 import { DesktopCompanionSyncService } from "../services/companion/companionSyncService.js";
 import { notifyCompanionLibraryChanged } from "../services/companion/companionSyncSignal.js";
 import { store as configStore } from "./configHandler.js";
@@ -98,7 +99,7 @@ export function parseSearchQuery(searchQuery: string): ParsedSearchTerms {
         target.characterTerms.push(value);
         break;
       case "tag":
-        target.tagTerms.push(value);
+        target.tagTerms.push(normalizeTagName(value));
         break;
     }
     lastIndex = PREFIXED_TERM_REGEX.lastIndex;
@@ -278,7 +279,7 @@ function buildFilteredQuery(filter: FilterParams | null) {
           this.from("BookTag")
             .innerJoin("Tag", "BookTag.tag_id", "Tag.id")
             .whereRaw("BookTag.book_id = sub.id")
-            .whereRaw("LOWER(Tag.name) = ?", [tag]);
+            .whereRaw("LOWER(REPLACE(Tag.name, ' ', '_')) = ?", [tag]);
         });
       }
     }
@@ -361,7 +362,7 @@ function buildFilteredQuery(filter: FilterParams | null) {
           this.from("BookTag")
             .innerJoin("Tag", "BookTag.tag_id", "Tag.id")
             .whereRaw("BookTag.book_id = sub.id")
-            .whereRaw("LOWER(Tag.name) = ?", [tag]);
+            .whereRaw("LOWER(REPLACE(Tag.name, ' ', '_')) = ?", [tag]);
         });
       }
     }
@@ -589,7 +590,9 @@ export const handleUpdateBookMetadata = async ({
               .map((value) =>
                 entityTable === "Artist"
                   ? normalizeArtistName(value)
-                  : value.trim(),
+                  : entityTable === "Tag"
+                    ? normalizeTagName(value)
+                    : value.trim(),
               )
               .filter(Boolean),
           ),

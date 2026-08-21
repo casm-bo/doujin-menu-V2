@@ -410,7 +410,7 @@ describe("handleGetBooks - 통합 테스트", () => {
       type: "doujinshi",
       language_name_local: "한국어",
       artists: [{ name: "new_artist" }],
-      tags: [{ name: "tag one" }],
+      tags: [{ name: "tag_one" }],
       series: [{ name: "source series" }],
       groups: [{ name: "group one" }],
       characters: [{ name: "character one" }],
@@ -756,6 +756,16 @@ describe("handleGetBooks - 통합 테스트", () => {
       expect(ids).toEqual([book1.id]);
     });
 
+    it("공백이 있는 기존 태그를 밑줄 검색으로 매칭", async () => {
+      const tag = await seedTag(db, "long hair");
+      const book = await seedBook(db, { path: "/tag-space" });
+      await linkBookTag(db, book.id, tag.id);
+
+      expect(await getResultIds({ searchQuery: "tag:long_hair" })).toEqual([
+        book.id,
+      ]);
+    });
+
     it("series:series1 → 'series1'만 매칭", async () => {
       const series1 = await seedSeries(db, "series1");
       const series2 = await seedSeries(db, "xseries1");
@@ -854,6 +864,17 @@ describe("handleGetBooks - 통합 테스트", () => {
 
       const ids = await getResultIds({ searchQuery: "-tag:nurse" });
       expect(ids).toEqual([book2.id]);
+    });
+
+    it("우클릭 제외어의 밑줄을 기존 태그 공백과 동일하게 처리", async () => {
+      const tag = await seedTag(db, "long hair");
+      const taggedBook = await seedBook(db, { path: "/tagged-space" });
+      const otherBook = await seedBook(db, { path: "/other-space" });
+      await linkBookTag(db, taggedBook.id, tag.id);
+
+      expect(await getResultIds({ searchQuery: "-tag:long_hair" })).toEqual([
+        otherBook.id,
+      ]);
     });
 
     it("-female:ahegao → female:ahegao 태그 없는 책만 반환", async () => {

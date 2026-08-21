@@ -1,3 +1,5 @@
+import { normalizeTagName } from "../utils/tagName.js";
+
 export interface ParsedMetadata {
   uuid?: string;
   hitomi_id?: string;
@@ -51,7 +53,12 @@ export function parseInfoTxt(content: string) {
       ) {
         (metadata[mappedKey] as { name: string }[]) = value
           .split(",")
-          .map((item) => ({ name: item.trim().replace(/\s+/g, "_") }));
+          .map((item) => ({
+            name:
+              mappedKey === "tags"
+                ? normalizeTagName(item)
+                : item.trim().replace(/\s+/g, "_"),
+          }));
       } else {
         // 그 외의 값들은 단일 값으로 처리합니다.
         (metadata[mappedKey] as string) = value;

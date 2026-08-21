@@ -104,6 +104,7 @@ describe("HitomiService", () => {
         id: 10,
         files: [coverFile],
         relations: [{ id: 99 }],
+        tags: [{ type: "male", name: "long hair", isNegative: false }],
       }),
     );
 
@@ -117,6 +118,9 @@ describe("HitomiService", () => {
       local: "한국어",
     });
     expect(result.relatedIds).toEqual([99]);
+    expect(result.tags).toEqual([
+      { type: "male", name: "long_hair", isNegative: false },
+    ]);
     expect(result.files[0]).toMatchObject({ index: 0, hash: "hash" });
   });
 
