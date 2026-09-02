@@ -697,6 +697,50 @@ describe("handleGetBooks - 통합 테스트", () => {
       expect(ids).toHaveLength(1);
     });
 
+    it("숫자 검색은 제목과 hitomi_id를 함께 찾는다", async () => {
+      const byId = await seedBook(db, {
+        path: "/numeric-id",
+        title: "숫자 없는 제목",
+        hitomi_id: "1234567",
+      });
+      const byTitle = await seedBook(db, {
+        path: "/numeric-title",
+        title: "1234567 번째 이야기",
+        hitomi_id: "555",
+      });
+      await seedBook(db, { path: "/numeric-other", hitomi_id: "999" });
+
+      const ids = await getResultIds({ searchQuery: "1234567" });
+      expect(ids).toHaveLength(2);
+      expect(ids).toContain(byId.id);
+      expect(ids).toContain(byTitle.id);
+    });
+
+    it("음수형 숫자 검색은 같은 hitomi_id를 제외한다", async () => {
+      await seedBook(db, { path: "/excluded-id", hitomi_id: "1234567" });
+      const kept = await seedBook(db, { path: "/kept-id", hitomi_id: "555" });
+
+      expect(await getResultIds({ searchQuery: "-1234567" })).toEqual([
+        kept.id,
+      ]);
+    });
+
+    it("숫자가 섞인 낱말은 ID로 보지 않는다", async () => {
+      await seedBook(db, {
+        path: "/mixed-id",
+        title: "무관한 책",
+        hitomi_id: "1234567",
+      });
+      const byTitle = await seedBook(db, {
+        path: "/mixed-title",
+        title: "1234567화",
+      });
+
+      expect(await getResultIds({ searchQuery: "1234567화" })).toEqual([
+        byTitle.id,
+      ]);
+    });
+
     it("일반 검색어 → 시리즈 컬렉션 이름 검색", async () => {
       const [seriesId] = await db("SeriesCollection").insert({
         name: "검색할 시리즈",

@@ -44,9 +44,10 @@ export class HitomiService {
       .filter((term) => term.length > 0);
 
     for (const term of terms) {
-      if (!term.startsWith("id:")) continue;
+      const value = term.startsWith("id:") ? term.substring(3).trim() : term;
+      if (!/^\d+$/.test(value)) continue;
 
-      const galleryId = Number.parseInt(term.substring(3).trim(), 10);
+      const galleryId = Number.parseInt(value, 10);
       if (!Number.isNaN(galleryId)) {
         return {
           data: [galleryId],

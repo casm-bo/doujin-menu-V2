@@ -9,18 +9,19 @@ export async function wait(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-/**
- * 열려있는 다이얼로그나 오버레이가 있는지 확인합니다.
- * shadcn-vue의 Dialog, AlertDialog, Command 등의 오버레이/컨텐츠 요소를 감지합니다.
- * @returns 열려있는 오버레이가 있으면 true, 없으면 false
- */
+const OPEN_OVERLAY_SELECTOR = [
+  '[data-slot="dialog-overlay"]',
+  '[data-slot="dialog-content"]',
+  '[data-slot="alert-dialog-overlay"]',
+  '[data-slot="alert-dialog-content"]',
+  '[role="dialog"]',
+  '[role="alertdialog"]',
+  '[role="menu"]',
+  '[role="listbox"]',
+]
+  .map((selector) => `${selector}:not([data-state="closed"])`)
+  .join(",");
+
 export function hasOpenDialog(): boolean {
-  return !!(
-    document.querySelector('[data-slot="dialog-overlay"]') ||
-    document.querySelector('[data-slot="dialog-content"]') ||
-    document.querySelector('[data-slot="alert-dialog-overlay"]') ||
-    document.querySelector('[data-slot="alert-dialog-content"]') ||
-    document.querySelector('[role="dialog"]') ||
-    document.querySelector('[role="alertdialog"]')
-  );
+  return !!document.querySelector(OPEN_OVERLAY_SELECTOR);
 }

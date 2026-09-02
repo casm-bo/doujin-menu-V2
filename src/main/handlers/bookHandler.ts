@@ -31,6 +31,8 @@ export interface ParsedSearchTerms extends ExcludeTerms {
 const PREFIXED_TERM_REGEX =
   /(-?)artist:(.+?)(?=\s*-?(?:id|artist|group|type|language|series|character|tag):|$)|(-?)(id|group|type|language|series|character|tag):\s*(\S+)/g;
 
+const isNumericTerm = (term: string): boolean => /^\d+$/.test(term);
+
 // 검색어 문자열을 프리픽스별로 분류하여 반환
 export function parseSearchQuery(searchQuery: string): ParsedSearchTerms {
   const result: ParsedSearchTerms = {
@@ -301,6 +303,9 @@ function buildFilteredQuery(filter: FilterParams | null) {
             .orWhereRaw("LOWER(sub.series_collection_name) LIKE ?", [
               `%${titleTerm}%`,
             ]);
+          if (isNumericTerm(titleTerm)) {
+            builder.orWhere("sub.hitomi_id", titleTerm);
+          }
         });
       }
     }
@@ -382,6 +387,12 @@ function buildFilteredQuery(filter: FilterParams | null) {
           "LOWER(sub.title) NOT LIKE ? AND (sub.series_collection_name IS NULL OR LOWER(sub.series_collection_name) NOT LIKE ?)",
           [`%${titleTerm}%`, `%${titleTerm}%`],
         );
+        if (isNumericTerm(titleTerm)) {
+          mainQuery.whereRaw(
+            "(sub.hitomi_id IS NULL OR sub.hitomi_id != ?)",
+            [titleTerm],
+          );
+        }
       }
     }
   }

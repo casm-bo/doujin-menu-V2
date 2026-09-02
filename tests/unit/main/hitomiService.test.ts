@@ -61,6 +61,28 @@ describe("HitomiService", () => {
     expect(hitomiMocks.list).not.toHaveBeenCalled();
   });
 
+  it("프리픽스 없는 숫자도 ID로 조회한다", async () => {
+    const result = await service.searchGalleries({
+      query: { searchQuery: "123456" },
+    });
+
+    expect(result).toEqual({ data: [123456], hasNextPage: false });
+    expect(hitomiMocks.list).not.toHaveBeenCalled();
+  });
+
+  it("숫자가 섞인 낱말은 일반 검색어로 처리한다", async () => {
+    hitomiMocks.list.mockResolvedValue([]);
+
+    await service.searchGalleries({
+      query: { searchQuery: "123456화" },
+    });
+
+    expect(hitomiMocks.list).toHaveBeenCalledWith({
+      title: "123456화",
+      tags: undefined,
+    });
+  });
+
   it("일반 검색어와 필터를 분리하고 페이지네이션한다", async () => {
     const ids = Array.from({ length: 70 }, (_, index) => index + 1);
     const references = ids.map((id) => ({ id }));
