@@ -1152,6 +1152,28 @@ describe("handleGetBooks - 통합 테스트", () => {
       });
       expect(result.data).toHaveLength(3);
     });
+
+    it("sortBy=artists는 페이지 집계 최적화 후에도 작가명으로 정렬한다", async () => {
+      const alpha = await seedArtist(db, "alpha");
+      const beta = await seedArtist(db, "beta");
+      const bookAlpha = await seedBook(db, { path: "/artist-alpha" });
+      const bookBeta = await seedBook(db, { path: "/artist-beta" });
+      const bookNone = await seedBook(db, { path: "/artist-none" });
+      await linkBookArtist(db, bookAlpha.id, alpha.id);
+      await linkBookArtist(db, bookBeta.id, beta.id);
+
+      const result = await handleGetBooks({
+        sortBy: "artists",
+        sortOrder: "asc",
+        pageSize: 1000,
+      });
+
+      expect(result.data.map((book) => book.id)).toEqual([
+        bookNone.id,
+        bookAlpha.id,
+        bookBeta.id,
+      ]);
+    });
   });
 
   describe("페이지네이션", () => {
@@ -1664,6 +1686,42 @@ describe("handleGetBooks - 통합 테스트", () => {
       vi.mocked(configStore.get).mockReturnValue(undefined);
     });
 
+    it("artists asc에서 작가 있는 첫 책의 prev는 NULL 그룹 마지막 책이다", async () => {
+      await seedBook(db, { path: "/null-first" });
+      const nullLast = await seedBook(db, { path: "/null-last" });
+      const withArtist = await seedBook(db, { path: "/with-artist" });
+      const artist = await seedArtist(db, "alpha");
+      await linkBookArtist(db, withArtist.id, artist.id);
+
+      const result = await handleGetPrevBook({
+        currentBookId: withArtist.id,
+        filter: { sortBy: "artists", sortOrder: "asc" },
+      });
+
+      expect(result.prevBookId).toBe(nullLast.id);
+    });
+
+    it("hitomi_id desc에서 값 있는 마지막 책의 next는 NULL 그룹 첫 책이다", async () => {
+      await seedBook(db, { path: "/null-id-first", hitomi_id: null });
+      const nullIdLast = await seedBook(db, {
+        path: "/null-id-last",
+        hitomi_id: null,
+      });
+      const lastValue = await seedBook(db, {
+        path: "/last-id-value",
+        hitomi_id: "100",
+      });
+      await seedBook(db, { path: "/first-id-value", hitomi_id: "300" });
+
+      const result = await handleGetNextBook({
+        currentBookId: lastValue.id,
+        mode: "next",
+        filter: { sortBy: "hitomi_id", sortOrder: "desc" },
+      });
+
+      expect(result.nextBookId).toBe(nullIdLast.id);
+    });
+
     it("artists(NULL) 책들 asc 정렬: 두 번째 NULL 책의 next → 작가 있는 첫 책", async () => {
       // 정렬 순서(asc): nullA, nullB(같은 NULL 그룹, id asc), withArtist
       await seedBook(db, { path: "/a" }); // NULL 그룹의 첫 책(컨텍스트)
@@ -1859,8 +1917,14 @@ describe("handleGetBooks - 통합 테스트", () => {
 
   describe("file modification time sort", () => {
     it("sorts by file_mtime with nulls following SQLite order", async () => {
-      const oldBook = await seedBook(db, { path: "/mtime-old", file_mtime: 1000 });
-      const newBook = await seedBook(db, { path: "/mtime-new", file_mtime: 2000 });
+      const oldBook = await seedBook(db, {
+        path: "/mtime-old",
+        file_mtime: 1000,
+      });
+      const newBook = await seedBook(db, {
+        path: "/mtime-new",
+        file_mtime: 2000,
+      });
       const nullBook = await seedBook(db, { path: "/mtime-null" });
 
       const descending = await handleGetBooks({
@@ -1887,8 +1951,14 @@ describe("handleGetBooks - 통합 테스트", () => {
     });
 
     it("uses file_mtime order in viewer navigation", async () => {
-      const oldBook = await seedBook(db, { path: "/nav-old", file_mtime: 1000 });
-      const newBook = await seedBook(db, { path: "/nav-new", file_mtime: 2000 });
+      const oldBook = await seedBook(db, {
+        path: "/nav-old",
+        file_mtime: 1000,
+      });
+      const newBook = await seedBook(db, {
+        path: "/nav-new",
+        file_mtime: 2000,
+      });
 
       const next = await handleGetNextBook({
         currentBookId: newBook.id,

@@ -1,5 +1,6 @@
 import { ipcMain, shell } from "electron";
 import fs from "fs/promises";
+import type { Knex } from "knex";
 import path from "path";
 import * as yauzl from "yauzl";
 import type { EditableBookMetadata, FilterParams } from "../../types/ipc.js";
@@ -151,7 +152,48 @@ export function extractKoreanTitle(
   return match?.[1]?.trim() ?? title;
 }
 
-function buildFilteredQuery(filter: FilterParams | null) {
+const withRelationAggregates = (query: Knex.QueryBuilder) =>
+  query
+    .leftJoin("BookArtist", "Book.id", "BookArtist.book_id")
+    .leftJoin("Artist", "BookArtist.artist_id", "Artist.id")
+    .leftJoin("BookTag", "Book.id", "BookTag.book_id")
+    .leftJoin("Tag", "BookTag.tag_id", "Tag.id")
+    .leftJoin("BookSeries", "Book.id", "BookSeries.book_id")
+    .leftJoin("Series", "BookSeries.series_id", "Series.id")
+    .leftJoin("BookGroup", "Book.id", "BookGroup.book_id")
+    .leftJoin("Group", "BookGroup.group_id", "Group.id")
+    .leftJoin("BookCharacter", "Book.id", "BookCharacter.book_id")
+    .leftJoin("Character", "BookCharacter.character_id", "Character.id")
+    .groupBy("Book.id");
+
+async function fetchBookRelations(bookIds: number[]) {
+  const relations = new Map<number, Record<string, string | null>>();
+  if (bookIds.length === 0) return relations;
+
+  const rows = await withRelationAggregates(
+    db("Book")
+      .select(
+        "Book.id",
+        db.raw("GROUP_CONCAT(DISTINCT Artist.name) as artists"),
+        db.raw("GROUP_CONCAT(DISTINCT Tag.name) as tags"),
+        db.raw("GROUP_CONCAT(DISTINCT Series.name) as series"),
+        db.raw("GROUP_CONCAT(DISTINCT `Group`.name) as groups"),
+        db.raw("GROUP_CONCAT(DISTINCT `Character`.name) as characters"),
+      )
+      .whereIn("Book.id", bookIds),
+  );
+
+  for (const row of rows) relations.set(row.id, row);
+  return relations;
+}
+
+const toNameList = (value: string | null | undefined) =>
+  value ? value.split(",").map((name: string) => ({ name })) : [];
+
+function buildFilteredQuery(
+  filter: FilterParams | null,
+  { withArtists = false }: { withArtists?: boolean } = {},
+) {
   const {
     searchQuery = "",
     readStatus = "all",
@@ -176,28 +218,20 @@ function buildFilteredQuery(filter: FilterParams | null) {
         WHERE SeriesBook.series_collection_id = Book.series_collection_id
           AND SeriesBook.is_read = 1
       ) as series_read_count`),
-      db.raw("GROUP_CONCAT(DISTINCT Artist.name) as artists"),
-      db.raw("GROUP_CONCAT(DISTINCT Tag.name) as tags"),
-      db.raw("GROUP_CONCAT(DISTINCT Series.name) as series"),
-      db.raw("GROUP_CONCAT(DISTINCT `Group`.name) as groups"),
-      db.raw("GROUP_CONCAT(DISTINCT `Character`.name) as characters"),
     )
-    .leftJoin("BookArtist", "Book.id", "BookArtist.book_id")
-    .leftJoin("Artist", "BookArtist.artist_id", "Artist.id")
-    .leftJoin("BookTag", "Book.id", "BookTag.book_id")
-    .leftJoin("Tag", "BookTag.tag_id", "Tag.id")
-    .leftJoin("BookSeries", "Book.id", "BookSeries.book_id")
-    .leftJoin("Series", "BookSeries.series_id", "Series.id")
-    .leftJoin("BookGroup", "Book.id", "BookGroup.book_id")
-    .leftJoin("Group", "BookGroup.group_id", "Group.id")
-    .leftJoin("BookCharacter", "Book.id", "BookCharacter.book_id")
-    .leftJoin("Character", "BookCharacter.character_id", "Character.id")
     .leftJoin(
       "SeriesCollection",
       "Book.series_collection_id",
       "SeriesCollection.id",
-    )
-    .groupBy("Book.id");
+    );
+
+  if (withArtists) {
+    subquery
+      .select(db.raw("GROUP_CONCAT(DISTINCT Artist.name) as artists"))
+      .leftJoin("BookArtist", "Book.id", "BookArtist.book_id")
+      .leftJoin("Artist", "BookArtist.artist_id", "Artist.id")
+      .groupBy("Book.id");
+  }
 
   const mainQuery = db(subquery.as("sub"));
 
@@ -388,10 +422,9 @@ function buildFilteredQuery(filter: FilterParams | null) {
           [`%${titleTerm}%`, `%${titleTerm}%`],
         );
         if (isNumericTerm(titleTerm)) {
-          mainQuery.whereRaw(
-            "(sub.hitomi_id IS NULL OR sub.hitomi_id != ?)",
-            [titleTerm],
-          );
+          mainQuery.whereRaw("(sub.hitomi_id IS NULL OR sub.hitomi_id != ?)", [
+            titleTerm,
+          ]);
         }
       }
     }
@@ -459,7 +492,9 @@ export const handleGetBooks = async (
     sortOrder = "desc",
   } = params;
 
-  const mainQuery = buildFilteredQuery(params);
+  const mainQuery = buildFilteredQuery(params, {
+    withArtists: sortBy === "artists",
+  });
 
   // 시리즈는 정렬 순서상 첫 책만 대표 카드로 노출합니다.
   mainQuery.where((builder) => {
@@ -478,9 +513,7 @@ export const handleGetBooks = async (
   // 4. 정렬 및 페이지네이션 적용
   if (sortBy === "random") {
     const shuffleSql = seededShuffleOrderSql(params.randomSeed);
-    mainQuery.orderByRaw(
-      shuffleSql ? `${shuffleSql}, sub.id` : "RANDOM()",
-    );
+    mainQuery.orderByRaw(shuffleSql ? `${shuffleSql}, sub.id` : "RANDOM()");
   } else if (sortBy === "hitomi_id") {
     mainQuery.orderByRaw(
       `CAST(sub.hitomi_id AS INTEGER) ${sortOrder}, sub.id ${sortOrder}`,
@@ -497,25 +530,19 @@ export const handleGetBooks = async (
     false,
   );
 
-  const formattedBooks = books.map((book) => ({
-    ...book,
-    title: extractKoreanTitle(book.title, prioritizeKoreanTitles),
-    artists: book.artists
-      ? book.artists.split(",").map((name: string) => ({ name }))
-      : [],
-    tags: book.tags
-      ? book.tags.split(",").map((name: string) => ({ name }))
-      : [],
-    series: book.series
-      ? book.series.split(",").map((name: string) => ({ name }))
-      : [],
-    groups: book.groups
-      ? book.groups.split(",").map((name: string) => ({ name }))
-      : [],
-    characters: book.characters
-      ? book.characters.split(",").map((name: string) => ({ name }))
-      : [],
-  }));
+  const relations = await fetchBookRelations(books.map((book) => book.id));
+  const formattedBooks = books.map((book) => {
+    const related = relations.get(book.id);
+    return {
+      ...book,
+      title: extractKoreanTitle(book.title, prioritizeKoreanTitles),
+      artists: toNameList(related?.artists),
+      tags: toNameList(related?.tags),
+      series: toNameList(related?.series),
+      groups: toNameList(related?.groups),
+      characters: toNameList(related?.characters),
+    };
+  });
 
   return {
     data: formattedBooks,
@@ -536,25 +563,16 @@ export const handleGetBook = async (bookId: number) => {
     "prioritizeKoreanTitles",
     false,
   );
+  const related = (await fetchBookRelations([book.id])).get(book.id);
 
   return {
     ...book,
     title: extractKoreanTitle(book.title, prioritizeKoreanTitles),
-    artists: book.artists
-      ? book.artists.split(",").map((name: string) => ({ name }))
-      : [],
-    tags: book.tags
-      ? book.tags.split(",").map((name: string) => ({ name }))
-      : [],
-    series: book.series
-      ? book.series.split(",").map((name: string) => ({ name }))
-      : [],
-    groups: book.groups
-      ? book.groups.split(",").map((name: string) => ({ name }))
-      : [],
-    characters: book.characters
-      ? book.characters.split(",").map((name: string) => ({ name }))
-      : [],
+    artists: toNameList(related?.artists),
+    tags: toNameList(related?.tags),
+    series: toNameList(related?.series),
+    groups: toNameList(related?.groups),
+    characters: toNameList(related?.characters),
   };
 };
 
@@ -896,7 +914,9 @@ export const handleGetNextBook = async ({
   filter: FilterParams | null;
 }) => {
   try {
-    const mainQuery = buildFilteredQuery(filter);
+    const mainQuery = buildFilteredQuery(filter, {
+      withArtists: filter?.sortBy === "artists",
+    });
 
     const viewerExcludeCompleted = configStore.get("viewerExcludeCompleted");
     if (viewerExcludeCompleted) {
@@ -951,7 +971,9 @@ export const handleGetNextBook = async ({
     }
 
     // Sequential mode
-    const currentBook = await buildFilteredQuery(null)
+    const currentBook = await buildFilteredQuery(null, {
+      withArtists: sortBy === "artists",
+    })
       .where("sub.id", currentBookId)
       .first();
     if (!currentBook) {
@@ -1002,7 +1024,8 @@ export const handleGetNextBook = async ({
                     sortValue,
                   )
                   .where("sub.id", "<", currentBookId),
-              ),
+              )
+              .orWhereNull("sub.hitomi_id"),
           );
           mainQuery.orderByRaw(
             "CAST(sub.hitomi_id AS INTEGER) DESC, sub.id DESC",
@@ -1045,7 +1068,8 @@ export const handleGetNextBook = async ({
                 b
                   .where(sortColumn, "=", sortValue)
                   .where("sub.id", "<", currentBookId),
-              ),
+              )
+              .orWhereNull(sortColumn),
           );
         }
         mainQuery.orderBy(sortColumn, "desc").orderBy("sub.id", "desc");
@@ -1101,7 +1125,9 @@ export const handleGetPrevBook = async ({
   filter: FilterParams | null;
 }) => {
   try {
-    const mainQuery = buildFilteredQuery(filter);
+    const mainQuery = buildFilteredQuery(filter, {
+      withArtists: filter?.sortBy === "artists",
+    });
     const { sortBy = "added_at", sortOrder = "desc" } = filter || {};
 
     const shuffleSql =
@@ -1143,7 +1169,9 @@ export const handleGetPrevBook = async ({
         : { success: true, prevBookId: null };
     }
 
-    const currentBook = await buildFilteredQuery(null)
+    const currentBook = await buildFilteredQuery(null, {
+      withArtists: sortBy === "artists",
+    })
       .where("sub.id", currentBookId)
       .first();
     if (!currentBook) {
@@ -1210,7 +1238,8 @@ export const handleGetPrevBook = async ({
                     sortValue,
                   )
                   .where("sub.id", "<", currentBookId),
-              ),
+              )
+              .orWhereNull("sub.hitomi_id"),
           );
           mainQuery.orderByRaw(
             "CAST(sub.hitomi_id AS INTEGER) DESC, sub.id DESC",
@@ -1259,7 +1288,8 @@ export const handleGetPrevBook = async ({
                 b
                   .where(sortColumn, "=", sortValue)
                   .where("sub.id", "<", currentBookId),
-              ),
+              )
+              .orWhereNull(sortColumn),
           );
         }
         mainQuery.orderBy(sortColumn, "desc").orderBy("sub.id", "desc");
