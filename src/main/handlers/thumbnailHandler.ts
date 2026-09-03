@@ -7,6 +7,7 @@ import { fileURLToPath } from "url"; // fileURLToPath 임포트
 import { Worker } from "node:worker_threads"; // Worker 임포트
 import db from "../db/index.js";
 import { console } from "../main.js";
+import { isImageFile, sortImageFiles } from "../utils/imageFiles.js";
 import { extractCoverFromZip } from "./directoryHandler.js";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -120,9 +121,7 @@ export async function generateThumbnailForBook(bookId: number) {
         .catch(() => false)
     ) {
       // 3-1. 폴더인 경우: 정렬 후 첫 번째 이미지 파일을 소스로 사용
-      const imageFiles = (await fs.readdir(book.path))
-        .filter((f) => f.match(/\.(jpg|jpeg|png|webp|avif)$/i))
-        .sort();
+      const imageFiles = sortImageFiles(await fs.readdir(book.path));
       if (imageFiles.length > 0) {
         sourcePath = path.join(book.path, imageFiles[0]);
       }
@@ -138,7 +137,7 @@ export async function generateThumbnailForBook(bookId: number) {
       );
       sourcePath = await extractCoverFromZip(book.path, tempCoverPath);
       tempSourcePath = sourcePath ?? undefined;
-    } else if (ext.match(/\.(jpg|jpeg|png|webp|avif)$/i)) {
+    } else if (isImageFile(book.path)) {
       // 3-3. 단일 이미지 파일인 경우: 해당 파일을 직접 소스로 사용
       sourcePath = book.path;
     }

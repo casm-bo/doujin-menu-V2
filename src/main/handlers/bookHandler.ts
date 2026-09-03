@@ -1,12 +1,11 @@
 import { ipcMain, shell } from "electron";
 import fs from "fs/promises";
 import type { Knex } from "knex";
-import path from "path";
-import * as yauzl from "yauzl";
 import type { EditableBookMetadata, FilterParams } from "../../types/ipc.js";
 import db from "../db/index.js";
 import { console } from "../main.js";
-import { naturalSort } from "../utils/index.js";
+import { sortImageFiles } from "../utils/imageFiles.js";
+import { getZipPageNames } from "../utils/zipPages.js";
 import { normalizeArtistName } from "../utils/artistName.js";
 import { normalizeTagName } from "../utils/tagName.js";
 import { DesktopCompanionSyncService } from "../services/companion/companionSyncService.js";
@@ -736,10 +735,7 @@ export const handleGetBookPagePaths = async (bookId: number) => {
       .then((stat) => stat.isDirectory())
       .catch(() => false);
     if (isDirectory) {
-      const files = await fs.readdir(bookPath);
-      const imageFiles = files
-        .filter((file) => file.match(/\.(jpg|jpeg|png|webp|gif|bmp|avif)$/i))
-        .sort(naturalSort);
+      const imageFiles = sortImageFiles(await fs.readdir(bookPath));
       for (let i = 0; i < imageFiles.length; i++) {
         pagePaths.push(`doujin-menu://page/${bookId}/${i}`);
       }
@@ -750,69 +746,16 @@ export const handleGetBookPagePaths = async (bookId: number) => {
         is_favorite: book.is_favorite,
       };
     } else if (/.(cbz|zip)$/i.exec(bookPath)) {
-      // ZIP 파일 처리
-      return new Promise((resolve, reject) => {
-        yauzl.open(
-          bookPath,
-          { lazyEntries: true, autoClose: false },
-          (err, zipfile) => {
-            if (err) {
-              console.error(`[Main] Error opening zip file ${bookPath}:`, err);
-              return reject({
-                success: false,
-                error: "Failed to open zip file",
-              });
-            }
-
-            const imageEntries: { fileName: string; entry: yauzl.Entry }[] = [];
-            zipfile.on("entry", (entry) => {
-              // 폴더 엔트리 무시
-              if (entry.fileName.endsWith("/")) {
-                zipfile.readEntry();
-                return;
-              }
-
-              const ext = path.extname(entry.fileName).toLowerCase();
-              if (
-                [
-                  ".jpg",
-                  ".jpeg",
-                  ".png",
-                  ".webp",
-                  ".gif",
-                  ".bmp",
-                  ".avif",
-                ].includes(ext)
-              ) {
-                imageEntries.push({ fileName: entry.fileName, entry });
-              }
-              zipfile.readEntry();
-            });
-
-            zipfile.on("end", () => {
-              imageEntries.sort((a, b) => naturalSort(a.fileName, b.fileName)); // 파일명으로 정렬
-              for (let i = 0; i < imageEntries.length; i++) {
-                pagePaths.push(`doujin-menu://page/${bookId}/${i}`);
-              }
-              zipfile.close();
-              resolve({
-                success: true,
-                data: pagePaths,
-                title: book.title,
-                is_favorite: book.is_favorite,
-              });
-            });
-
-            zipfile.on("error", (zipErr) => {
-              console.error(`[Main] Zip file error for ${bookPath}:`, zipErr);
-              zipfile.close();
-              reject({ success: false, error: "Error reading zip file" });
-            });
-
-            zipfile.readEntry(); // 첫 번째 엔트리 읽기 시작
-          },
-        );
-      });
+      const fileNames = await getZipPageNames(bookPath);
+      for (let i = 0; i < fileNames.length; i++) {
+        pagePaths.push(`doujin-menu://page/${bookId}/${i}`);
+      }
+      return {
+        success: true,
+        data: pagePaths,
+        title: book.title,
+        is_favorite: book.is_favorite,
+      };
     } else {
       console.warn(
         `[Main] Unsupported book format for bookId: ${bookId}, path: ${bookPath}`,

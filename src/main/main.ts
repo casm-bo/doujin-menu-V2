@@ -14,7 +14,6 @@ import { rmSync } from "fs";
 import fs from "fs/promises";
 import path from "path"; // path 모듈 전체 임포트
 import { fileURLToPath } from "url";
-import * as yauzl from "yauzl";
 import db, { closeDbConnection } from "./db/index.js"; // db 모듈 추가
 import "./handlers/bookHandler.js";
 import { registerBookHandlers } from "./handlers/bookHandler.js";
@@ -50,7 +49,8 @@ import {
 import { registerWindowHandlers } from "./handlers/windowHandler.js";
 import { registerCompanionHandlers } from "./handlers/companionHandler.js";
 import { registerUpdaterHandlers } from "./updater.js";
-import { naturalSort } from "./utils/index.js";
+import { imageMimeType, sortImageFiles } from "./utils/imageFiles.js";
+import { readZipPage } from "./utils/zipPages.js";
 import { parseMediaRequestUrl } from "./mediaProtocol.js";
 
 log.initialize();
@@ -318,125 +318,26 @@ app.whenReady().then(async () => {
         .catch(() => false);
 
       if (isDirectory) {
-        const files = await fs.readdir(bookPath);
-        const imageFiles = files
-          .filter((file) => file.match(/\.(jpg|jpeg|png|webp|gif|bmp|avif)$/i))
-          .sort(naturalSort);
+        const imageFiles = sortImageFiles(await fs.readdir(bookPath));
 
         if (pageIndex >= 0 && pageIndex < imageFiles.length) {
           const imagePath = path.join(bookPath, imageFiles[pageIndex]);
           const imageBuffer = await fs.readFile(imagePath);
-          const mimeType = `image/${path.extname(imagePath).substring(1)}`;
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           return new Response(imageBuffer as any, {
-            headers: { "Content-Type": mimeType },
+            headers: { "Content-Type": imageMimeType(imagePath) },
           });
         } else {
           return new Response("Page not found", { status: 404 });
         }
       } else if (/.(cbz|zip)$/i.exec(bookPath)) {
-        // ZIP 파일인 경우
-        return new Promise((resolve, reject) => {
-          yauzl.open(
-            bookPath,
-            { lazyEntries: true, autoClose: false },
-            (err, zipfile) => {
-              if (err) {
-                console.error(
-                  `[Main] Error opening zip file ${bookPath}:`,
-                  err,
-                );
-                return reject(
-                  new Response("Failed to open zip file", { status: 500 }),
-                );
-              }
+        const page = await readZipPage(bookPath, pageIndex);
+        if (!page)
+          return new Response("Page not found in zip", { status: 404 });
 
-              const imageEntries: { fileName: string; entry: yauzl.Entry }[] =
-                [];
-              zipfile.on("entry", (entry) => {
-                if (!entry.fileName.endsWith("/")) {
-                  // 폴더 엔트리 무시
-                  const ext = path.extname(entry.fileName).toLowerCase();
-                  if (
-                    [
-                      `.jpg`,
-                      `.jpeg`,
-                      `.png`,
-                      `.webp`,
-                      `.gif`,
-                      `.bmp`,
-                      `.avif`,
-                    ].includes(ext)
-                  ) {
-                    imageEntries.push({ fileName: entry.fileName, entry });
-                  }
-                }
-                zipfile.readEntry();
-              });
-
-              zipfile.on("end", () => {
-                imageEntries.sort((a, b) =>
-                  naturalSort(a.fileName, b.fileName),
-                ); // 파일명으로 정렬
-
-                if (pageIndex >= 0 && pageIndex < imageEntries.length) {
-                  const targetEntry = imageEntries[pageIndex].entry;
-                  zipfile.openReadStream(targetEntry, (err, readStream) => {
-                    if (err) {
-                      console.error(
-                        `[Main] Error opening read stream for ${targetEntry.fileName}:`,
-                        err,
-                      );
-                      zipfile.close(); // Ensure zipfile is closed on error
-                      return reject(
-                        new Response("Failed to read image from zip", {
-                          status: 500,
-                        }),
-                      );
-                    }
-
-                    const chunks: Buffer[] = [];
-                    readStream.on("data", (chunk) => chunks.push(chunk));
-                    readStream.on("end", () => {
-                      zipfile.close(); // Ensure zipfile is closed after stream ends
-                      const buffer = Buffer.concat(chunks);
-                      const mimeType = `image/${path.extname(targetEntry.fileName).substring(1)}`;
-                      resolve(
-                        new Response(buffer, {
-                          headers: { "Content-Type": mimeType },
-                        }),
-                      );
-                    });
-                    readStream.on("error", (streamErr) => {
-                      console.error(
-                        `[Main] Read stream error for ${targetEntry.fileName}:`,
-                        streamErr,
-                      );
-                      zipfile.close(); // Ensure zipfile is closed on stream error
-                      reject(
-                        new Response("Error reading image stream", {
-                          status: 500,
-                        }),
-                      );
-                    });
-                  });
-                } else {
-                  zipfile.close();
-                  resolve(
-                    new Response("Page not found in zip", { status: 404 }),
-                  );
-                }
-              });
-
-              zipfile.on("error", (zipErr) => {
-                console.error(`[Main] Zip file error for ${bookPath}:`, zipErr);
-                zipfile.close();
-                reject(new Response("Error reading zip file", { status: 500 }));
-              });
-
-              zipfile.readEntry(); // 첫 번째 엔트리 읽기 시작
-            },
-          );
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        return new Response(page.buffer as any, {
+          headers: { "Content-Type": imageMimeType(page.fileName) },
         });
       } else {
         return new Response("Unsupported book format", { status: 400 });
