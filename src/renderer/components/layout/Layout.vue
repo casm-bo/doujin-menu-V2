@@ -2,9 +2,10 @@
 import { getAppVersion, ipcRenderer, isFullscreen } from "@/api";
 import { useKeybindings } from "@/composable/useKeybindings";
 import { cn } from "@/lib/utils";
+import { useSubscriptionStore } from "@/store/subscriptionStore";
 import { useUiStore } from "@/store/uiStore";
 import { storeToRefs } from "pinia";
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, onUnmounted, ref } from "vue";
 import { useRoute } from "vue-router";
 import AppLock from "../common/AppLock.vue";
 import ChangelogDialog from "../common/ChangelogDialog.vue";
@@ -12,6 +13,7 @@ import Header from "./Header.vue";
 import Sidebar from "./Sidebar.vue";
 
 const uiStore = useUiStore();
+const subscriptionStore = useSubscriptionStore();
 const route = useRoute();
 const { isSidebarCollapsed, screenRotation } = storeToRefs(uiStore);
 const isViewer = computed(() => route.name === "Viewer");
@@ -65,12 +67,15 @@ useKeybindings(
 );
 
 onMounted(async () => {
+  subscriptionStore.initialize();
   const config = await ipcRenderer.invoke("get-config");
   const version = await getAppVersion();
   if (config.lastSeenChangelog !== version) {
     open.value = true;
   }
 });
+
+onUnmounted(() => subscriptionStore.cleanup());
 </script>
 
 <template>
