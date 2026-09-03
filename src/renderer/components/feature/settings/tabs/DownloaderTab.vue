@@ -18,6 +18,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@iconify/vue";
 import SettingItem from "@/components/feature/settings/SettingItem.vue";
+import { BLACKLIST_TYPES, buildBlacklistEntry } from "@/lib/blacklistTag";
 import { AcceptableValue } from "reka-ui";
 import { onMounted, ref } from "vue";
 import { toast } from "vue-sonner";
@@ -40,6 +41,10 @@ const compressFormat = ref<"cbz" | "zip">("cbz");
 const downloadPath = ref("");
 const hddDownloadMode = ref(false);
 const capitalizeNames = ref(false);
+const blacklistTags = ref<string[]>([]);
+const newTagType = ref("tag");
+const newTagName = ref("");
+const blacklistError = ref("");
 
 onMounted(async () => {
   const config = await ipcRenderer.invoke("get-config");
@@ -51,7 +56,31 @@ onMounted(async () => {
   downloadPath.value = (config.downloadPath as string) || "";
   hddDownloadMode.value = config.hddDownloadMode === true;
   capitalizeNames.value = config.capitalizeNames === true;
+  blacklistTags.value = (config.downloaderBlacklistTags as string[]) || [];
 });
+
+const addBlacklistTag = () => {
+  const result = buildBlacklistEntry(newTagType.value, newTagName.value);
+  if (!result.ok) {
+    blacklistError.value = result.error;
+    return;
+  }
+  if (blacklistTags.value.includes(result.entry)) {
+    blacklistError.value = "이미 목록에 있는 태그입니다.";
+    return;
+  }
+
+  blacklistError.value = "";
+  blacklistTags.value = [...blacklistTags.value, result.entry];
+  newTagName.value = "";
+  saveConfig("downloaderBlacklistTags", blacklistTags.value);
+};
+
+const removeBlacklistTag = (entry: string) => {
+  blacklistTags.value = blacklistTags.value.filter((tag) => tag !== entry);
+  blacklistError.value = "";
+  saveConfig("downloaderBlacklistTags", blacklistTags.value);
+};
 
 const selectDownloadPath = async () => {
   const result = await ipcRenderer.invoke("select-folder");
@@ -231,6 +260,61 @@ const onCapitalizeNamesChange = (value: boolean) => {
           </SelectContent>
         </Select>
       </SettingItem>
+      <div class="col-span-3 space-y-3 border-t pt-6">
+        <div>
+          <p class="text-sm font-semibold">차단 태그</p>
+          <p class="text-muted-foreground text-sm">
+            등록한 태그가 붙은 작품을 검색 결과에서 제외합니다. 갤러리 ID로 직접
+            검색할 때는 적용하지 않습니다.
+          </p>
+        </div>
+        <div class="flex flex-wrap items-start gap-2">
+          <Select v-model="newTagType">
+            <SelectTrigger class="w-[140px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem
+                v-for="type in BLACKLIST_TYPES"
+                :key="type"
+                :value="type"
+              >
+                {{ type }}
+              </SelectItem>
+            </SelectContent>
+          </Select>
+          <Input
+            v-model="newTagName"
+            placeholder="예: yaoi, big breasts"
+            class="w-[220px]"
+            @keyup.enter="addBlacklistTag"
+          />
+          <Button variant="secondary" @click="addBlacklistTag">추가</Button>
+        </div>
+        <p v-if="blacklistError" class="text-destructive text-xs">
+          {{ blacklistError }}
+        </p>
+        <div v-if="blacklistTags.length" class="flex flex-wrap gap-2">
+          <span
+            v-for="entry in blacklistTags"
+            :key="entry"
+            class="bg-muted inline-flex items-center gap-1 rounded-full py-1 pr-1 pl-3 text-xs"
+          >
+            {{ entry }}
+            <button
+              type="button"
+              class="hover:bg-background rounded-full p-0.5"
+              :aria-label="`${entry} 제거`"
+              @click="removeBlacklistTag(entry)"
+            >
+              <Icon icon="solar:close-circle-bold-duotone" class="h-4 w-4" />
+            </button>
+          </span>
+        </div>
+        <p v-else class="text-muted-foreground text-xs">
+          등록된 차단 태그가 없습니다.
+        </p>
+      </div>
     </CardContent>
   </Card>
 </template>

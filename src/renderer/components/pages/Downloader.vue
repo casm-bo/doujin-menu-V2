@@ -53,6 +53,8 @@ import GalleryThumbnailCard from "../feature/downloader/GalleryThumbnailCard.vue
 // 검색어 상태
 const searchQuery = ref("");
 const downloaderLanguage = ref("korean");
+type Popularity = "none" | "day" | "week" | "month" | "year";
+const downloaderPopularity = ref<Popularity>("none");
 
 const languageOptions = [
   { value: "all", label: "전체 언어" },
@@ -61,6 +63,17 @@ const languageOptions = [
   { value: "english", label: "영어" },
   { value: "chinese", label: "중국어" },
 ];
+
+const popularityOptions = [
+  { value: "none", label: "기본순" },
+  { value: "day", label: "일간 인기" },
+  { value: "week", label: "주간 인기" },
+  { value: "month", label: "월간 인기" },
+  { value: "year", label: "연간 인기" },
+] satisfies { value: Popularity; label: string }[];
+
+const isPopularity = (value: unknown): value is Popularity =>
+  popularityOptions.some((option) => option.value === value);
 
 // 뷰 모드 상태 ("grid": 썸네일, "list": 리스트)
 const viewMode = ref<"grid" | "list">(
@@ -114,7 +127,12 @@ const {
         ? `language:${downloaderLanguage.value} ${searchQuery.value}`
         : searchQuery.value;
 
-    const query = { searchQuery: finalSearchQuery.trim(), offset: 0 };
+    const query = {
+      searchQuery: finalSearchQuery.trim(),
+      offset: 0,
+      popularityOrderBy:
+        downloaderPopularity.value === "none" ? "" : downloaderPopularity.value,
+    };
     const result = await ipcRenderer.invoke("search-galleries", {
       query,
       page: pageParam,
@@ -282,6 +300,13 @@ onMounted(() => {
       downloaderLanguage.value = lang as string;
     }
   });
+  ipcRenderer
+    .invoke("get-config-value", "downloaderPopularity")
+    .then((popularity) => {
+      downloaderPopularity.value = isPopularity(popularity)
+        ? popularity
+        : "none";
+    });
 });
 
 onUnmounted(() => {
@@ -319,6 +344,16 @@ const handleLanguageChange = async (lang: AcceptableValue) => {
   if (searchQuery.value) {
     handleSearch();
   }
+};
+
+const handlePopularityChange = async (value: AcceptableValue) => {
+  if (!isPopularity(value)) return;
+  downloaderPopularity.value = value;
+  await ipcRenderer.invoke("set-config", {
+    key: "downloaderPopularity",
+    value: value === "none" ? "" : value,
+  });
+  if (searchKey.value > 0) handleSearch();
 };
 
 const router = useRouter();
@@ -437,7 +472,7 @@ useSearchPersistence(searchQuery, "downloader-search-query");
               />
             </div>
             <div
-              class="grid grid-cols-1 items-end gap-3 sm:grid-cols-[minmax(280px,2fr)_minmax(120px,0.65fr)_minmax(120px,0.55fr)]"
+              class="grid grid-cols-1 items-end gap-3 sm:grid-cols-[minmax(260px,2fr)_minmax(120px,0.65fr)_minmax(120px,0.65fr)_minmax(100px,0.5fr)]"
             >
               <div class="flex flex-col space-y-1.5">
                 <Label>프리셋</Label>
@@ -445,6 +480,26 @@ useSearchPersistence(searchQuery, "downloader-search-query");
                   v-model="searchQuery"
                   @apply-preset="handleSearch"
                 />
+              </div>
+              <div class="flex flex-col space-y-1.5">
+                <Label for="popularity-select">정렬</Label>
+                <Select
+                  :model-value="downloaderPopularity"
+                  @update:model-value="handlePopularityChange"
+                >
+                  <SelectTrigger id="popularity-select" class="w-full">
+                    <SelectValue placeholder="정렬 선택" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem
+                      v-for="option in popularityOptions"
+                      :key="option.value"
+                      :value="option.value"
+                    >
+                      {{ option.label }}
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
               <div class="flex flex-col space-y-1.5">
                 <Label for="language-select">언어</Label>
