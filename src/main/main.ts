@@ -12,6 +12,8 @@ import log from "electron-log";
 import windowStateKeeper from "electron-window-state";
 import { rmSync } from "fs";
 import fs from "fs/promises";
+import os from "os";
+import PQueue from "p-queue";
 import path from "path"; // path 모듈 전체 임포트
 import { fileURLToPath } from "url";
 import db, { closeDbConnection } from "./db/index.js"; // db 모듈 추가
@@ -476,8 +478,11 @@ app.whenReady().then(async () => {
               .whereLike("path", `${folderPath}%`)
               .and.where("cover_path", null);
 
-            await Promise.all(
-              books.map((book) => handleGenerateThumbnail(book.id)),
+            const thumbnailQueue = new PQueue({
+              concurrency: Math.min(4, os.cpus().length),
+            });
+            await thumbnailQueue.addAll(
+              books.map((book) => () => handleGenerateThumbnail(book.id)),
             );
           }
           for (const { folderPath, foundPaths } of completedScans) {

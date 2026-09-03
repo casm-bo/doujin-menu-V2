@@ -1296,7 +1296,7 @@ export async function scanDirectory(
         });
       };
 
-      const queue = new PQueue({ concurrency: os.cpus().length });
+      const queue = new PQueue({ concurrency: Math.min(4, os.cpus().length) });
       const THUMBNAIL_CHUNK_SIZE = 100;
       const thumbnailChunk: { bookId: number; thumbnailPath: string }[] = [];
 
@@ -1465,7 +1465,12 @@ export const handleRescanLibraryFolder = async (folderPath: string) => {
       .whereLike("path", `${folderPath}%`)
       .and.where("cover_path", null);
     const books = filterLibraryPathRows(candidates, folderPath);
-    await Promise.all(books.map((book) => handleGenerateThumbnail(book.id)));
+    const thumbnailQueue = new PQueue({
+      concurrency: Math.min(4, os.cpus().length),
+    });
+    await thumbnailQueue.addAll(
+      books.map((book) => () => handleGenerateThumbnail(book.id)),
+    );
     console.log(
       `[Main] ${folderPath}에 대한 재스캔 완료: 추가 ${added}, 업데이트 ${updated}, 삭제 ${deleted}`,
     );

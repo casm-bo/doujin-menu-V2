@@ -218,7 +218,7 @@ export const handleRegenerateAllThumbnails = async () => {
         query.where("is_offline", false).orWhereNull("is_offline"),
       );
 
-    const queue = new PQueue({ concurrency: os.cpus().length });
+    const queue = new PQueue({ concurrency: Math.min(4, os.cpus().length) });
     const updatedThumbnails: { bookId: number; thumbnailPath: string }[] = [];
     let failedCount = 0;
 

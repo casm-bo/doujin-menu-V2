@@ -4,6 +4,8 @@ import Store from "electron-store";
 import { existsSync } from "fs";
 import fs from "fs/promises";
 import knex from "knex";
+import os from "os";
+import PQueue from "p-queue";
 import path from "path";
 import db, { closeDbConnection } from "../db/index.js";
 import { filterLibraryPathRows } from "../utils/libraryPath.js";
@@ -294,7 +296,12 @@ export const handleRescanAllMetadata = async (mode: MetadataRescanMode) => {
         .whereLike("path", `${folderPath}%`)
         .and.where("cover_path", null);
       const books = filterLibraryPathRows(candidates, folderPath);
-      await Promise.all(books.map((book) => handleGenerateThumbnail(book.id)));
+      const thumbnailQueue = new PQueue({
+        concurrency: Math.min(4, os.cpus().length),
+      });
+      await thumbnailQueue.addAll(
+        books.map((book) => () => handleGenerateThumbnail(book.id)),
+      );
     }
     for (const { folderPath, foundPaths } of completedScans) {
       await cleanupMissingBooks(folderPath, foundPaths);
