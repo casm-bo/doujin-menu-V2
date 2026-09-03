@@ -482,15 +482,33 @@ export const seededShuffleOrderSql = (
   return `((${value}) * (${value}) + (${value}) * 1103515245 + 12345) % ${prime}`;
 };
 
+export const SORTABLE_COLUMNS = [
+  "title",
+  "added_at",
+  "file_mtime",
+  "last_read_at",
+  "artists",
+  "page_count",
+  "hitomi_id",
+  "random",
+] as const;
+
+export type SortableColumn = (typeof SORTABLE_COLUMNS)[number];
+
+export const normalizeSortBy = (value: unknown): SortableColumn =>
+  SORTABLE_COLUMNS.includes(value as SortableColumn)
+    ? (value as SortableColumn)
+    : "added_at";
+
+export const normalizeSortOrder = (value: unknown): "asc" | "desc" =>
+  value === "asc" ? "asc" : "desc";
+
 export const handleGetBooks = async (
   params: FilterParams & { pageParam?: number; pageSize?: number },
 ) => {
-  const {
-    pageParam = 0,
-    pageSize = 50,
-    sortBy = "added_at",
-    sortOrder = "desc",
-  } = params;
+  const { pageParam = 0, pageSize = 50 } = params;
+  const sortBy = normalizeSortBy(params.sortBy);
+  const sortOrder = normalizeSortOrder(params.sortOrder);
 
   const mainQuery = buildFilteredQuery(params, {
     withArtists: sortBy === "artists",
@@ -914,8 +932,10 @@ export const handleGetNextBook = async ({
   filter: FilterParams | null;
 }) => {
   try {
+    const sortBy = normalizeSortBy(filter?.sortBy);
+    const sortOrder = normalizeSortOrder(filter?.sortOrder);
     const mainQuery = buildFilteredQuery(filter, {
-      withArtists: filter?.sortBy === "artists",
+      withArtists: sortBy === "artists",
     });
 
     const viewerExcludeCompleted = configStore.get("viewerExcludeCompleted");
@@ -928,8 +948,6 @@ export const handleGetNextBook = async ({
           .orWhereRaw("sub.current_page < sub.page_count"),
       );
     }
-
-    const { sortBy = "added_at", sortOrder = "desc" } = filter || {};
 
     const shuffleSql =
       sortBy === "random" ? seededShuffleOrderSql(filter?.randomSeed) : null;
@@ -1125,10 +1143,11 @@ export const handleGetPrevBook = async ({
   filter: FilterParams | null;
 }) => {
   try {
+    const sortBy = normalizeSortBy(filter?.sortBy);
+    const sortOrder = normalizeSortOrder(filter?.sortOrder);
     const mainQuery = buildFilteredQuery(filter, {
-      withArtists: filter?.sortBy === "artists",
+      withArtists: sortBy === "artists",
     });
-    const { sortBy = "added_at", sortOrder = "desc" } = filter || {};
 
     const shuffleSql =
       sortBy === "random" ? seededShuffleOrderSql(filter?.randomSeed) : null;

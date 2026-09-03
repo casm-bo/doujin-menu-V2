@@ -12,10 +12,26 @@ import type { FilterParams } from "../../../src/types/ipc.js";
 import {
   parseSearchQuery,
   extractKoreanTitle,
+  normalizeSortBy,
+  normalizeSortOrder,
   seededShuffleOrderSql,
 } from "../../../src/main/handlers/bookHandler.js";
 
 // ========== 유닛 테스트: 순수 함수 ==========
+
+describe("sort parameter normalization", () => {
+  it("allows only known sort columns", () => {
+    expect(normalizeSortBy("file_mtime")).toBe("file_mtime");
+    expect(normalizeSortBy("title; DROP TABLE Book")).toBe("added_at");
+    expect(normalizeSortBy(undefined)).toBe("added_at");
+  });
+
+  it("allows only ascending or descending order", () => {
+    expect(normalizeSortOrder("asc")).toBe("asc");
+    expect(normalizeSortOrder("desc")).toBe("desc");
+    expect(normalizeSortOrder("desc; DROP TABLE Book")).toBe("desc");
+  });
+});
 
 describe("parseSearchQuery", () => {
   it("빈 문자열 → 모든 항목 빈 배열", () => {
