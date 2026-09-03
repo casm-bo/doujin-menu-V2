@@ -1,5 +1,10 @@
 <script setup lang="ts">
 import { Input } from "@/components/ui/input";
+import {
+  Popover,
+  PopoverAnchor,
+  PopoverContent,
+} from "@/components/ui/popover";
 import { useLookupData } from "@/composable/useLookupData";
 import { Icon } from "@iconify/vue";
 import { watchDebounced } from "@vueuse/core";
@@ -267,6 +272,9 @@ const applySuggestion = (suggestion: string) => {
 };
 
 const input = useTemplateRef<typeof Input>("input");
+const isSuggestionOpen = computed(
+  () => suggestions.value.length > 0 && isFocused.value,
+);
 
 const manualSuggestTrigger = ref(false);
 
@@ -333,59 +341,72 @@ defineExpose({ focus });
 </script>
 
 <template>
-  <div class="relative w-full">
-    <Input
-      ref="input"
-      :model-value="props.modelValue"
-      :placeholder="placeholder"
-      :class="['w-full', props.modelValue.length > 0 ? 'pr-20' : 'pr-12']"
-      @update:model-value="emit('update:modelValue', $event)"
-      @keydown="handleKeyDown"
-      @focus="isFocused = true"
-      @blur="isFocused = false"
-    />
-    <div
-      v-if="props.modelValue.length > 0"
-      class="absolute inset-y-0 right-0 flex items-center gap-1 pr-3"
+  <Popover :open="isSuggestionOpen">
+    <PopoverAnchor as-child>
+      <div class="relative w-full">
+        <Input
+          ref="input"
+          :model-value="props.modelValue"
+          :placeholder="placeholder"
+          :class="['w-full', props.modelValue.length > 0 ? 'pr-20' : 'pr-12']"
+          @update:model-value="emit('update:modelValue', $event)"
+          @keydown="handleKeyDown"
+          @focus="isFocused = true"
+          @blur="isFocused = false"
+        />
+        <div
+          v-if="props.modelValue.length > 0"
+          class="absolute inset-y-0 right-0 flex items-center gap-1 pr-3"
+        >
+          <button
+            type="button"
+            class="text-muted-foreground hover:text-foreground p-1 transition-colors"
+            @click="clearInput"
+          >
+            <Icon icon="solar:close-circle-bold-duotone" class="h-5 w-5" />
+          </button>
+          <button
+            type="button"
+            class="text-muted-foreground hover:text-foreground p-1 transition-colors"
+            @click="copyToClipboard"
+          >
+            <Icon icon="solar:copy-bold-duotone" class="h-5 w-5" />
+          </button>
+        </div>
+        <div
+          v-else
+          class="absolute inset-y-0 right-0 flex items-center gap-1 pr-3"
+        >
+          <button
+            type="button"
+            class="text-muted-foreground hover:text-foreground p-1 transition-colors"
+            @click="pasteFromClipboard"
+          >
+            <Icon icon="solar:clipboard-text-bold-duotone" class="h-5 w-5" />
+          </button>
+        </div>
+      </div>
+    </PopoverAnchor>
+
+    <PopoverContent
+      align="start"
+      :side-offset="4"
+      class="w-(--reka-popover-trigger-width) gap-0 p-1"
+      @open-auto-focus.prevent
+      @close-auto-focus.prevent
     >
-      <button
-        type="button"
-        class="text-muted-foreground hover:text-foreground p-1 transition-colors"
-        @click="clearInput"
-      >
-        <Icon icon="solar:close-circle-bold-duotone" class="h-5 w-5" />
-      </button>
-      <button
-        type="button"
-        class="text-muted-foreground hover:text-foreground p-1 transition-colors"
-        @click="copyToClipboard"
-      >
-        <Icon icon="solar:copy-bold-duotone" class="h-5 w-5" />
-      </button>
-    </div>
-    <div v-else class="absolute inset-y-0 right-0 flex items-center gap-1 pr-3">
-      <button
-        type="button"
-        class="text-muted-foreground hover:text-foreground p-1 transition-colors"
-        @click="pasteFromClipboard"
-      >
-        <Icon icon="solar:clipboard-text-bold-duotone" class="h-5 w-5" />
-      </button>
-    </div>
-    <ul
-      v-if="suggestions.length > 0 && isFocused"
-      class="bg-popover absolute z-10 mt-1 w-full rounded-md border shadow-lg"
-    >
-      <li
-        v-for="(suggestion, index) in suggestions"
-        :key="suggestion"
-        class="hover:bg-accent cursor-pointer px-4 py-2"
-        :class="{ 'bg-accent': index === activeSuggestionIndex }"
-        @mousedown.prevent
-        @click="applySuggestion(suggestion)"
-      >
-        {{ suggestion }}
-      </li>
-    </ul>
-  </div>
+      <ul>
+        <li
+          v-for="(suggestion, index) in suggestions"
+          :key="suggestion"
+          class="hover:bg-accent cursor-pointer rounded-md px-3 py-1.5"
+          :class="{ 'bg-accent': index === activeSuggestionIndex }"
+          @mousedown.prevent
+          @click="applySuggestion(suggestion)"
+        >
+          {{ suggestion }}
+        </li>
+      </ul>
+    </PopoverContent>
+  </Popover>
 </template>

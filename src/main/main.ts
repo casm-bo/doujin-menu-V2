@@ -275,48 +275,7 @@ function createWindow() {
 }
 
 app.whenReady().then(async () => {
-  createWindow();
-  createTray();
-
-  registerUpdaterHandlers(mainWindow);
-  registerBookHandlers();
-  registerConfigHandlers();
-  registerDirectoryHandlers();
-  registerDownloaderHandlers();
-  registerDownloadQueueHandlers();
-  registerEtcHandlers(mainWindow);
-  registerPresetHandlers();
-  registerSeriesCollectionHandlers();
-  registerBrowseHandlers();
-  registerStatisticsHandlers();
-  registerDuplicatesHandlers();
-  registerThumbnailHandlers();
-  registerWindowHandlers(mainWindow, createViewerWindow, viewerWindows);
-  await registerCompanionHandlers();
-
-  // 다운로드 큐 초기화 (미완료 다운로드 복구)
-  await initializeDownloadQueue();
-
-  // 앱 사용 시간 추적 시작
-  try {
-    const [logId] = await db("AppUsageLog").insert({
-      started_at: new Date().toISOString(),
-      ended_at: null,
-      duration: null,
-    });
-    currentUsageLogId = logId;
-  } catch (error) {
-    console.error("[Main] 앱 사용 시간 추적 시작 실패:", error);
-  }
-
-  fs.mkdir(path.join(app.getPath("userData"), "downloader_temp_thumbnails"), {
-    recursive: true,
-  });
-  fs.mkdir(path.join(app.getPath("userData"), "temp_cover"), {
-    recursive: true,
-  });
-
-  // 커스텀 프로토콜 등록
+  // 렌더러가 만들어질 때 이미 스킴이 등록되어 있어야 합니다.
   protocol.handle("doujin-menu", async (request) => {
     const mediaRequest = parseMediaRequestUrl(request.url);
     if (!mediaRequest) {
@@ -489,6 +448,47 @@ app.whenReady().then(async () => {
       );
       return new Response("Internal server error", { status: 500 });
     }
+  });
+
+  createWindow();
+  createTray();
+
+  registerUpdaterHandlers(mainWindow);
+  registerBookHandlers();
+  registerConfigHandlers();
+  registerDirectoryHandlers();
+  registerDownloaderHandlers();
+  registerDownloadQueueHandlers();
+  registerEtcHandlers(mainWindow);
+  registerPresetHandlers();
+  registerSeriesCollectionHandlers();
+  registerBrowseHandlers();
+  registerStatisticsHandlers();
+  registerDuplicatesHandlers();
+  registerThumbnailHandlers();
+  registerWindowHandlers(mainWindow, createViewerWindow, viewerWindows);
+  await registerCompanionHandlers();
+
+  // 다운로드 큐 초기화 (미완료 다운로드 복구)
+  await initializeDownloadQueue();
+
+  // 앱 사용 시간 추적 시작
+  try {
+    const [logId] = await db("AppUsageLog").insert({
+      started_at: new Date().toISOString(),
+      ended_at: null,
+      duration: null,
+    });
+    currentUsageLogId = logId;
+  } catch (error) {
+    console.error("[Main] 앱 사용 시간 추적 시작 실패:", error);
+  }
+
+  fs.mkdir(path.join(app.getPath("userData"), "downloader_temp_thumbnails"), {
+    recursive: true,
+  });
+  fs.mkdir(path.join(app.getPath("userData"), "temp_cover"), {
+    recursive: true,
   });
 
   // 앱 종료 시 외부 프로그램 임시 파일 정리

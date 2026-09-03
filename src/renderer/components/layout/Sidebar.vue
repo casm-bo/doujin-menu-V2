@@ -119,7 +119,7 @@ const handleNavClick = (item: NavItem) => {
     "
     style="-webkit-app-region: drag"
   >
-    <nav class="flex flex-1 flex-col gap-1">
+    <nav class="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto">
       <TooltipProvider :delay-duration="0">
         <template v-for="(section, sIdx) in navSections" :key="section.label">
           <!-- 섹션 라벨: 펼친 상태에서만 노출 -->

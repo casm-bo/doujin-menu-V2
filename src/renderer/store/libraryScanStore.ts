@@ -3,10 +3,20 @@ import { defineStore } from "pinia";
 import { computed, ref } from "vue";
 import type { LibraryScanProgress } from "../../types/ipc";
 
+export const AUTO_DISMISS_DELAY = 5000;
+
 export const useLibraryScanStore = defineStore("libraryScan", () => {
   // 상태
   const isScanning = ref(false);
   const scanProgress = ref<LibraryScanProgress | null>(null);
+  const completionId = ref(0);
+  let autoDismissTimer: ReturnType<typeof setTimeout> | null = null;
+
+  const clearAutoDismissTimer = () => {
+    if (autoDismissTimer === null) return;
+    clearTimeout(autoDismissTimer);
+    autoDismissTimer = null;
+  };
 
   // 계산된 속성
   const progressPercent = computed(() => scanProgress.value?.progress ?? 0);
@@ -49,11 +59,14 @@ export const useLibraryScanStore = defineStore("libraryScan", () => {
   // IPC 이벤트 핸들러
   const handleProgressUpdate = (...args: unknown[]) => {
     const progress = args[0] as LibraryScanProgress;
+    clearAutoDismissTimer();
     scanProgress.value = progress;
 
     // 완료 단계가 아니면 스캔 중으로 표시
     if (progress.phase === "completed") {
       isScanning.value = false;
+      completionId.value += 1;
+      autoDismissTimer = setTimeout(resetScanState, AUTO_DISMISS_DELAY);
     } else {
       isScanning.value = true;
     }
@@ -76,12 +89,14 @@ export const useLibraryScanStore = defineStore("libraryScan", () => {
   // 정리
   const cleanup = () => {
     if (!isInitialized) return;
+    clearAutoDismissTimer();
     stopProgressUpdate();
     isInitialized = false;
   };
 
   // 수동으로 스캔 상태 리셋
   const resetScanState = () => {
+    clearAutoDismissTimer();
     isScanning.value = false;
     scanProgress.value = null;
   };
@@ -90,6 +105,7 @@ export const useLibraryScanStore = defineStore("libraryScan", () => {
     // 상태
     isScanning,
     scanProgress,
+    completionId,
 
     // 계산된 속성
     progressPercent,

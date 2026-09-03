@@ -92,7 +92,7 @@ onMounted(async () => {
     :style="isViewer ? undefined : rotationStyle"
   >
     <Header v-if="!isViewer" class="col-span-2" />
-    <Sidebar v-if="!isViewer" class="row-start-2" />
+    <Sidebar v-if="!isViewer" class="row-start-2 min-h-0" />
     <AppLock v-if="!isViewer && uiStore.isLocked" />
     <main
       v-else-if="isViewer || !uiStore.isLocked"
