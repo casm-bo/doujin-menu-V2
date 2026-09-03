@@ -277,6 +277,8 @@ function createWindow() {
 }
 
 app.whenReady().then(async () => {
+  if (!gotTheLock) return;
+
   // 렌더러가 만들어질 때 이미 스킴이 등록되어 있어야 합니다.
   protocol.handle("doujin-menu", async (request) => {
     const mediaRequest = parseMediaRequestUrl(request.url);
@@ -294,10 +296,9 @@ app.whenReady().then(async () => {
           mediaRequest.fileName,
         );
         const imageBuffer = await fs.readFile(thumbnailPath);
-        const mimeType = `image/${path.extname(thumbnailPath).substring(1)}`;
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         return new Response(imageBuffer as any, {
-          headers: { "Content-Type": mimeType },
+          headers: { "Content-Type": imageMimeType(thumbnailPath) },
         });
       }
 
@@ -387,10 +388,11 @@ app.whenReady().then(async () => {
     console.error("[Main] 앱 사용 시간 추적 시작 실패:", error);
   }
 
-  fs.mkdir(path.join(app.getPath("userData"), "downloader_temp_thumbnails"), {
-    recursive: true,
-  });
-  fs.mkdir(path.join(app.getPath("userData"), "temp_cover"), {
+  await fs.mkdir(
+    path.join(app.getPath("userData"), "downloader_temp_thumbnails"),
+    { recursive: true },
+  );
+  await fs.mkdir(path.join(app.getPath("userData"), "temp_cover"), {
     recursive: true,
   });
 
