@@ -4,7 +4,10 @@ import { createWriteStream } from "fs";
 import fs from "fs/promises";
 import path from "path";
 import { console } from "../main.js";
-import { hitomiService } from "../services/hitomi/hitomiService.js";
+import {
+  hitomiService,
+  type SearchGalleriesParams,
+} from "../services/hitomi/hitomiService.js";
 import {
   buildGalleryDownloadPath,
   DEFAULT_DOWNLOAD_PATTERN,
@@ -140,15 +143,14 @@ export async function createDownloadArchive(
   }
 }
 
-export const handleSearchGalleries = async ({
-  query,
-  page = 1,
-}: {
-  query: { searchQuery: string; offset?: number };
-  page: number;
-}) => {
+export const handleSearchGalleries = async (params: SearchGalleriesParams) => {
   try {
-    const result = await hitomiService.searchGalleries({ query, page });
+    const result = await hitomiService.searchGalleries({
+      ...params,
+      popularityOrderBy:
+        params.popularityOrderBy ?? configStore.get("downloaderPopularity", ""),
+      blacklistTags: configStore.get("downloaderBlacklistTags", []),
+    });
     return { success: true, ...result };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

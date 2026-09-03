@@ -1360,6 +1360,33 @@ export const handleCheckBookExistsByHitomiId = async (hitomiId: number) => {
   }
 };
 
+export const handleCheckBooksExistByHitomiIds = async (hitomiIds: number[]) => {
+  try {
+    const uniqueIds = [
+      ...new Set(hitomiIds.filter((id) => Number.isInteger(id) && id > 0)),
+    ];
+    const result: Record<number, number> = {};
+
+    for (let offset = 0; offset < uniqueIds.length; offset += 500) {
+      const rows = await db("Book")
+        .whereIn("hitomi_id", uniqueIds.slice(offset, offset + 500).map(String))
+        .orderBy("id", "asc")
+        .select("id", "hitomi_id");
+      for (const row of rows) {
+        const hitomiId = Number(row.hitomi_id);
+        if (Number.isInteger(hitomiId) && result[hitomiId] === undefined) {
+          result[hitomiId] = row.id;
+        }
+      }
+    }
+
+    return { success: true, data: result };
+  } catch (error) {
+    console.error("Failed to check book existence by Hitomi IDs:", error);
+    return { success: false, error: (error as Error).message };
+  }
+};
+
 export const handleDeleteBook = async (
   bookId: number,
   options?: { permanent?: boolean },
@@ -1481,6 +1508,9 @@ export function registerBookHandlers() {
   );
   ipcMain.handle("check-book-exists-by-hitomi-id", (_event, hitomiId) =>
     handleCheckBookExistsByHitomiId(hitomiId),
+  );
+  ipcMain.handle("check-books-exist-by-hitomi-ids", (_event, hitomiIds) =>
+    handleCheckBooksExistByHitomiIds(hitomiIds),
   );
   ipcMain.handle("delete-book", (_event, { bookId, permanent }) =>
     handleDeleteBook(bookId, { permanent }),

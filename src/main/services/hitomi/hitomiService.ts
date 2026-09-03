@@ -1,9 +1,12 @@
 import {
   Extension,
+  SortType,
   ThumbnailSize,
   hitomi,
   type Gallery,
+  type GalleryOptions,
   type Image,
+  type Tag,
 } from "node-hitomi";
 import type {
   HitomiGallery as SerializableHitomiGallery,
@@ -12,33 +15,63 @@ import type {
 import { normalizeTagName } from "../../utils/tagName.js";
 
 export interface SearchGalleriesParams {
-  query: {
+  query?: {
     searchQuery: string;
     offset?: number;
   };
   page?: number;
+  searchQuery?: string;
+  popularityOrderBy?: "" | "day" | "week" | "month" | "year";
+  start?: number;
+  count?: number;
+  blacklistTags?: string[];
 }
 
 export interface SearchGalleriesResult {
   data: number[];
   hasNextPage: boolean;
+  total?: number;
+  generation?: number;
 }
 
 export type HitomiGallery = Gallery;
 export type HitomiGalleryFile = Image;
 
 const SEARCH_PAGE_SIZE = 30;
+const ID_CACHE_TTL_MS = 5 * 60 * 1000;
+const ID_CACHE_MAX = 3;
+const ID_CACHE_SKIP_OVER = 2_000_000;
+
+interface CachedGalleryIds {
+  ids: Int32Array;
+  cachedAt: number;
+  generation: number;
+}
 
 /**
  * Electron 전송 계층과 무관한 Hitomi 도메인 서비스입니다.
  * IPC와 Companion API는 모두 이 서비스를 통해 동일한 검색/조회 로직을 사용합니다.
  */
 export class HitomiService {
+  private readonly idCache = new Map<string, CachedGalleryIds>();
+  private generationCounter = 0;
+
   async searchGalleries({
     query,
     page = 1,
+    searchQuery,
+    popularityOrderBy = "",
+    start,
+    count = SEARCH_PAGE_SIZE,
+    blacklistTags = [],
   }: SearchGalleriesParams): Promise<SearchGalleriesResult> {
-    const terms = query.searchQuery
+    const resolvedQuery = searchQuery ?? query?.searchQuery ?? "";
+    const requestedStart =
+      start ??
+      (Math.max(page, 1) - 1) * SEARCH_PAGE_SIZE + (query?.offset || 0);
+    const resolvedStart = Math.max(0, Math.trunc(requestedStart));
+    const resolvedCount = Math.max(1, Math.min(100, Math.trunc(count)));
+    const terms = resolvedQuery
       .toLowerCase()
       .split(" ")
       .filter((term) => term.length > 0);
@@ -52,43 +85,113 @@ export class HitomiService {
         return {
           data: [galleryId],
           hasNextPage: false,
+          ...(searchQuery !== undefined ? { total: 1, generation: 0 } : {}),
         };
       }
     }
 
-    const trimmedQuery = query.searchQuery.trim();
-    let ids: number[];
-
-    if (trimmedQuery) {
-      const title: string[] = [];
-      const tags: string[] = [];
-
-      trimmedQuery.split(" ").forEach((text) => {
-        if (text.includes(":")) {
-          tags.push(text);
-        } else {
-          title.push(text);
-        }
-      });
-
-      const references = await hitomi.galleries.list({
-        title: title.length > 0 ? title.join(" ") : undefined,
-        tags: tags.length > 0 ? hitomi.tags.parse(tags.join(" ")) : undefined,
-      });
-      ids = references.map((reference) => reference.id);
-    } else {
-      const references = await hitomi.galleries.list();
-      ids = references.map((reference) => reference.id);
-    }
-
-    const offset =
-      (Math.max(page, 1) - 1) * SEARCH_PAGE_SIZE + (query.offset || 0);
-    const data = ids.slice(offset, offset + SEARCH_PAGE_SIZE);
+    const entry = await this.getCachedGalleryIds(
+      resolvedQuery,
+      popularityOrderBy,
+      blacklistTags,
+    );
+    const data = Array.from(
+      entry.ids.slice(resolvedStart, resolvedStart + resolvedCount),
+    );
 
     return {
       data,
-      hasNextPage: ids.length > offset + SEARCH_PAGE_SIZE,
+      hasNextPage: entry.ids.length > resolvedStart + resolvedCount,
+      total: entry.ids.length,
+      generation: entry.generation,
     };
+  }
+
+  private async getCachedGalleryIds(
+    searchQuery: string,
+    popularityOrderBy: "" | "day" | "week" | "month" | "year",
+    blacklistTags: string[],
+  ): Promise<CachedGalleryIds> {
+    const key = [
+      searchQuery.trim().split(/\s+/).filter(Boolean).join(" "),
+      popularityOrderBy,
+      [...blacklistTags].sort().join(","),
+    ].join("|");
+    const cached = this.idCache.get(key);
+    if (cached && Date.now() - cached.cachedAt < ID_CACHE_TTL_MS) return cached;
+
+    const ids = await this.fetchGalleryIds(
+      searchQuery,
+      popularityOrderBy,
+      blacklistTags,
+    );
+    const entry = {
+      ids: Int32Array.from(ids),
+      cachedAt: Date.now(),
+      generation: ++this.generationCounter,
+    };
+
+    if (ids.length <= ID_CACHE_SKIP_OVER) {
+      if (!this.idCache.has(key) && this.idCache.size >= ID_CACHE_MAX) {
+        const oldest = [...this.idCache.entries()].sort(
+          ([, a], [, b]) => a.cachedAt - b.cachedAt,
+        )[0]?.[0];
+        if (oldest) this.idCache.delete(oldest);
+      }
+      this.idCache.set(key, entry);
+    }
+
+    return entry;
+  }
+
+  private async fetchGalleryIds(
+    searchQuery: string,
+    popularityOrderBy: "" | "day" | "week" | "month" | "year",
+    blacklistTags: string[],
+  ): Promise<number[]> {
+    const titleTerms: string[] = [];
+    const tagTerms: string[] = [];
+    for (const term of searchQuery.trim().split(/\s+/).filter(Boolean)) {
+      (term.includes(":") ? tagTerms : titleTerms).push(term);
+    }
+
+    const parsedTags = tagTerms.length
+      ? hitomi.tags.parse(tagTerms.join(" "))
+      : [];
+    const seen = new Set(parsedTags.map((tag) => `${tag.type}:${tag.name}`));
+    const negativeTags: Tag[] = [];
+    for (const raw of blacklistTags) {
+      try {
+        const [tag] = hitomi.tags.parse(raw.startsWith("-") ? raw : `-${raw}`);
+        if (!tag) continue;
+        const key = `${tag.type}:${tag.name}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        negativeTags.push(tag);
+      } catch {
+        // 잘못 저장된 태그 하나 때문에 전체 검색을 실패시키지 않습니다.
+      }
+    }
+
+    const orderByMap = {
+      day: SortType.PopularityDay,
+      week: SortType.PopularityWeek,
+      month: SortType.PopularityMonth,
+      year: SortType.PopularityYear,
+    } as const;
+    const options: GalleryOptions = {
+      title: titleTerms.length ? titleTerms.join(" ") : undefined,
+      tags:
+        parsedTags.length || negativeTags.length
+          ? [...parsedTags, ...negativeTags].sort(
+              (a, b) => Number(a.isNegative) - Number(b.isNegative),
+            )
+          : undefined,
+    };
+    if (popularityOrderBy) options.orderBy = orderByMap[popularityOrderBy];
+
+    const references = await hitomi.galleries.list(options);
+    return references.map((reference) => reference.id);
   }
 
   async getGallery(galleryId: number): Promise<HitomiGallery> {

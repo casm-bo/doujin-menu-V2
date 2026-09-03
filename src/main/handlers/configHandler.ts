@@ -57,6 +57,8 @@ export interface Config {
   createInfoTxtFile?: boolean;
   compressDownload?: boolean;
   compressFormat?: "cbz" | "zip";
+  downloaderBlacklistTags?: string[];
+  downloaderPopularity?: "" | "day" | "week" | "month" | "year";
   capitalizeNames?: boolean;
   hddDownloadMode?: boolean;
   libraryViewSettings?: LibraryViewSettings;
@@ -103,6 +105,8 @@ const defaults: Config = {
   createInfoTxtFile: true,
   compressDownload: false,
   compressFormat: "cbz",
+  downloaderBlacklistTags: [],
+  downloaderPopularity: "",
   capitalizeNames: false,
   hddDownloadMode: false,
   libraryViewSettings: {

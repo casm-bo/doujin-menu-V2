@@ -368,6 +368,7 @@ vi.mock("../../../src/main/db/index.js", () => ({
 import {
   handleGetBooks,
   handleGetBook,
+  handleCheckBooksExistByHitomiIds,
   handleGetNextBook,
   handleGetPrevBook,
   handleSetSeriesRead,
@@ -396,6 +397,23 @@ describe("handleGetBooks - 통합 테스트", () => {
 
   beforeEach(async () => {
     await truncateAll(db);
+  });
+
+  it("여러 Hitomi ID의 보유 책을 한 번에 조회한다", async () => {
+    const first = await seedBook(db, { path: "/batch-a", hitomi_id: "101" });
+    const duplicate = await seedBook(db, {
+      path: "/batch-b",
+      hitomi_id: "101",
+    });
+    const second = await seedBook(db, { path: "/batch-c", hitomi_id: "202" });
+
+    const result = await handleCheckBooksExistByHitomiIds([101, 202, 101, 0]);
+
+    expect(result).toEqual({
+      success: true,
+      data: { 101: first.id, 202: second.id },
+    });
+    expect(duplicate.id).toBeGreaterThan(first.id);
   });
 
   it("updates editable metadata and replaces relation values", async () => {

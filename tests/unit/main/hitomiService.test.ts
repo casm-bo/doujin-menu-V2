@@ -23,6 +23,12 @@ vi.mock("node-hitomi", () => ({
   ThumbnailSize: {
     Small: "small",
   },
+  SortType: {
+    PopularityDay: "today",
+    PopularityWeek: "week",
+    PopularityMonth: "month",
+    PopularityYear: "year",
+  },
 }));
 
 import { HitomiService } from "../../../src/main/services/hitomi/hitomiService";

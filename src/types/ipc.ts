@@ -351,6 +351,14 @@ export interface IpcChannels {
       error?: unknown;
     };
   };
+  "check-books-exist-by-hitomi-ids": {
+    request: number[];
+    response: {
+      success: boolean;
+      data?: Record<number, number>;
+      error?: string;
+    };
+  };
   "delete-book": {
     request: { bookId: number; permanent?: boolean };
     response: { success: boolean; error?: string };
@@ -587,13 +595,19 @@ export interface IpcChannels {
   // Downloader handlers
   "search-galleries": {
     request: {
-      query: { searchQuery: string; offset?: number };
-      page: number;
+      query?: { searchQuery: string; offset?: number };
+      page?: number;
+      searchQuery?: string;
+      popularityOrderBy?: "" | "day" | "week" | "month" | "year";
+      start?: number;
+      count?: number;
     };
     response: {
       success: boolean;
       data?: number[];
       hasNextPage?: boolean;
+      total?: number;
+      generation?: number;
       error?: string;
     };
   };
