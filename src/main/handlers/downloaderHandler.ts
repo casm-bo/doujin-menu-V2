@@ -22,6 +22,8 @@ import {
 } from "./directoryHandler.js";
 import { parseInfoTxt, type ParsedMetadata } from "../parsers/infoTxtParser.js";
 
+const QUEUE_BROADCAST_INTERVAL_MS = 200;
+
 export interface PreparedDownloadTransfer {
   galleryId: number;
   stagedPath: string;
@@ -378,6 +380,33 @@ export const handleDownloadGallery = async (
       });
     }
 
+    let lastQueueBroadcast = 0;
+    const reportProgress = async (index: number, force = false) => {
+      const progress = Math.round(((index + 1) / totalFiles) * 100);
+      webContents.send("download-progress", {
+        galleryId,
+        status: "progress",
+        progress,
+      });
+
+      if (!queueId) return;
+      const now = Date.now();
+      if (!force && now - lastQueueBroadcast < QUEUE_BROADCAST_INTERVAL_MS) {
+        return;
+      }
+      lastQueueBroadcast = now;
+
+      const db = (await import("../db/index.js")).default;
+      await db("DownloadQueue")
+        .where("id", queueId)
+        .update({ progress, downloaded_files: index + 1 });
+
+      const { BrowserWindow } = await import("electron");
+      BrowserWindow.getAllWindows().forEach((window) => {
+        window.webContents.send("download-queue-updated");
+      });
+    };
+
     for (let i = 0; i < totalFiles; i++) {
       // 취소 확인
       if (shouldCancel && shouldCancel()) {
@@ -397,31 +426,7 @@ export const handleDownloadGallery = async (
       try {
         await fs.access(filePath);
 
-        // 진행률 업데이트
-        const progress = Math.round(((i + 1) / totalFiles) * 100);
-        webContents.send("download-progress", {
-          galleryId,
-          status: "progress",
-          progress,
-        });
-
-        // 큐 ID가 있으면 DB 업데이트
-        if (queueId) {
-          const db = (await import("../db/index.js")).default;
-          await db("DownloadQueue")
-            .where("id", queueId)
-            .update({
-              progress,
-              downloaded_files: i + 1,
-            });
-
-          // 모든 윈도우에 큐 업데이트 알림
-          const { BrowserWindow } = await import("electron");
-          const windows = BrowserWindow.getAllWindows();
-          windows.forEach((window) => {
-            window.webContents.send("download-queue-updated");
-          });
-        }
+        await reportProgress(i, i === totalFiles - 1);
 
         continue; // 다음 파일로
       } catch {
@@ -527,30 +532,7 @@ export const handleDownloadGallery = async (
       // 연속 요청으로 이미지 CDN의 일시 제한에 걸리지 않도록 간격을 둡니다.
       await wait(INTER_FILE_DELAY_MS);
 
-      const progress = Math.round(((i + 1) / totalFiles) * 100);
-      webContents.send("download-progress", {
-        galleryId,
-        status: "progress",
-        progress,
-      });
-
-      // 큐 ID가 있으면 DB 업데이트
-      if (queueId) {
-        const db = (await import("../db/index.js")).default;
-        await db("DownloadQueue")
-          .where("id", queueId)
-          .update({
-            progress,
-            downloaded_files: i + 1,
-          });
-
-        // 모든 윈도우에 큐 업데이트 알림
-        const { BrowserWindow } = await import("electron");
-        const windows = BrowserWindow.getAllWindows();
-        windows.forEach((window) => {
-          window.webContents.send("download-queue-updated");
-        });
-      }
+      await reportProgress(i, i === totalFiles - 1);
     }
 
     // info.txt 파일 생성 (설정에 따라)
