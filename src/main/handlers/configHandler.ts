@@ -59,6 +59,7 @@ export interface Config {
   compressFormat?: "cbz" | "zip";
   downloaderBlacklistTags?: string[];
   downloaderPopularity?: "" | "day" | "week" | "month" | "year";
+  subscriptionEnabled?: boolean;
   capitalizeNames?: boolean;
   hddDownloadMode?: boolean;
   libraryViewSettings?: LibraryViewSettings;
@@ -107,6 +108,7 @@ const defaults: Config = {
   compressFormat: "cbz",
   downloaderBlacklistTags: [],
   downloaderPopularity: "",
+  subscriptionEnabled: true,
   capitalizeNames: false,
   hddDownloadMode: false,
   libraryViewSettings: {

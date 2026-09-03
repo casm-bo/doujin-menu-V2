@@ -38,9 +38,7 @@ import {
   registerEtcHandlers,
 } from "./handlers/etcHandler.js";
 import { registerPresetHandlers } from "./handlers/presetHandler.js";
-import {
-  registerSeriesCollectionHandlers,
-} from "./handlers/seriesCollectionHandler.js";
+import { registerSeriesCollectionHandlers } from "./handlers/seriesCollectionHandler.js";
 import { registerBrowseHandlers } from "./handlers/browseHandler.js";
 import { registerStatisticsHandlers } from "./handlers/statisticsHandler.js";
 import { registerDuplicatesHandlers } from "./handlers/duplicatesHandler.js";
@@ -49,6 +47,10 @@ import {
   registerThumbnailHandlers,
 } from "./handlers/thumbnailHandler.js";
 import { registerWindowHandlers } from "./handlers/windowHandler.js";
+import {
+  registerSubscriptionHandlers,
+  startSubscriptionPollingIfEnabled,
+} from "./handlers/subscriptionHandler.js";
 import { registerCompanionHandlers } from "./handlers/companionHandler.js";
 import { registerUpdaterHandlers } from "./updater.js";
 import { imageMimeType, sortImageFiles } from "./utils/imageFiles.js";
@@ -152,6 +154,7 @@ function createTray(): void {
 
 // 최초 부팅 시 라이브러리 자동 스캔을 1회만 실행했는지 추적 (새로고침 시 재실행 방지)
 let hasRunInitialLibraryScan = false;
+let hasStartedSubscriptionPolling = false;
 
 function createViewerWindow(fromUrl: string) {
   // 첫 창 생성 시 위치를 메인 창 기준으로 오프셋
@@ -273,7 +276,6 @@ function createWindow() {
   mainWindow.on("unmaximize", () => {
     mainWindow.webContents.send("window-maximized", false);
   });
-
 }
 
 app.whenReady().then(async () => {
@@ -371,6 +373,7 @@ app.whenReady().then(async () => {
   registerDuplicatesHandlers();
   registerThumbnailHandlers();
   registerWindowHandlers(mainWindow, createViewerWindow, viewerWindows);
+  registerSubscriptionHandlers(mainWindow);
   await registerCompanionHandlers();
 
   // 다운로드 큐 초기화 (미완료 다운로드 복구)
@@ -500,6 +503,12 @@ app.whenReady().then(async () => {
       })();
     });
   }
+
+  ipcMain.on("renderer-ready", () => {
+    if (hasStartedSubscriptionPolling) return;
+    hasStartedSubscriptionPolling = true;
+    setTimeout(startSubscriptionPollingIfEnabled, 10_000);
+  });
 });
 
 app.on("window-all-closed", async function () {

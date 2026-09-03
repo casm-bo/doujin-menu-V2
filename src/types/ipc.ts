@@ -146,6 +146,24 @@ export interface DownloadQueueItem {
   priority: number;
 }
 
+export interface Subscription {
+  id: number;
+  query: string;
+  normalized_query: string;
+  label?: string | null;
+  enabled: boolean;
+  last_seen_id: number | null;
+  created_at: string;
+  last_checked_at: string | null;
+}
+
+export interface SubscriptionStatus {
+  newCount: number;
+  subscriptionCount: number;
+  feedTotal: number;
+  lastCheckedAt: string | null;
+}
+
 export interface Statistics {
   totalBooks: number;
   readingProgress: {
@@ -667,6 +685,51 @@ export interface IpcChannels {
     response: { success: boolean; error?: string };
   };
 
+  // Subscription handlers
+  "get-subscriptions": {
+    request: void;
+    response: {
+      success: boolean;
+      data?: Subscription[];
+      errors?: Record<number, string>;
+      error?: string;
+    };
+  };
+  "add-subscription": {
+    request: { query: string; label?: string };
+    response: { success: boolean; data?: Subscription; error?: string };
+  };
+  "update-subscription": {
+    request: { id: number; query?: string; label?: string; enabled?: boolean };
+    response: { success: boolean; error?: string };
+  };
+  "remove-subscription": {
+    request: number;
+    response: { success: boolean; error?: string };
+  };
+  "get-subscription-feed": {
+    request: { start: number; count: number };
+    response: {
+      success: boolean;
+      data?: number[];
+      total?: number;
+      generation?: number;
+      error?: string;
+    };
+  };
+  "get-subscription-status": {
+    request: void;
+    response: { success: boolean; data?: SubscriptionStatus; error?: string };
+  };
+  "enter-subscription-tab": {
+    request: void;
+    response: { success: boolean; error?: string };
+  };
+  "refresh-subscriptions": {
+    request: void;
+    response: { success: boolean; error?: string };
+  };
+
   // Series Collection handlers
   "get-series-collections": {
     request: {
@@ -924,6 +987,11 @@ export interface IpcSendChannels {
   };
   "cancel-download": string; // galleryId
   "renderer-ready": void; // 렌더러 준비 완료 신호 (자동 스캔 결과 수신 준비)
+}
+
+export interface IpcListenChannels {
+  "subscriptions-updated": void;
+  "subscription-new-found": { subscriptionCount: number; newCount: number };
 }
 
 // Typed IpcRenderer wrapper
