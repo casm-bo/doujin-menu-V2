@@ -13,12 +13,14 @@ const props = withDefaults(
     loading?: boolean;
     error?: string | null;
     interactive?: boolean;
+    selectLabel?: string;
   }>(),
   {
     referer: "",
     loading: false,
     error: null,
     interactive: true,
+    selectLabel: "페이지부터 읽기",
   },
 );
 
@@ -138,7 +140,7 @@ onBeforeUnmount(() => observer?.disconnect());
         :data-index="index"
         class="h-full shrink-0"
         :class="interactive ? 'cursor-pointer' : 'cursor-default'"
-        :title="interactive ? `${index + 1}페이지부터 읽기` : undefined"
+        :title="interactive ? `${index + 1}${selectLabel}` : undefined"
         @click="interactive && emit('selectPage', index)"
       >
         <ProxiedImage
@@ -171,7 +173,7 @@ onBeforeUnmount(() => observer?.disconnect());
         type="button"
         :data-index="index"
         :class="interactive ? 'cursor-pointer' : 'cursor-default'"
-        :title="interactive ? `${index + 1}페이지부터 읽기` : undefined"
+        :title="interactive ? `${index + 1}${selectLabel}` : undefined"
         @click="interactive && emit('selectPage', index)"
       >
         <ProxiedImage

@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+/* eslint-disable vue/one-component-per-file -- Test-only component stubs. */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   createApp,
@@ -11,16 +12,20 @@ import {
 } from "vue";
 import type { HitomiGalleryDetails } from "../../../src/types/hitomi";
 
-const api = vi.hoisted(() => ({ invoke: vi.fn(), getBook: vi.fn() }));
+const api = vi.hoisted(() => ({
+  invoke: vi.fn(),
+  getBook: vi.fn(),
+  send: vi.fn(),
+}));
 vi.mock("@/api", () => ({
-  ipcRenderer: { invoke: api.invoke },
+  ipcRenderer: { invoke: api.invoke, send: api.send },
   getBook: api.getBook,
 }));
 vi.mock("vue-router", () => ({ useRouter: () => ({ push: vi.fn() }) }));
 vi.mock("vue-sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 vi.mock("@/components/common/ProxiedImage.vue", () => ({
   default: defineComponent({
-    props: ["url", "id", "lazy"],
+    props: { url: String, id: [String, Number], lazy: Boolean },
     setup: (props) => () =>
       h("img", { "data-proxy": props.id, src: props.url }),
   }),
@@ -54,6 +59,7 @@ vi.mock("@/components/feature/MetadataField.vue", () => ({
 
 import PagePreview from "../../../src/renderer/components/feature/PagePreview.vue";
 import GalleryPreviewDialog from "../../../src/renderer/components/feature/downloader/GalleryPreviewDialog.vue";
+import PageFullscreenDialog from "../../../src/renderer/components/feature/PageFullscreenDialog.vue";
 
 const observe = vi.fn();
 const apps: App[] = [];
@@ -107,6 +113,70 @@ afterEach(() => {
 });
 
 describe("preview loading", () => {
+  it("opens the clicked local page in fullscreen and returns to the details", async () => {
+    api.invoke.mockImplementation(async (channel: string) =>
+      channel === "is-fullscreen-window" ? false : { success: true, bookId: 7 },
+    );
+    api.getBook.mockResolvedValue({ id: 7, page_count: 2, is_offline: false });
+    const { host } = mount(GalleryPreviewDialog, {
+      open: true,
+      gallery: gallery(),
+    });
+    await flush();
+    (host.querySelector('button[data-index="1"]') as HTMLButtonElement).click();
+    await flush();
+    expect(api.send).toHaveBeenCalledWith("set-fullscreen-window", true);
+    expect(
+      host.querySelector('img[alt="2페이지"][src="doujin-menu://page/7/1"]'),
+    ).not.toBeNull();
+    const fullscreen = host.querySelector('[aria-label="전체화면 닫기"]')!
+      .parentElement!.parentElement!;
+    fullscreen.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "ArrowLeft", bubbles: true }),
+    );
+    await flush();
+    expect(fullscreen.querySelector('img[alt="1페이지"]')).not.toBeNull();
+    (
+      host.querySelector('[aria-label="전체화면 닫기"]') as HTMLButtonElement
+    ).click();
+    await flush();
+    expect(api.send).toHaveBeenLastCalledWith("set-fullscreen-window", false);
+    expect(host.querySelector('[aria-label="전체화면 닫기"]')).toBeNull();
+    expect(host.textContent).toContain("다운로드 상세");
+  });
+
+  it("keeps an already fullscreen window fullscreen when closing the image", async () => {
+    api.invoke.mockResolvedValue(true);
+    const { state } = mount(PageFullscreenDialog, {
+      open: true,
+      pages: ["/1.jpg"],
+      startIndex: 0,
+    });
+    await flush();
+    state.open = false;
+    await flush();
+    expect(api.send).not.toHaveBeenCalled();
+  });
+
+  it("does not enter fullscreen after a dismissed preview finishes its lookup", async () => {
+    let finish!: (value: boolean) => void;
+    api.invoke.mockReturnValue(
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+    );
+    const { state } = mount(PageFullscreenDialog, {
+      open: true,
+      pages: ["/1.jpg"],
+      startIndex: 0,
+    });
+    state.open = false;
+    await flush();
+    finish(false);
+    await flush();
+    expect(api.send).not.toHaveBeenCalled();
+  });
+
   it("scrolls pages with the wheel and lets the outer popup scroll at the edge", async () => {
     const { host } = mount(PagePreview, { pages: ["/1.jpg", "/2.jpg"] });
     await flush();

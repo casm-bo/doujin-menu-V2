@@ -16,6 +16,7 @@ import type { HitomiGalleryDetails } from "../../../../types/hitomi.js";
 import type { Book } from "../../../../types/ipc";
 import MetadataField from "../MetadataField.vue";
 import PagePreview from "../PagePreview.vue";
+import PageFullscreenDialog from "../PageFullscreenDialog.vue";
 
 const props = defineProps<{
   open: boolean;
@@ -49,6 +50,7 @@ const previewImageUrls = ref<string[]>([]);
 const isLoadingImages = ref(false);
 const imageLoadError = ref<string | null>(null);
 const libraryBook = ref<Book | null>(null);
+const fullscreenPage = ref<number | null>(null);
 const useLocalPreview = computed(
   () =>
     !!libraryBook.value &&
@@ -82,6 +84,7 @@ watch(
   () => [props.open, props.gallery?.id] as const,
   async ([open]) => {
     const request = ++previewRequest;
+    fullscreenPage.value = null;
     if (!open || !props.gallery) return;
     const galleryId = props.gallery.id;
     isLoadingImages.value = true;
@@ -154,8 +157,8 @@ watch(
             />
             <ProxiedImage
               v-else-if="!isLoadingImages"
-              :key="gallery.id"
               :id="gallery.id"
+              :key="gallery.id"
               :url="gallery.thumbnailUrl"
               :referer="refererUrl"
               :alt="gallery.title.display"
@@ -276,13 +279,14 @@ watch(
         </div>
 
         <PagePreview
+          select-label="페이지 전체화면 보기"
           style="--page-preview-height: min(76.5dvh, calc(90dvh - 6rem))"
           :pages="previewImageUrls"
           :proxy-id="useLocalPreview ? undefined : gallery.id"
           :referer="refererUrl"
           :loading="isLoadingImages"
           :error="imageLoadError"
-          :interactive="false"
+          @select-page="fullscreenPage = $event"
         />
       </div>
 
@@ -291,4 +295,13 @@ watch(
       </div>
     </DialogContent>
   </Dialog>
+  <PageFullscreenDialog
+    v-if="fullscreenPage !== null"
+    :open="true"
+    :pages="previewImageUrls"
+    :start-index="fullscreenPage"
+    :proxy-id="useLocalPreview ? undefined : gallery?.id"
+    :referer="refererUrl"
+    @update:open="fullscreenPage = null"
+  />
 </template>
