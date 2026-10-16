@@ -8,12 +8,14 @@ import {
 } from "@/components/ui/tooltip";
 import { clearScrollPosition } from "@/composable/useScrollRestoration";
 import { cn } from "@/lib/utils";
+import { useSubscriptionStore } from "@/store/subscriptionStore";
 import { useUiStore } from "@/store/uiStore";
 import { Icon } from "@iconify/vue";
 import { storeToRefs } from "pinia";
 import { useRoute, useRouter } from "vue-router";
 
 const uiStore = useUiStore();
+const subscriptionStore = useSubscriptionStore();
 const { isSidebarCollapsed } = storeToRefs(uiStore);
 const { toggleSidebar } = uiStore;
 
@@ -119,7 +121,7 @@ const handleNavClick = (item: NavItem) => {
     "
     style="-webkit-app-region: drag"
   >
-    <nav class="flex flex-1 flex-col gap-1">
+    <nav class="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto">
       <TooltipProvider :delay-duration="0">
         <template v-for="(section, sIdx) in navSections" :key="section.label">
           <!-- 섹션 라벨: 펼친 상태에서만 노출 -->
@@ -155,7 +157,15 @@ const handleNavClick = (item: NavItem) => {
                 "
                 @click="handleNavClick(item)"
               >
-                <Icon :icon="item.icon" class="h-5 w-5" />
+                <span class="relative flex shrink-0">
+                  <Icon :icon="item.icon" class="h-5 w-5" />
+                  <span
+                    v-if="
+                      item.to === '/downloader' && subscriptionStore.hasUnseen
+                    "
+                    class="bg-destructive ring-background absolute -top-0.5 -right-0.5 h-2 w-2 rounded-full ring-2"
+                  />
+                </span>
                 <span v-if="!isSidebarCollapsed" class="whitespace-nowrap">
                   {{ item.label }}
                 </span>

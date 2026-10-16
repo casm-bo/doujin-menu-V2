@@ -23,6 +23,12 @@ vi.mock("node-hitomi", () => ({
   ThumbnailSize: {
     Small: "small",
   },
+  SortType: {
+    PopularityDay: "today",
+    PopularityWeek: "week",
+    PopularityMonth: "month",
+    PopularityYear: "year",
+  },
 }));
 
 import { HitomiService } from "../../../src/main/services/hitomi/hitomiService";
@@ -59,6 +65,28 @@ describe("HitomiService", () => {
 
     expect(result).toEqual({ data: [123456], hasNextPage: false });
     expect(hitomiMocks.list).not.toHaveBeenCalled();
+  });
+
+  it("프리픽스 없는 숫자도 ID로 조회한다", async () => {
+    const result = await service.searchGalleries({
+      query: { searchQuery: "123456" },
+    });
+
+    expect(result).toEqual({ data: [123456], hasNextPage: false });
+    expect(hitomiMocks.list).not.toHaveBeenCalled();
+  });
+
+  it("숫자가 섞인 낱말은 일반 검색어로 처리한다", async () => {
+    hitomiMocks.list.mockResolvedValue([]);
+
+    await service.searchGalleries({
+      query: { searchQuery: "123456화" },
+    });
+
+    expect(hitomiMocks.list).toHaveBeenCalledWith({
+      title: "123456화",
+      tags: undefined,
+    });
   });
 
   it("일반 검색어와 필터를 분리하고 페이지네이션한다", async () => {
@@ -104,6 +132,7 @@ describe("HitomiService", () => {
         id: 10,
         files: [coverFile],
         relations: [{ id: 99 }],
+        tags: [{ type: "male", name: "long hair", isNegative: false }],
       }),
     );
 
@@ -117,6 +146,9 @@ describe("HitomiService", () => {
       local: "한국어",
     });
     expect(result.relatedIds).toEqual([99]);
+    expect(result.tags).toEqual([
+      { type: "male", name: "long_hair", isNegative: false },
+    ]);
     expect(result.files[0]).toMatchObject({ index: 0, hash: "hash" });
   });
 

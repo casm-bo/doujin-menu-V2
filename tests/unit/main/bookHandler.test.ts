@@ -12,10 +12,26 @@ import type { FilterParams } from "../../../src/types/ipc.js";
 import {
   parseSearchQuery,
   extractKoreanTitle,
+  normalizeSortBy,
+  normalizeSortOrder,
   seededShuffleOrderSql,
 } from "../../../src/main/handlers/bookHandler.js";
 
 // ========== 유닛 테스트: 순수 함수 ==========
+
+describe("sort parameter normalization", () => {
+  it("allows only known sort columns", () => {
+    expect(normalizeSortBy("file_mtime")).toBe("file_mtime");
+    expect(normalizeSortBy("title; DROP TABLE Book")).toBe("added_at");
+    expect(normalizeSortBy(undefined)).toBe("added_at");
+  });
+
+  it("allows only ascending or descending order", () => {
+    expect(normalizeSortOrder("asc")).toBe("asc");
+    expect(normalizeSortOrder("desc")).toBe("desc");
+    expect(normalizeSortOrder("desc; DROP TABLE Book")).toBe("desc");
+  });
+});
 
 describe("parseSearchQuery", () => {
   it("빈 문자열 → 모든 항목 빈 배열", () => {
@@ -352,6 +368,7 @@ vi.mock("../../../src/main/db/index.js", () => ({
 import {
   handleGetBooks,
   handleGetBook,
+  handleCheckBooksExistByHitomiIds,
   handleGetNextBook,
   handleGetPrevBook,
   handleSetSeriesRead,
@@ -382,6 +399,23 @@ describe("handleGetBooks - 통합 테스트", () => {
     await truncateAll(db);
   });
 
+  it("여러 Hitomi ID의 보유 책을 한 번에 조회한다", async () => {
+    const first = await seedBook(db, { path: "/batch-a", hitomi_id: "101" });
+    const duplicate = await seedBook(db, {
+      path: "/batch-b",
+      hitomi_id: "101",
+    });
+    const second = await seedBook(db, { path: "/batch-c", hitomi_id: "202" });
+
+    const result = await handleCheckBooksExistByHitomiIds([101, 202, 101, 0]);
+
+    expect(result).toEqual({
+      success: true,
+      data: { 101: first.id, 202: second.id },
+    });
+    expect(duplicate.id).toBeGreaterThan(first.id);
+  });
+
   it("updates editable metadata and replaces relation values", async () => {
     const oldArtist = await seedArtist(db, "old artist");
     const book = await seedBook(db, { path: "/editable", title: "old title" });
@@ -410,7 +444,7 @@ describe("handleGetBooks - 통합 테스트", () => {
       type: "doujinshi",
       language_name_local: "한국어",
       artists: [{ name: "new_artist" }],
-      tags: [{ name: "tag one" }],
+      tags: [{ name: "tag_one" }],
       series: [{ name: "source series" }],
       groups: [{ name: "group one" }],
       characters: [{ name: "character one" }],
@@ -697,6 +731,50 @@ describe("handleGetBooks - 통합 테스트", () => {
       expect(ids).toHaveLength(1);
     });
 
+    it("숫자 검색은 제목과 hitomi_id를 함께 찾는다", async () => {
+      const byId = await seedBook(db, {
+        path: "/numeric-id",
+        title: "숫자 없는 제목",
+        hitomi_id: "1234567",
+      });
+      const byTitle = await seedBook(db, {
+        path: "/numeric-title",
+        title: "1234567 번째 이야기",
+        hitomi_id: "555",
+      });
+      await seedBook(db, { path: "/numeric-other", hitomi_id: "999" });
+
+      const ids = await getResultIds({ searchQuery: "1234567" });
+      expect(ids).toHaveLength(2);
+      expect(ids).toContain(byId.id);
+      expect(ids).toContain(byTitle.id);
+    });
+
+    it("음수형 숫자 검색은 같은 hitomi_id를 제외한다", async () => {
+      await seedBook(db, { path: "/excluded-id", hitomi_id: "1234567" });
+      const kept = await seedBook(db, { path: "/kept-id", hitomi_id: "555" });
+
+      expect(await getResultIds({ searchQuery: "-1234567" })).toEqual([
+        kept.id,
+      ]);
+    });
+
+    it("숫자가 섞인 낱말은 ID로 보지 않는다", async () => {
+      await seedBook(db, {
+        path: "/mixed-id",
+        title: "무관한 책",
+        hitomi_id: "1234567",
+      });
+      const byTitle = await seedBook(db, {
+        path: "/mixed-title",
+        title: "1234567화",
+      });
+
+      expect(await getResultIds({ searchQuery: "1234567화" })).toEqual([
+        byTitle.id,
+      ]);
+    });
+
     it("일반 검색어 → 시리즈 컬렉션 이름 검색", async () => {
       const [seriesId] = await db("SeriesCollection").insert({
         name: "검색할 시리즈",
@@ -754,6 +832,16 @@ describe("handleGetBooks - 통합 테스트", () => {
 
       const ids = await getResultIds({ searchQuery: "tag:nurse" });
       expect(ids).toEqual([book1.id]);
+    });
+
+    it("공백이 있는 기존 태그를 밑줄 검색으로 매칭", async () => {
+      const tag = await seedTag(db, "long hair");
+      const book = await seedBook(db, { path: "/tag-space" });
+      await linkBookTag(db, book.id, tag.id);
+
+      expect(await getResultIds({ searchQuery: "tag:long_hair" })).toEqual([
+        book.id,
+      ]);
     });
 
     it("series:series1 → 'series1'만 매칭", async () => {
@@ -854,6 +942,17 @@ describe("handleGetBooks - 통합 테스트", () => {
 
       const ids = await getResultIds({ searchQuery: "-tag:nurse" });
       expect(ids).toEqual([book2.id]);
+    });
+
+    it("우클릭 제외어의 밑줄을 기존 태그 공백과 동일하게 처리", async () => {
+      const tag = await seedTag(db, "long hair");
+      const taggedBook = await seedBook(db, { path: "/tagged-space" });
+      const otherBook = await seedBook(db, { path: "/other-space" });
+      await linkBookTag(db, taggedBook.id, tag.id);
+
+      expect(await getResultIds({ searchQuery: "-tag:long_hair" })).toEqual([
+        otherBook.id,
+      ]);
     });
 
     it("-female:ahegao → female:ahegao 태그 없는 책만 반환", async () => {
@@ -1086,6 +1185,28 @@ describe("handleGetBooks - 통합 테스트", () => {
         pageSize: 1000,
       });
       expect(result.data).toHaveLength(3);
+    });
+
+    it("sortBy=artists는 페이지 집계 최적화 후에도 작가명으로 정렬한다", async () => {
+      const alpha = await seedArtist(db, "alpha");
+      const beta = await seedArtist(db, "beta");
+      const bookAlpha = await seedBook(db, { path: "/artist-alpha" });
+      const bookBeta = await seedBook(db, { path: "/artist-beta" });
+      const bookNone = await seedBook(db, { path: "/artist-none" });
+      await linkBookArtist(db, bookAlpha.id, alpha.id);
+      await linkBookArtist(db, bookBeta.id, beta.id);
+
+      const result = await handleGetBooks({
+        sortBy: "artists",
+        sortOrder: "asc",
+        pageSize: 1000,
+      });
+
+      expect(result.data.map((book) => book.id)).toEqual([
+        bookNone.id,
+        bookAlpha.id,
+        bookBeta.id,
+      ]);
     });
   });
 
@@ -1599,6 +1720,42 @@ describe("handleGetBooks - 통합 테스트", () => {
       vi.mocked(configStore.get).mockReturnValue(undefined);
     });
 
+    it("artists asc에서 작가 있는 첫 책의 prev는 NULL 그룹 마지막 책이다", async () => {
+      await seedBook(db, { path: "/null-first" });
+      const nullLast = await seedBook(db, { path: "/null-last" });
+      const withArtist = await seedBook(db, { path: "/with-artist" });
+      const artist = await seedArtist(db, "alpha");
+      await linkBookArtist(db, withArtist.id, artist.id);
+
+      const result = await handleGetPrevBook({
+        currentBookId: withArtist.id,
+        filter: { sortBy: "artists", sortOrder: "asc" },
+      });
+
+      expect(result.prevBookId).toBe(nullLast.id);
+    });
+
+    it("hitomi_id desc에서 값 있는 마지막 책의 next는 NULL 그룹 첫 책이다", async () => {
+      await seedBook(db, { path: "/null-id-first", hitomi_id: null });
+      const nullIdLast = await seedBook(db, {
+        path: "/null-id-last",
+        hitomi_id: null,
+      });
+      const lastValue = await seedBook(db, {
+        path: "/last-id-value",
+        hitomi_id: "100",
+      });
+      await seedBook(db, { path: "/first-id-value", hitomi_id: "300" });
+
+      const result = await handleGetNextBook({
+        currentBookId: lastValue.id,
+        mode: "next",
+        filter: { sortBy: "hitomi_id", sortOrder: "desc" },
+      });
+
+      expect(result.nextBookId).toBe(nullIdLast.id);
+    });
+
     it("artists(NULL) 책들 asc 정렬: 두 번째 NULL 책의 next → 작가 있는 첫 책", async () => {
       // 정렬 순서(asc): nullA, nullB(같은 NULL 그룹, id asc), withArtist
       await seedBook(db, { path: "/a" }); // NULL 그룹의 첫 책(컨텍스트)
@@ -1794,8 +1951,14 @@ describe("handleGetBooks - 통합 테스트", () => {
 
   describe("file modification time sort", () => {
     it("sorts by file_mtime with nulls following SQLite order", async () => {
-      const oldBook = await seedBook(db, { path: "/mtime-old", file_mtime: 1000 });
-      const newBook = await seedBook(db, { path: "/mtime-new", file_mtime: 2000 });
+      const oldBook = await seedBook(db, {
+        path: "/mtime-old",
+        file_mtime: 1000,
+      });
+      const newBook = await seedBook(db, {
+        path: "/mtime-new",
+        file_mtime: 2000,
+      });
       const nullBook = await seedBook(db, { path: "/mtime-null" });
 
       const descending = await handleGetBooks({
@@ -1822,8 +1985,14 @@ describe("handleGetBooks - 통합 테스트", () => {
     });
 
     it("uses file_mtime order in viewer navigation", async () => {
-      const oldBook = await seedBook(db, { path: "/nav-old", file_mtime: 1000 });
-      const newBook = await seedBook(db, { path: "/nav-new", file_mtime: 2000 });
+      const oldBook = await seedBook(db, {
+        path: "/nav-old",
+        file_mtime: 1000,
+      });
+      const newBook = await seedBook(db, {
+        path: "/nav-new",
+        file_mtime: 2000,
+      });
 
       const next = await handleGetNextBook({
         currentBookId: newBook.id,

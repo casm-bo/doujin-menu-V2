@@ -1,12 +1,13 @@
 import { ipcMain, shell } from "electron";
 import fs from "fs/promises";
-import path from "path";
-import * as yauzl from "yauzl";
+import type { Knex } from "knex";
 import type { EditableBookMetadata, FilterParams } from "../../types/ipc.js";
 import db from "../db/index.js";
 import { console } from "../main.js";
-import { naturalSort } from "../utils/index.js";
+import { sortImageFiles } from "../utils/imageFiles.js";
+import { getZipPageNames } from "../utils/zipPages.js";
 import { normalizeArtistName } from "../utils/artistName.js";
+import { normalizeTagName } from "../utils/tagName.js";
 import { DesktopCompanionSyncService } from "../services/companion/companionSyncService.js";
 import { notifyCompanionLibraryChanged } from "../services/companion/companionSyncSignal.js";
 import { store as configStore } from "./configHandler.js";
@@ -29,6 +30,8 @@ export interface ParsedSearchTerms extends ExcludeTerms {
 
 const PREFIXED_TERM_REGEX =
   /(-?)artist:(.+?)(?=\s*-?(?:id|artist|group|type|language|series|character|tag):|$)|(-?)(id|group|type|language|series|character|tag):\s*(\S+)/g;
+
+const isNumericTerm = (term: string): boolean => /^\d+$/.test(term);
 
 // 검색어 문자열을 프리픽스별로 분류하여 반환
 export function parseSearchQuery(searchQuery: string): ParsedSearchTerms {
@@ -98,7 +101,7 @@ export function parseSearchQuery(searchQuery: string): ParsedSearchTerms {
         target.characterTerms.push(value);
         break;
       case "tag":
-        target.tagTerms.push(value);
+        target.tagTerms.push(normalizeTagName(value));
         break;
     }
     lastIndex = PREFIXED_TERM_REGEX.lastIndex;
@@ -148,7 +151,48 @@ export function extractKoreanTitle(
   return match?.[1]?.trim() ?? title;
 }
 
-function buildFilteredQuery(filter: FilterParams | null) {
+const withRelationAggregates = (query: Knex.QueryBuilder) =>
+  query
+    .leftJoin("BookArtist", "Book.id", "BookArtist.book_id")
+    .leftJoin("Artist", "BookArtist.artist_id", "Artist.id")
+    .leftJoin("BookTag", "Book.id", "BookTag.book_id")
+    .leftJoin("Tag", "BookTag.tag_id", "Tag.id")
+    .leftJoin("BookSeries", "Book.id", "BookSeries.book_id")
+    .leftJoin("Series", "BookSeries.series_id", "Series.id")
+    .leftJoin("BookGroup", "Book.id", "BookGroup.book_id")
+    .leftJoin("Group", "BookGroup.group_id", "Group.id")
+    .leftJoin("BookCharacter", "Book.id", "BookCharacter.book_id")
+    .leftJoin("Character", "BookCharacter.character_id", "Character.id")
+    .groupBy("Book.id");
+
+async function fetchBookRelations(bookIds: number[]) {
+  const relations = new Map<number, Record<string, string | null>>();
+  if (bookIds.length === 0) return relations;
+
+  const rows = await withRelationAggregates(
+    db("Book")
+      .select(
+        "Book.id",
+        db.raw("GROUP_CONCAT(DISTINCT Artist.name) as artists"),
+        db.raw("GROUP_CONCAT(DISTINCT Tag.name) as tags"),
+        db.raw("GROUP_CONCAT(DISTINCT Series.name) as series"),
+        db.raw("GROUP_CONCAT(DISTINCT `Group`.name) as groups"),
+        db.raw("GROUP_CONCAT(DISTINCT `Character`.name) as characters"),
+      )
+      .whereIn("Book.id", bookIds),
+  );
+
+  for (const row of rows) relations.set(row.id, row);
+  return relations;
+}
+
+const toNameList = (value: string | null | undefined) =>
+  value ? value.split(",").map((name: string) => ({ name })) : [];
+
+function buildFilteredQuery(
+  filter: FilterParams | null,
+  { withArtists = false }: { withArtists?: boolean } = {},
+) {
   const {
     searchQuery = "",
     readStatus = "all",
@@ -173,28 +217,20 @@ function buildFilteredQuery(filter: FilterParams | null) {
         WHERE SeriesBook.series_collection_id = Book.series_collection_id
           AND SeriesBook.is_read = 1
       ) as series_read_count`),
-      db.raw("GROUP_CONCAT(DISTINCT Artist.name) as artists"),
-      db.raw("GROUP_CONCAT(DISTINCT Tag.name) as tags"),
-      db.raw("GROUP_CONCAT(DISTINCT Series.name) as series"),
-      db.raw("GROUP_CONCAT(DISTINCT `Group`.name) as groups"),
-      db.raw("GROUP_CONCAT(DISTINCT `Character`.name) as characters"),
     )
-    .leftJoin("BookArtist", "Book.id", "BookArtist.book_id")
-    .leftJoin("Artist", "BookArtist.artist_id", "Artist.id")
-    .leftJoin("BookTag", "Book.id", "BookTag.book_id")
-    .leftJoin("Tag", "BookTag.tag_id", "Tag.id")
-    .leftJoin("BookSeries", "Book.id", "BookSeries.book_id")
-    .leftJoin("Series", "BookSeries.series_id", "Series.id")
-    .leftJoin("BookGroup", "Book.id", "BookGroup.book_id")
-    .leftJoin("Group", "BookGroup.group_id", "Group.id")
-    .leftJoin("BookCharacter", "Book.id", "BookCharacter.book_id")
-    .leftJoin("Character", "BookCharacter.character_id", "Character.id")
     .leftJoin(
       "SeriesCollection",
       "Book.series_collection_id",
       "SeriesCollection.id",
-    )
-    .groupBy("Book.id");
+    );
+
+  if (withArtists) {
+    subquery
+      .select(db.raw("GROUP_CONCAT(DISTINCT Artist.name) as artists"))
+      .leftJoin("BookArtist", "Book.id", "BookArtist.book_id")
+      .leftJoin("Artist", "BookArtist.artist_id", "Artist.id")
+      .groupBy("Book.id");
+  }
 
   const mainQuery = db(subquery.as("sub"));
 
@@ -278,7 +314,7 @@ function buildFilteredQuery(filter: FilterParams | null) {
           this.from("BookTag")
             .innerJoin("Tag", "BookTag.tag_id", "Tag.id")
             .whereRaw("BookTag.book_id = sub.id")
-            .whereRaw("LOWER(Tag.name) = ?", [tag]);
+            .whereRaw("LOWER(REPLACE(Tag.name, ' ', '_')) = ?", [tag]);
         });
       }
     }
@@ -300,6 +336,9 @@ function buildFilteredQuery(filter: FilterParams | null) {
             .orWhereRaw("LOWER(sub.series_collection_name) LIKE ?", [
               `%${titleTerm}%`,
             ]);
+          if (isNumericTerm(titleTerm)) {
+            builder.orWhere("sub.hitomi_id", titleTerm);
+          }
         });
       }
     }
@@ -361,7 +400,7 @@ function buildFilteredQuery(filter: FilterParams | null) {
           this.from("BookTag")
             .innerJoin("Tag", "BookTag.tag_id", "Tag.id")
             .whereRaw("BookTag.book_id = sub.id")
-            .whereRaw("LOWER(Tag.name) = ?", [tag]);
+            .whereRaw("LOWER(REPLACE(Tag.name, ' ', '_')) = ?", [tag]);
         });
       }
     }
@@ -381,6 +420,11 @@ function buildFilteredQuery(filter: FilterParams | null) {
           "LOWER(sub.title) NOT LIKE ? AND (sub.series_collection_name IS NULL OR LOWER(sub.series_collection_name) NOT LIKE ?)",
           [`%${titleTerm}%`, `%${titleTerm}%`],
         );
+        if (isNumericTerm(titleTerm)) {
+          mainQuery.whereRaw("(sub.hitomi_id IS NULL OR sub.hitomi_id != ?)", [
+            titleTerm,
+          ]);
+        }
       }
     }
   }
@@ -437,17 +481,37 @@ export const seededShuffleOrderSql = (
   return `((${value}) * (${value}) + (${value}) * 1103515245 + 12345) % ${prime}`;
 };
 
+export const SORTABLE_COLUMNS = [
+  "title",
+  "added_at",
+  "file_mtime",
+  "last_read_at",
+  "artists",
+  "page_count",
+  "hitomi_id",
+  "random",
+] as const;
+
+export type SortableColumn = (typeof SORTABLE_COLUMNS)[number];
+
+export const normalizeSortBy = (value: unknown): SortableColumn =>
+  SORTABLE_COLUMNS.includes(value as SortableColumn)
+    ? (value as SortableColumn)
+    : "added_at";
+
+export const normalizeSortOrder = (value: unknown): "asc" | "desc" =>
+  value === "asc" ? "asc" : "desc";
+
 export const handleGetBooks = async (
   params: FilterParams & { pageParam?: number; pageSize?: number },
 ) => {
-  const {
-    pageParam = 0,
-    pageSize = 50,
-    sortBy = "added_at",
-    sortOrder = "desc",
-  } = params;
+  const { pageParam = 0, pageSize = 50 } = params;
+  const sortBy = normalizeSortBy(params.sortBy);
+  const sortOrder = normalizeSortOrder(params.sortOrder);
 
-  const mainQuery = buildFilteredQuery(params);
+  const mainQuery = buildFilteredQuery(params, {
+    withArtists: sortBy === "artists",
+  });
 
   // 시리즈는 정렬 순서상 첫 책만 대표 카드로 노출합니다.
   mainQuery.where((builder) => {
@@ -466,9 +530,7 @@ export const handleGetBooks = async (
   // 4. 정렬 및 페이지네이션 적용
   if (sortBy === "random") {
     const shuffleSql = seededShuffleOrderSql(params.randomSeed);
-    mainQuery.orderByRaw(
-      shuffleSql ? `${shuffleSql}, sub.id` : "RANDOM()",
-    );
+    mainQuery.orderByRaw(shuffleSql ? `${shuffleSql}, sub.id` : "RANDOM()");
   } else if (sortBy === "hitomi_id") {
     mainQuery.orderByRaw(
       `CAST(sub.hitomi_id AS INTEGER) ${sortOrder}, sub.id ${sortOrder}`,
@@ -485,25 +547,19 @@ export const handleGetBooks = async (
     false,
   );
 
-  const formattedBooks = books.map((book) => ({
-    ...book,
-    title: extractKoreanTitle(book.title, prioritizeKoreanTitles),
-    artists: book.artists
-      ? book.artists.split(",").map((name: string) => ({ name }))
-      : [],
-    tags: book.tags
-      ? book.tags.split(",").map((name: string) => ({ name }))
-      : [],
-    series: book.series
-      ? book.series.split(",").map((name: string) => ({ name }))
-      : [],
-    groups: book.groups
-      ? book.groups.split(",").map((name: string) => ({ name }))
-      : [],
-    characters: book.characters
-      ? book.characters.split(",").map((name: string) => ({ name }))
-      : [],
-  }));
+  const relations = await fetchBookRelations(books.map((book) => book.id));
+  const formattedBooks = books.map((book) => {
+    const related = relations.get(book.id);
+    return {
+      ...book,
+      title: extractKoreanTitle(book.title, prioritizeKoreanTitles),
+      artists: toNameList(related?.artists),
+      tags: toNameList(related?.tags),
+      series: toNameList(related?.series),
+      groups: toNameList(related?.groups),
+      characters: toNameList(related?.characters),
+    };
+  });
 
   return {
     data: formattedBooks,
@@ -524,25 +580,16 @@ export const handleGetBook = async (bookId: number) => {
     "prioritizeKoreanTitles",
     false,
   );
+  const related = (await fetchBookRelations([book.id])).get(book.id);
 
   return {
     ...book,
     title: extractKoreanTitle(book.title, prioritizeKoreanTitles),
-    artists: book.artists
-      ? book.artists.split(",").map((name: string) => ({ name }))
-      : [],
-    tags: book.tags
-      ? book.tags.split(",").map((name: string) => ({ name }))
-      : [],
-    series: book.series
-      ? book.series.split(",").map((name: string) => ({ name }))
-      : [],
-    groups: book.groups
-      ? book.groups.split(",").map((name: string) => ({ name }))
-      : [],
-    characters: book.characters
-      ? book.characters.split(",").map((name: string) => ({ name }))
-      : [],
+    artists: toNameList(related?.artists),
+    tags: toNameList(related?.tags),
+    series: toNameList(related?.series),
+    groups: toNameList(related?.groups),
+    characters: toNameList(related?.characters),
   };
 };
 
@@ -589,7 +636,9 @@ export const handleUpdateBookMetadata = async ({
               .map((value) =>
                 entityTable === "Artist"
                   ? normalizeArtistName(value)
-                  : value.trim(),
+                  : entityTable === "Tag"
+                    ? normalizeTagName(value)
+                    : value.trim(),
               )
               .filter(Boolean),
           ),
@@ -686,10 +735,7 @@ export const handleGetBookPagePaths = async (bookId: number) => {
       .then((stat) => stat.isDirectory())
       .catch(() => false);
     if (isDirectory) {
-      const files = await fs.readdir(bookPath);
-      const imageFiles = files
-        .filter((file) => file.match(/\.(jpg|jpeg|png|webp|gif|bmp|avif)$/i))
-        .sort(naturalSort);
+      const imageFiles = sortImageFiles(await fs.readdir(bookPath));
       for (let i = 0; i < imageFiles.length; i++) {
         pagePaths.push(`doujin-menu://page/${bookId}/${i}`);
       }
@@ -700,69 +746,16 @@ export const handleGetBookPagePaths = async (bookId: number) => {
         is_favorite: book.is_favorite,
       };
     } else if (/.(cbz|zip)$/i.exec(bookPath)) {
-      // ZIP 파일 처리
-      return new Promise((resolve, reject) => {
-        yauzl.open(
-          bookPath,
-          { lazyEntries: true, autoClose: false },
-          (err, zipfile) => {
-            if (err) {
-              console.error(`[Main] Error opening zip file ${bookPath}:`, err);
-              return reject({
-                success: false,
-                error: "Failed to open zip file",
-              });
-            }
-
-            const imageEntries: { fileName: string; entry: yauzl.Entry }[] = [];
-            zipfile.on("entry", (entry) => {
-              // 폴더 엔트리 무시
-              if (entry.fileName.endsWith("/")) {
-                zipfile.readEntry();
-                return;
-              }
-
-              const ext = path.extname(entry.fileName).toLowerCase();
-              if (
-                [
-                  ".jpg",
-                  ".jpeg",
-                  ".png",
-                  ".webp",
-                  ".gif",
-                  ".bmp",
-                  ".avif",
-                ].includes(ext)
-              ) {
-                imageEntries.push({ fileName: entry.fileName, entry });
-              }
-              zipfile.readEntry();
-            });
-
-            zipfile.on("end", () => {
-              imageEntries.sort((a, b) => naturalSort(a.fileName, b.fileName)); // 파일명으로 정렬
-              for (let i = 0; i < imageEntries.length; i++) {
-                pagePaths.push(`doujin-menu://page/${bookId}/${i}`);
-              }
-              zipfile.close();
-              resolve({
-                success: true,
-                data: pagePaths,
-                title: book.title,
-                is_favorite: book.is_favorite,
-              });
-            });
-
-            zipfile.on("error", (zipErr) => {
-              console.error(`[Main] Zip file error for ${bookPath}:`, zipErr);
-              zipfile.close();
-              reject({ success: false, error: "Error reading zip file" });
-            });
-
-            zipfile.readEntry(); // 첫 번째 엔트리 읽기 시작
-          },
-        );
-      });
+      const fileNames = await getZipPageNames(bookPath);
+      for (let i = 0; i < fileNames.length; i++) {
+        pagePaths.push(`doujin-menu://page/${bookId}/${i}`);
+      }
+      return {
+        success: true,
+        data: pagePaths,
+        title: book.title,
+        is_favorite: book.is_favorite,
+      };
     } else {
       console.warn(
         `[Main] Unsupported book format for bookId: ${bookId}, path: ${bookPath}`,
@@ -882,7 +875,11 @@ export const handleGetNextBook = async ({
   filter: FilterParams | null;
 }) => {
   try {
-    const mainQuery = buildFilteredQuery(filter);
+    const sortBy = normalizeSortBy(filter?.sortBy);
+    const sortOrder = normalizeSortOrder(filter?.sortOrder);
+    const mainQuery = buildFilteredQuery(filter, {
+      withArtists: sortBy === "artists",
+    });
 
     const viewerExcludeCompleted = configStore.get("viewerExcludeCompleted");
     if (viewerExcludeCompleted) {
@@ -894,8 +891,6 @@ export const handleGetNextBook = async ({
           .orWhereRaw("sub.current_page < sub.page_count"),
       );
     }
-
-    const { sortBy = "added_at", sortOrder = "desc" } = filter || {};
 
     const shuffleSql =
       sortBy === "random" ? seededShuffleOrderSql(filter?.randomSeed) : null;
@@ -937,7 +932,9 @@ export const handleGetNextBook = async ({
     }
 
     // Sequential mode
-    const currentBook = await buildFilteredQuery(null)
+    const currentBook = await buildFilteredQuery(null, {
+      withArtists: sortBy === "artists",
+    })
       .where("sub.id", currentBookId)
       .first();
     if (!currentBook) {
@@ -988,7 +985,8 @@ export const handleGetNextBook = async ({
                     sortValue,
                   )
                   .where("sub.id", "<", currentBookId),
-              ),
+              )
+              .orWhereNull("sub.hitomi_id"),
           );
           mainQuery.orderByRaw(
             "CAST(sub.hitomi_id AS INTEGER) DESC, sub.id DESC",
@@ -1031,7 +1029,8 @@ export const handleGetNextBook = async ({
                 b
                   .where(sortColumn, "=", sortValue)
                   .where("sub.id", "<", currentBookId),
-              ),
+              )
+              .orWhereNull(sortColumn),
           );
         }
         mainQuery.orderBy(sortColumn, "desc").orderBy("sub.id", "desc");
@@ -1087,8 +1086,11 @@ export const handleGetPrevBook = async ({
   filter: FilterParams | null;
 }) => {
   try {
-    const mainQuery = buildFilteredQuery(filter);
-    const { sortBy = "added_at", sortOrder = "desc" } = filter || {};
+    const sortBy = normalizeSortBy(filter?.sortBy);
+    const sortOrder = normalizeSortOrder(filter?.sortOrder);
+    const mainQuery = buildFilteredQuery(filter, {
+      withArtists: sortBy === "artists",
+    });
 
     const shuffleSql =
       sortBy === "random" ? seededShuffleOrderSql(filter?.randomSeed) : null;
@@ -1129,7 +1131,9 @@ export const handleGetPrevBook = async ({
         : { success: true, prevBookId: null };
     }
 
-    const currentBook = await buildFilteredQuery(null)
+    const currentBook = await buildFilteredQuery(null, {
+      withArtists: sortBy === "artists",
+    })
       .where("sub.id", currentBookId)
       .first();
     if (!currentBook) {
@@ -1196,7 +1200,8 @@ export const handleGetPrevBook = async ({
                     sortValue,
                   )
                   .where("sub.id", "<", currentBookId),
-              ),
+              )
+              .orWhereNull("sub.hitomi_id"),
           );
           mainQuery.orderByRaw(
             "CAST(sub.hitomi_id AS INTEGER) DESC, sub.id DESC",
@@ -1245,7 +1250,8 @@ export const handleGetPrevBook = async ({
                 b
                   .where(sortColumn, "=", sortValue)
                   .where("sub.id", "<", currentBookId),
-              ),
+              )
+              .orWhereNull(sortColumn),
           );
         }
         mainQuery.orderBy(sortColumn, "desc").orderBy("sub.id", "desc");
@@ -1351,6 +1357,33 @@ export const handleCheckBookExistsByHitomiId = async (hitomiId: number) => {
       error,
     );
     return { success: false, error };
+  }
+};
+
+export const handleCheckBooksExistByHitomiIds = async (hitomiIds: number[]) => {
+  try {
+    const uniqueIds = [
+      ...new Set(hitomiIds.filter((id) => Number.isInteger(id) && id > 0)),
+    ];
+    const result: Record<number, number> = {};
+
+    for (let offset = 0; offset < uniqueIds.length; offset += 500) {
+      const rows = await db("Book")
+        .whereIn("hitomi_id", uniqueIds.slice(offset, offset + 500).map(String))
+        .orderBy("id", "asc")
+        .select("id", "hitomi_id");
+      for (const row of rows) {
+        const hitomiId = Number(row.hitomi_id);
+        if (Number.isInteger(hitomiId) && result[hitomiId] === undefined) {
+          result[hitomiId] = row.id;
+        }
+      }
+    }
+
+    return { success: true, data: result };
+  } catch (error) {
+    console.error("Failed to check book existence by Hitomi IDs:", error);
+    return { success: false, error: (error as Error).message };
   }
 };
 
@@ -1475,6 +1508,9 @@ export function registerBookHandlers() {
   );
   ipcMain.handle("check-book-exists-by-hitomi-id", (_event, hitomiId) =>
     handleCheckBookExistsByHitomiId(hitomiId),
+  );
+  ipcMain.handle("check-books-exist-by-hitomi-ids", (_event, hitomiIds) =>
+    handleCheckBooksExistByHitomiIds(hitomiIds),
   );
   ipcMain.handle("delete-book", (_event, { bookId, permanent }) =>
     handleDeleteBook(bookId, { permanent }),

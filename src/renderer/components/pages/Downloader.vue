@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ipcRenderer } from "@/api";
+import { enterSubscriptionTab, ipcRenderer, refreshSubscriptions } from "@/api";
 import HelpDialog from "@/components/common/HelpDialog.vue"; // HelpDialog 임포트
 import SmartSearchInput from "@/components/common/SmartSearchInput.vue";
 import { Button } from "@/components/ui/button";
@@ -17,6 +17,7 @@ import { useKeybindings } from "@/composable/useKeybindings";
 import { useScrollRestoration } from "@/composable/useScrollRestoration";
 import { useSearchPersistence } from "@/composable/useSearchPersistence";
 import { useDownloadQueueStore } from "@/store/downloadQueueStore";
+import { useSubscriptionStore } from "@/store/subscriptionStore";
 import { useUiStore } from "@/store/uiStore";
 import { Icon } from "@iconify/vue";
 import PageHeader from "../layout/PageHeader.vue";
@@ -49,10 +50,13 @@ import PresetDropdown from "../common/PresetDropdown.vue";
 import GalleryPreviewDialog from "../feature/downloader/GalleryPreviewDialog.vue";
 import GalleryRowCard from "../feature/downloader/GalleryRowCard.vue";
 import GalleryThumbnailCard from "../feature/downloader/GalleryThumbnailCard.vue";
+import SubscriptionToolbar from "../feature/downloader/SubscriptionToolbar.vue";
 
 // 검색어 상태
 const searchQuery = ref("");
 const downloaderLanguage = ref("korean");
+type Popularity = "none" | "day" | "week" | "month" | "year";
+const downloaderPopularity = ref<Popularity>("none");
 
 const languageOptions = [
   { value: "all", label: "전체 언어" },
@@ -61,6 +65,17 @@ const languageOptions = [
   { value: "english", label: "영어" },
   { value: "chinese", label: "중국어" },
 ];
+
+const popularityOptions = [
+  { value: "none", label: "기본순" },
+  { value: "day", label: "일간 인기" },
+  { value: "week", label: "주간 인기" },
+  { value: "month", label: "월간 인기" },
+  { value: "year", label: "연간 인기" },
+] satisfies { value: Popularity; label: string }[];
+
+const isPopularity = (value: unknown): value is Popularity =>
+  popularityOptions.some((option) => option.value === value);
 
 // 뷰 모드 상태 ("grid": 썸네일, "list": 리스트)
 const viewMode = ref<"grid" | "list">(
@@ -91,8 +106,17 @@ const downloadStatuses = reactive<{
 
 // 다운로드 큐 store
 const downloadQueueStore = useDownloadQueueStore();
+const subscriptionStore = useSubscriptionStore();
 
 const searchKey = ref(0); // 검색 트리거를 위한 키
+const subscriptionKey = ref(1);
+const activeSource = ref<"search" | "subscription">("search");
+const blacklistCount = ref(0);
+const sourceKey = computed(() =>
+  activeSource.value === "subscription"
+    ? subscriptionKey.value
+    : searchKey.value,
+);
 
 // 미리보기 다이얼로그 관련 상태
 const isPreviewDialogOpen = ref(false);
@@ -107,18 +131,29 @@ const {
   isError,
   error,
 } = useInfiniteQuery({
-  queryKey: ["galleries", searchKey],
+  queryKey: ["galleries", activeSource, sourceKey],
   queryFn: async ({ pageParam = 1 }) => {
     const finalSearchQuery =
       downloaderLanguage.value !== "all"
         ? `language:${downloaderLanguage.value} ${searchQuery.value}`
         : searchQuery.value;
 
-    const query = { searchQuery: finalSearchQuery.trim(), offset: 0 };
-    const result = await ipcRenderer.invoke("search-galleries", {
-      query,
-      page: pageParam,
-    });
+    const query = {
+      searchQuery: finalSearchQuery.trim(),
+      offset: 0,
+      popularityOrderBy:
+        downloaderPopularity.value === "none" ? "" : downloaderPopularity.value,
+    };
+    const result =
+      activeSource.value === "subscription"
+        ? await ipcRenderer.invoke("get-subscription-feed", {
+            start: (pageParam - 1) * 30,
+            count: 30,
+          })
+        : await ipcRenderer.invoke("search-galleries", {
+            query,
+            page: pageParam,
+          });
 
     if (result.success && result.data) {
       const galleryDetailsPromises = result.data.map((id: number) =>
@@ -132,7 +167,11 @@ const {
         galleries: detailResults
           .filter((res) => res.success)
           .map((res) => res.data),
-        nextPage: result.hasNextPage ? pageParam + 1 : undefined,
+        nextPage:
+          ("hasNextPage" in result && result.hasNextPage) ||
+          (result.total !== undefined && pageParam * 30 < result.total)
+            ? pageParam + 1
+            : undefined,
       };
     } else {
       throw new Error(result.error || "검색 실패");
@@ -140,7 +179,9 @@ const {
   },
   getNextPageParam: (lastPage) => lastPage.nextPage,
   initialPageParam: 1,
-  enabled: computed(() => searchKey.value > 0), // searchKey가 0보다 클 때만 활성화
+  enabled: computed(
+    () => activeSource.value === "subscription" || searchKey.value > 0,
+  ),
 });
 
 const allGalleries = computed(() => {
@@ -282,6 +323,18 @@ onMounted(() => {
       downloaderLanguage.value = lang as string;
     }
   });
+  ipcRenderer
+    .invoke("get-config-value", "downloaderPopularity")
+    .then((popularity) => {
+      downloaderPopularity.value = isPopularity(popularity)
+        ? popularity
+        : "none";
+    });
+  ipcRenderer.invoke("get-config").then((config) => {
+    blacklistCount.value = Array.isArray(config.downloaderBlacklistTags)
+      ? config.downloaderBlacklistTags.length
+      : 0;
+  });
 });
 
 onUnmounted(() => {
@@ -305,8 +358,38 @@ watch(observerTarget, (newTarget) => {
 });
 
 const handleSearch = async () => {
+  activeSource.value = "search";
   searchKey.value++;
 };
+
+const changeSource = async (source: "search" | "subscription") => {
+  activeSource.value = source;
+  selectedGallery.value = null;
+  if (source !== "subscription") return;
+
+  subscriptionStore.markSeenLocally();
+  await enterSubscriptionTab();
+  subscriptionKey.value++;
+  await subscriptionStore.refreshStatus();
+};
+
+const refreshSubscriptionFeed = async () => {
+  await refreshSubscriptions();
+  subscriptionKey.value++;
+  await subscriptionStore.refreshStatus();
+};
+
+const handleSubscriptionsChanged = async () => {
+  subscriptionKey.value++;
+  await subscriptionStore.refreshStatus();
+};
+
+watch(
+  () => subscriptionStore.lastCheckedAt,
+  () => {
+    if (activeSource.value === "subscription") subscriptionKey.value++;
+  },
+);
 
 const handleLanguageChange = async (lang: AcceptableValue) => {
   if (!lang) return;
@@ -319,6 +402,16 @@ const handleLanguageChange = async (lang: AcceptableValue) => {
   if (searchQuery.value) {
     handleSearch();
   }
+};
+
+const handlePopularityChange = async (value: AcceptableValue) => {
+  if (!isPopularity(value)) return;
+  downloaderPopularity.value = value;
+  await ipcRenderer.invoke("set-config", {
+    key: "downloaderPopularity",
+    value: value === "none" ? "" : value,
+  });
+  if (searchKey.value > 0) handleSearch();
 };
 
 const router = useRouter();
@@ -423,10 +516,34 @@ useSearchPersistence(searchQuery, "downloader-search-query");
         <Card>
           <CardHeader>
             <CardTitle class="flex items-center justify-between">
-              <span>작품 검색</span>
+              <span>{{
+                activeSource === "search" ? "작품 검색" : "구독 신작"
+              }}</span>
+              <div class="flex gap-2">
+                <Button
+                  size="sm"
+                  :variant="activeSource === 'search' ? 'default' : 'outline'"
+                  @click="changeSource('search')"
+                >
+                  검색
+                </Button>
+                <Button
+                  size="sm"
+                  :variant="
+                    activeSource === 'subscription' ? 'default' : 'outline'
+                  "
+                  @click="changeSource('subscription')"
+                >
+                  구독
+                  <span
+                    v-if="subscriptionStore.hasUnseen"
+                    class="bg-destructive ml-1 h-2 w-2 rounded-full"
+                  />
+                </Button>
+              </div>
             </CardTitle>
           </CardHeader>
-          <CardContent class="space-y-4">
+          <CardContent v-if="activeSource === 'search'" class="space-y-4">
             <div class="space-y-1.5">
               <Label for="search-input">검색어</Label>
               <SmartSearchInput
@@ -437,7 +554,7 @@ useSearchPersistence(searchQuery, "downloader-search-query");
               />
             </div>
             <div
-              class="grid grid-cols-1 items-end gap-3 sm:grid-cols-[minmax(280px,2fr)_minmax(120px,0.65fr)_minmax(120px,0.55fr)]"
+              class="grid grid-cols-1 items-end gap-3 sm:grid-cols-[minmax(260px,2fr)_minmax(120px,0.65fr)_minmax(120px,0.65fr)_minmax(100px,0.5fr)]"
             >
               <div class="flex flex-col space-y-1.5">
                 <Label>프리셋</Label>
@@ -445,6 +562,26 @@ useSearchPersistence(searchQuery, "downloader-search-query");
                   v-model="searchQuery"
                   @apply-preset="handleSearch"
                 />
+              </div>
+              <div class="flex flex-col space-y-1.5">
+                <Label for="popularity-select">정렬</Label>
+                <Select
+                  :model-value="downloaderPopularity"
+                  @update:model-value="handlePopularityChange"
+                >
+                  <SelectTrigger id="popularity-select" class="w-full">
+                    <SelectValue placeholder="정렬 선택" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem
+                      v-for="option in popularityOptions"
+                      :key="option.value"
+                      :value="option.value"
+                    >
+                      {{ option.label }}
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
               <div class="flex flex-col space-y-1.5">
                 <Label for="language-select">언어</Label>
@@ -483,13 +620,25 @@ useSearchPersistence(searchQuery, "downloader-search-query");
               >)
             </p>
           </CardContent>
+          <CardContent v-else>
+            <SubscriptionToolbar
+              :new-count="subscriptionStore.newCount"
+              :last-checked-at="subscriptionStore.lastCheckedAt"
+              :language="downloaderLanguage"
+              :blacklist-count="blacklistCount"
+              @changed="handleSubscriptionsChanged"
+              @refresh="refreshSubscriptionFeed"
+            />
+          </CardContent>
         </Card>
       </div>
 
       <!-- Right Column: Search Results -->
       <div class="flex flex-col gap-4">
         <div class="flex items-center justify-between">
-          <h2 class="text-lg font-semibold">검색 결과</h2>
+          <h2 class="text-lg font-semibold">
+            {{ activeSource === "search" ? "검색 결과" : "구독 피드" }}
+          </h2>
           <div class="flex items-center gap-2">
             <!-- 썸네일 줌 조절 -->
             <div
@@ -601,7 +750,13 @@ useSearchPersistence(searchQuery, "downloader-search-query");
             </div>
           </div>
           <div v-else class="flex h-full items-center justify-center">
-            <p class="text-muted-foreground">검색 결과가 없습니다.</p>
+            <p class="text-muted-foreground">
+              {{
+                activeSource === "search"
+                  ? "검색 결과가 없습니다."
+                  : "구독한 작품이 없습니다."
+              }}
+            </p>
           </div>
         </div>
       </div>

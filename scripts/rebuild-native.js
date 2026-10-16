@@ -10,7 +10,7 @@
  */
 
 import { createRequire } from "module";
-import { execSync } from "child_process";
+import { execFileSync, execSync } from "child_process";
 import { readFileSync, writeFileSync } from "fs";
 import { join } from "path";
 
@@ -43,14 +43,13 @@ if (target === "node") {
 
 if (target === "electron") {
   console.log(`Rebuilding better-sqlite3 for Electron ${electronVersion}...`);
-  execSync("pnpm rebuild better-sqlite3", {
-    stdio: "inherit",
-    env: {
-      ...process.env,
-      npm_config_runtime: "electron",
-      npm_config_target: electronVersion,
+  execFileSync(
+    process.execPath,
+    [join(rootDir, "node_modules", "electron-builder", "install-app-deps.js")],
+    {
+      stdio: "inherit",
     },
-  });
+  );
 } else {
   console.log("Rebuilding better-sqlite3 for Node.js...");
   execSync("pnpm rebuild better-sqlite3", { stdio: "inherit" });

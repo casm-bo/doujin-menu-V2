@@ -1,6 +1,5 @@
 import { BrowserWindow, dialog, ipcMain } from "electron";
 import fg from "fast-glob";
-import * as fsSync from "fs";
 import fs from "fs/promises";
 import type { Knex } from "knex";
 import os from "os"; // os 모듈 임포트
@@ -15,9 +14,11 @@ import type {
   LibraryScanProgress,
   MetadataRescanMode,
 } from "../../types/ipc.js";
-import { naturalSort } from "../utils/index.js";
+import { isImageFile, sortImageFiles } from "../utils/imageFiles.js";
+import { readZipPage } from "../utils/zipPages.js";
 import { normalizeArtistName } from "../utils/artistName.js";
 import { filterLibraryPathRows } from "../utils/libraryPath.js";
+import { normalizeTagName } from "../utils/tagName.js";
 import { notifyCompanionLibraryChanged } from "../services/companion/companionSyncSignal.js";
 import {
   generateThumbnailForBook,
@@ -111,74 +112,11 @@ export async function extractCoverFromZip(
   zipPath: string,
   outputPath: string,
 ): Promise<string | null> {
-  return new Promise((resolve, reject) => {
-    yauzl.open(zipPath, { lazyEntries: true }, (err, zipfile) => {
-      if (err) {
-        console.error(`[Main] ZIP 파일 열기 오류 ${zipPath}:`, err);
-        return reject(err);
-      }
+  const page = await readZipPage(zipPath, 0);
+  if (!page) return null;
 
-      let foundImageAndStartedExtraction = false; // 이미지를 찾고 추출을 시작했는지 여부 플래그
-
-      zipfile.readEntry(); // 엔트리 읽기 시작
-
-      zipfile.on("entry", (entry) => {
-        const isImage = entry.fileName.match(/\.(jpg|jpeg|png|webp|avif)$/i);
-
-        if (isImage && !foundImageAndStartedExtraction) {
-          foundImageAndStartedExtraction = true; // 플래그 설정
-          // 첫 번째 이미지 파일을 찾으면 바로 추출 시작
-          zipfile.openReadStream(entry, (err, readStream) => {
-            if (err) {
-              console.error(
-                `[Main] ZIP에서 엔트리 읽기 오류 ${entry.fileName}:`,
-                err,
-              );
-              zipfile.close(); // 오류 발생 시 파일 닫기
-              return reject(err);
-            }
-            const writeStream = fsSync.createWriteStream(outputPath);
-            readStream.pipe(writeStream);
-            writeStream.on("finish", () => {
-              console.log(
-                `[Main] ZIP에서 커버 추출 성공: ${outputPath} (from ${entry.fileName})`,
-              );
-              zipfile.close(); // 추출 완료 후 파일 닫기
-              resolve(outputPath);
-            });
-            writeStream.on("error", (writeErr) => {
-              console.error(
-                `[Main] 추출된 ZIP 커버 쓰기 오류 ${outputPath}:`,
-                writeErr,
-              );
-              zipfile.close(); // 오류 발생 시 파일 닫기
-              reject(writeErr);
-            });
-          });
-        } else {
-          // 이미지를 찾지 못했거나 이미 추출을 시작한 경우 다음 엔트리 읽기
-          zipfile.readEntry();
-        }
-      });
-
-      zipfile.on("end", () => {
-        // 모든 엔트리를 스캔했지만 적합한 커버 이미지를 찾지 못한 경우
-        if (!foundImageAndStartedExtraction) {
-          console.log(
-            `[Main] ${zipPath}의 ZIP 엔트리 스캔 완료. 적합한 커버 이미지를 찾지 못했습니다.`,
-          );
-          zipfile.close(); // 파일 닫기
-          resolve(null);
-        }
-      });
-
-      zipfile.on("error", (zipErr) => {
-        console.error(`[Main] ZIP 파일 처리 중 오류 ${zipPath}:`, zipErr);
-        zipfile.close(); // 오류 발생 시 파일 닫기
-        reject(zipErr);
-      });
-    });
-  });
+  await fs.writeFile(outputPath, page.buffer);
+  return outputPath;
 }
 
 // ZIP 파일을 한 번 열어 info.txt 내용과 이미지 개수를 단일 엔트리 순회로 동시에 수집한다.
@@ -221,7 +159,7 @@ export async function extractInfoTxtAndImageCountFromZip(
 
       zipfile.on("entry", (entry) => {
         // 이미지 개수 카운트 (처음부터 끝까지 모든 엔트리 누적)
-        if (entry.fileName.match(/\.(jpg|jpeg|png|webp|gif|bmp|avif)$/i)) {
+        if (isImageFile(entry.fileName)) {
           imageCount++;
         }
 
@@ -358,9 +296,7 @@ async function processBookItem(
   // 3. 항목 유형(폴더 또는 파일)에 따라 책 데이터를 구성합니다.
   if (isDirectory) {
     // 3-1. 항목이 폴더일 경우
-    const imageFiles = (await fs.readdir(itemPath))
-      .filter((f) => RegExp(/\.(jpg|jpeg|png|webp|avif)$/i).exec(f))
-      .sort(naturalSort); // 이미지 파일 목록을 자연어 정렬합니다.
+    const imageFiles = sortImageFiles(await fs.readdir(itemPath));
     if (imageFiles.length > 0) {
       // 이미지가 하나 이상 있을 경우에만 책으로 간주합니다.
       bookData = {
@@ -785,7 +721,10 @@ async function processBatchInTransaction(
 
     // 태그 처리
     const tagsToProcess =
-      infoMetadata.tags?.map((t) => cleanValue(t.name)).filter(Boolean) || [];
+      infoMetadata.tags
+        ?.map((tag) => cleanValue(tag.name))
+        .filter((name): name is string => Boolean(name))
+        .map(normalizeTagName) || [];
     for (const tagName of tagsToProcess) {
       let tag = await trx("Tag").where("name", tagName).first();
       if (!tag) {
@@ -1357,7 +1296,7 @@ export async function scanDirectory(
         });
       };
 
-      const queue = new PQueue({ concurrency: os.cpus().length });
+      const queue = new PQueue({ concurrency: Math.min(4, os.cpus().length) });
       const THUMBNAIL_CHUNK_SIZE = 100;
       const thumbnailChunk: { bookId: number; thumbnailPath: string }[] = [];
 
@@ -1526,7 +1465,12 @@ export const handleRescanLibraryFolder = async (folderPath: string) => {
       .whereLike("path", `${folderPath}%`)
       .and.where("cover_path", null);
     const books = filterLibraryPathRows(candidates, folderPath);
-    await Promise.all(books.map((book) => handleGenerateThumbnail(book.id)));
+    const thumbnailQueue = new PQueue({
+      concurrency: Math.min(4, os.cpus().length),
+    });
+    await thumbnailQueue.addAll(
+      books.map((book) => () => handleGenerateThumbnail(book.id)),
+    );
     console.log(
       `[Main] ${folderPath}에 대한 재스캔 완료: 추가 ${added}, 업데이트 ${updated}, 삭제 ${deleted}`,
     );

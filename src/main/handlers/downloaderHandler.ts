@@ -4,7 +4,10 @@ import { createWriteStream } from "fs";
 import fs from "fs/promises";
 import path from "path";
 import { console } from "../main.js";
-import { hitomiService } from "../services/hitomi/hitomiService.js";
+import {
+  hitomiService,
+  type SearchGalleriesParams,
+} from "../services/hitomi/hitomiService.js";
 import {
   buildGalleryDownloadPath,
   DEFAULT_DOWNLOAD_PATTERN,
@@ -14,12 +17,15 @@ import {
   getDownloadStagingJobPath,
   publishStagedDownload,
 } from "../utils/downloadStaging.js";
+import { normalizeTagName } from "../utils/tagName.js";
 import { store as configStore } from "./configHandler.js";
 import {
   extractInfoTxtAndImageCountFromZip,
   scanFile,
 } from "./directoryHandler.js";
 import { parseInfoTxt, type ParsedMetadata } from "../parsers/infoTxtParser.js";
+
+const QUEUE_BROADCAST_INTERVAL_MS = 200;
 
 export interface PreparedDownloadTransfer {
   galleryId: number;
@@ -137,15 +143,14 @@ export async function createDownloadArchive(
   }
 }
 
-export const handleSearchGalleries = async ({
-  query,
-  page = 1,
-}: {
-  query: { searchQuery: string; offset?: number };
-  page: number;
-}) => {
+export const handleSearchGalleries = async (params: SearchGalleriesParams) => {
   try {
-    const result = await hitomiService.searchGalleries({ query, page });
+    const result = await hitomiService.searchGalleries({
+      ...params,
+      popularityOrderBy:
+        params.popularityOrderBy ?? configStore.get("downloaderPopularity", ""),
+      blacklistTags: configStore.get("downloaderBlacklistTags", []),
+    });
     return { success: true, ...result };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -214,8 +219,8 @@ export const handleDownloadGallery = async (
         gallery.tags?.map((tag) => ({
           name:
             tag.type === "male" || tag.type === "female"
-              ? `${tag.type}:${tag.name}`
-              : tag.name,
+              ? `${tag.type}:${normalizeTagName(tag.name)}`
+              : normalizeTagName(tag.name),
         })) ?? [],
       language: gallery.language?.name,
     };
@@ -377,6 +382,33 @@ export const handleDownloadGallery = async (
       });
     }
 
+    let lastQueueBroadcast = 0;
+    const reportProgress = async (index: number, force = false) => {
+      const progress = Math.round(((index + 1) / totalFiles) * 100);
+      webContents.send("download-progress", {
+        galleryId,
+        status: "progress",
+        progress,
+      });
+
+      if (!queueId) return;
+      const now = Date.now();
+      if (!force && now - lastQueueBroadcast < QUEUE_BROADCAST_INTERVAL_MS) {
+        return;
+      }
+      lastQueueBroadcast = now;
+
+      const db = (await import("../db/index.js")).default;
+      await db("DownloadQueue")
+        .where("id", queueId)
+        .update({ progress, downloaded_files: index + 1 });
+
+      const { BrowserWindow } = await import("electron");
+      BrowserWindow.getAllWindows().forEach((window) => {
+        window.webContents.send("download-queue-updated");
+      });
+    };
+
     for (let i = 0; i < totalFiles; i++) {
       // 취소 확인
       if (shouldCancel && shouldCancel()) {
@@ -396,31 +428,7 @@ export const handleDownloadGallery = async (
       try {
         await fs.access(filePath);
 
-        // 진행률 업데이트
-        const progress = Math.round(((i + 1) / totalFiles) * 100);
-        webContents.send("download-progress", {
-          galleryId,
-          status: "progress",
-          progress,
-        });
-
-        // 큐 ID가 있으면 DB 업데이트
-        if (queueId) {
-          const db = (await import("../db/index.js")).default;
-          await db("DownloadQueue")
-            .where("id", queueId)
-            .update({
-              progress,
-              downloaded_files: i + 1,
-            });
-
-          // 모든 윈도우에 큐 업데이트 알림
-          const { BrowserWindow } = await import("electron");
-          const windows = BrowserWindow.getAllWindows();
-          windows.forEach((window) => {
-            window.webContents.send("download-queue-updated");
-          });
-        }
+        await reportProgress(i, i === totalFiles - 1);
 
         continue; // 다음 파일로
       } catch {
@@ -526,30 +534,7 @@ export const handleDownloadGallery = async (
       // 연속 요청으로 이미지 CDN의 일시 제한에 걸리지 않도록 간격을 둡니다.
       await wait(INTER_FILE_DELAY_MS);
 
-      const progress = Math.round(((i + 1) / totalFiles) * 100);
-      webContents.send("download-progress", {
-        galleryId,
-        status: "progress",
-        progress,
-      });
-
-      // 큐 ID가 있으면 DB 업데이트
-      if (queueId) {
-        const db = (await import("../db/index.js")).default;
-        await db("DownloadQueue")
-          .where("id", queueId)
-          .update({
-            progress,
-            downloaded_files: i + 1,
-          });
-
-        // 모든 윈도우에 큐 업데이트 알림
-        const { BrowserWindow } = await import("electron");
-        const windows = BrowserWindow.getAllWindows();
-        windows.forEach((window) => {
-          window.webContents.send("download-queue-updated");
-        });
-      }
+      await reportProgress(i, i === totalFiles - 1);
     }
 
     // info.txt 파일 생성 (설정에 따라)

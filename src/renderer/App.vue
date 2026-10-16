@@ -6,9 +6,11 @@ import type { KeybindingOverride } from "@/lib/keybindings/types";
 import { useKeybindingStore } from "@/store/keybindingStore";
 import { useUiStore } from "@/store/uiStore";
 import { onMounted } from "vue";
-import { RouterView } from "vue-router";
+import { RouterView, useRouter } from "vue-router";
 import { toast } from "vue-sonner";
 import { ipcRenderer } from "./api";
+
+const router = useRouter();
 
 // 앱 전역 단축키 등록 (새로고침, 창 닫기)
 useKeybindings("global", {
@@ -75,6 +77,19 @@ onMounted(async () => {
     } else if (status === "error" && error) {
       toast.error(`업데이트 오류: ${error}`);
     }
+  });
+
+  ipcRenderer.on("subscription-new-found", (...args) => {
+    const { subscriptionCount, newCount } = args[0] as {
+      subscriptionCount: number;
+      newCount: number;
+    };
+    toast.info(`구독 ${subscriptionCount}건에 신작 ${newCount}개`, {
+      action: {
+        label: "보러가기",
+        onClick: () => router.push("/downloader"),
+      },
+    });
   });
 
   // 모든 리스너 등록이 끝난 뒤 준비 신호 전송.

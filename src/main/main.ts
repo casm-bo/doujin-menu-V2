@@ -12,9 +12,10 @@ import log from "electron-log";
 import windowStateKeeper from "electron-window-state";
 import { rmSync } from "fs";
 import fs from "fs/promises";
+import os from "os";
+import PQueue from "p-queue";
 import path from "path"; // path 모듈 전체 임포트
 import { fileURLToPath } from "url";
-import * as yauzl from "yauzl";
 import db, { closeDbConnection } from "./db/index.js"; // db 모듈 추가
 import "./handlers/bookHandler.js";
 import { registerBookHandlers } from "./handlers/bookHandler.js";
@@ -37,9 +38,7 @@ import {
   registerEtcHandlers,
 } from "./handlers/etcHandler.js";
 import { registerPresetHandlers } from "./handlers/presetHandler.js";
-import {
-  registerSeriesCollectionHandlers,
-} from "./handlers/seriesCollectionHandler.js";
+import { registerSeriesCollectionHandlers } from "./handlers/seriesCollectionHandler.js";
 import { registerBrowseHandlers } from "./handlers/browseHandler.js";
 import { registerStatisticsHandlers } from "./handlers/statisticsHandler.js";
 import { registerDuplicatesHandlers } from "./handlers/duplicatesHandler.js";
@@ -48,9 +47,14 @@ import {
   registerThumbnailHandlers,
 } from "./handlers/thumbnailHandler.js";
 import { registerWindowHandlers } from "./handlers/windowHandler.js";
+import {
+  registerSubscriptionHandlers,
+  startSubscriptionPollingIfEnabled,
+} from "./handlers/subscriptionHandler.js";
 import { registerCompanionHandlers } from "./handlers/companionHandler.js";
 import { registerUpdaterHandlers } from "./updater.js";
-import { naturalSort } from "./utils/index.js";
+import { imageMimeType, sortImageFiles } from "./utils/imageFiles.js";
+import { readZipPage } from "./utils/zipPages.js";
 import { parseMediaRequestUrl } from "./mediaProtocol.js";
 
 log.initialize();
@@ -150,6 +154,7 @@ function createTray(): void {
 
 // 최초 부팅 시 라이브러리 자동 스캔을 1회만 실행했는지 추적 (새로고침 시 재실행 방지)
 let hasRunInitialLibraryScan = false;
+let hasStartedSubscriptionPolling = false;
 
 function createViewerWindow(fromUrl: string) {
   // 첫 창 생성 시 위치를 메인 창 기준으로 오프셋
@@ -271,52 +276,12 @@ function createWindow() {
   mainWindow.on("unmaximize", () => {
     mainWindow.webContents.send("window-maximized", false);
   });
-
 }
 
 app.whenReady().then(async () => {
-  createWindow();
-  createTray();
+  if (!gotTheLock) return;
 
-  registerUpdaterHandlers(mainWindow);
-  registerBookHandlers();
-  registerConfigHandlers();
-  registerDirectoryHandlers();
-  registerDownloaderHandlers();
-  registerDownloadQueueHandlers();
-  registerEtcHandlers(mainWindow);
-  registerPresetHandlers();
-  registerSeriesCollectionHandlers();
-  registerBrowseHandlers();
-  registerStatisticsHandlers();
-  registerDuplicatesHandlers();
-  registerThumbnailHandlers();
-  registerWindowHandlers(mainWindow, createViewerWindow, viewerWindows);
-  await registerCompanionHandlers();
-
-  // 다운로드 큐 초기화 (미완료 다운로드 복구)
-  await initializeDownloadQueue();
-
-  // 앱 사용 시간 추적 시작
-  try {
-    const [logId] = await db("AppUsageLog").insert({
-      started_at: new Date().toISOString(),
-      ended_at: null,
-      duration: null,
-    });
-    currentUsageLogId = logId;
-  } catch (error) {
-    console.error("[Main] 앱 사용 시간 추적 시작 실패:", error);
-  }
-
-  fs.mkdir(path.join(app.getPath("userData"), "downloader_temp_thumbnails"), {
-    recursive: true,
-  });
-  fs.mkdir(path.join(app.getPath("userData"), "temp_cover"), {
-    recursive: true,
-  });
-
-  // 커스텀 프로토콜 등록
+  // 렌더러가 만들어질 때 이미 스킴이 등록되어 있어야 합니다.
   protocol.handle("doujin-menu", async (request) => {
     const mediaRequest = parseMediaRequestUrl(request.url);
     if (!mediaRequest) {
@@ -333,10 +298,9 @@ app.whenReady().then(async () => {
           mediaRequest.fileName,
         );
         const imageBuffer = await fs.readFile(thumbnailPath);
-        const mimeType = `image/${path.extname(thumbnailPath).substring(1)}`;
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         return new Response(imageBuffer as any, {
-          headers: { "Content-Type": mimeType },
+          headers: { "Content-Type": imageMimeType(thumbnailPath) },
         });
       }
 
@@ -359,125 +323,26 @@ app.whenReady().then(async () => {
         .catch(() => false);
 
       if (isDirectory) {
-        const files = await fs.readdir(bookPath);
-        const imageFiles = files
-          .filter((file) => file.match(/\.(jpg|jpeg|png|webp|gif|bmp|avif)$/i))
-          .sort(naturalSort);
+        const imageFiles = sortImageFiles(await fs.readdir(bookPath));
 
         if (pageIndex >= 0 && pageIndex < imageFiles.length) {
           const imagePath = path.join(bookPath, imageFiles[pageIndex]);
           const imageBuffer = await fs.readFile(imagePath);
-          const mimeType = `image/${path.extname(imagePath).substring(1)}`;
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           return new Response(imageBuffer as any, {
-            headers: { "Content-Type": mimeType },
+            headers: { "Content-Type": imageMimeType(imagePath) },
           });
         } else {
           return new Response("Page not found", { status: 404 });
         }
       } else if (/.(cbz|zip)$/i.exec(bookPath)) {
-        // ZIP 파일인 경우
-        return new Promise((resolve, reject) => {
-          yauzl.open(
-            bookPath,
-            { lazyEntries: true, autoClose: false },
-            (err, zipfile) => {
-              if (err) {
-                console.error(
-                  `[Main] Error opening zip file ${bookPath}:`,
-                  err,
-                );
-                return reject(
-                  new Response("Failed to open zip file", { status: 500 }),
-                );
-              }
+        const page = await readZipPage(bookPath, pageIndex);
+        if (!page)
+          return new Response("Page not found in zip", { status: 404 });
 
-              const imageEntries: { fileName: string; entry: yauzl.Entry }[] =
-                [];
-              zipfile.on("entry", (entry) => {
-                if (!entry.fileName.endsWith("/")) {
-                  // 폴더 엔트리 무시
-                  const ext = path.extname(entry.fileName).toLowerCase();
-                  if (
-                    [
-                      `.jpg`,
-                      `.jpeg`,
-                      `.png`,
-                      `.webp`,
-                      `.gif`,
-                      `.bmp`,
-                      `.avif`,
-                    ].includes(ext)
-                  ) {
-                    imageEntries.push({ fileName: entry.fileName, entry });
-                  }
-                }
-                zipfile.readEntry();
-              });
-
-              zipfile.on("end", () => {
-                imageEntries.sort((a, b) =>
-                  naturalSort(a.fileName, b.fileName),
-                ); // 파일명으로 정렬
-
-                if (pageIndex >= 0 && pageIndex < imageEntries.length) {
-                  const targetEntry = imageEntries[pageIndex].entry;
-                  zipfile.openReadStream(targetEntry, (err, readStream) => {
-                    if (err) {
-                      console.error(
-                        `[Main] Error opening read stream for ${targetEntry.fileName}:`,
-                        err,
-                      );
-                      zipfile.close(); // Ensure zipfile is closed on error
-                      return reject(
-                        new Response("Failed to read image from zip", {
-                          status: 500,
-                        }),
-                      );
-                    }
-
-                    const chunks: Buffer[] = [];
-                    readStream.on("data", (chunk) => chunks.push(chunk));
-                    readStream.on("end", () => {
-                      zipfile.close(); // Ensure zipfile is closed after stream ends
-                      const buffer = Buffer.concat(chunks);
-                      const mimeType = `image/${path.extname(targetEntry.fileName).substring(1)}`;
-                      resolve(
-                        new Response(buffer, {
-                          headers: { "Content-Type": mimeType },
-                        }),
-                      );
-                    });
-                    readStream.on("error", (streamErr) => {
-                      console.error(
-                        `[Main] Read stream error for ${targetEntry.fileName}:`,
-                        streamErr,
-                      );
-                      zipfile.close(); // Ensure zipfile is closed on stream error
-                      reject(
-                        new Response("Error reading image stream", {
-                          status: 500,
-                        }),
-                      );
-                    });
-                  });
-                } else {
-                  zipfile.close();
-                  resolve(
-                    new Response("Page not found in zip", { status: 404 }),
-                  );
-                }
-              });
-
-              zipfile.on("error", (zipErr) => {
-                console.error(`[Main] Zip file error for ${bookPath}:`, zipErr);
-                zipfile.close();
-                reject(new Response("Error reading zip file", { status: 500 }));
-              });
-
-              zipfile.readEntry(); // 첫 번째 엔트리 읽기 시작
-            },
-          );
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        return new Response(page.buffer as any, {
+          headers: { "Content-Type": imageMimeType(page.fileName) },
         });
       } else {
         return new Response("Unsupported book format", { status: 400 });
@@ -489,6 +354,49 @@ app.whenReady().then(async () => {
       );
       return new Response("Internal server error", { status: 500 });
     }
+  });
+
+  createWindow();
+  createTray();
+
+  registerUpdaterHandlers(mainWindow);
+  registerBookHandlers();
+  registerConfigHandlers();
+  registerDirectoryHandlers();
+  registerDownloaderHandlers();
+  registerDownloadQueueHandlers();
+  registerEtcHandlers(mainWindow);
+  registerPresetHandlers();
+  registerSeriesCollectionHandlers();
+  registerBrowseHandlers();
+  registerStatisticsHandlers();
+  registerDuplicatesHandlers();
+  registerThumbnailHandlers();
+  registerWindowHandlers(mainWindow, createViewerWindow, viewerWindows);
+  registerSubscriptionHandlers(mainWindow);
+  await registerCompanionHandlers();
+
+  // 다운로드 큐 초기화 (미완료 다운로드 복구)
+  await initializeDownloadQueue();
+
+  // 앱 사용 시간 추적 시작
+  try {
+    const [logId] = await db("AppUsageLog").insert({
+      started_at: new Date().toISOString(),
+      ended_at: null,
+      duration: null,
+    });
+    currentUsageLogId = logId;
+  } catch (error) {
+    console.error("[Main] 앱 사용 시간 추적 시작 실패:", error);
+  }
+
+  await fs.mkdir(
+    path.join(app.getPath("userData"), "downloader_temp_thumbnails"),
+    { recursive: true },
+  );
+  await fs.mkdir(path.join(app.getPath("userData"), "temp_cover"), {
+    recursive: true,
   });
 
   // 앱 종료 시 외부 프로그램 임시 파일 정리
@@ -575,8 +483,11 @@ app.whenReady().then(async () => {
               .whereLike("path", `${folderPath}%`)
               .and.where("cover_path", null);
 
-            await Promise.all(
-              books.map((book) => handleGenerateThumbnail(book.id)),
+            const thumbnailQueue = new PQueue({
+              concurrency: Math.min(4, os.cpus().length),
+            });
+            await thumbnailQueue.addAll(
+              books.map((book) => () => handleGenerateThumbnail(book.id)),
             );
           }
           for (const { folderPath, foundPaths } of completedScans) {
@@ -592,6 +503,12 @@ app.whenReady().then(async () => {
       })();
     });
   }
+
+  ipcMain.on("renderer-ready", () => {
+    if (hasStartedSubscriptionPolling) return;
+    hasStartedSubscriptionPolling = true;
+    setTimeout(startSubscriptionPollingIfEnabled, 10_000);
+  });
 });
 
 app.on("window-all-closed", async function () {

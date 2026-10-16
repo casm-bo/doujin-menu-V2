@@ -40,6 +40,7 @@ import {
 import { useKeybindings } from "@/composable/useKeybindings";
 import { usePermanentDelete } from "@/composable/usePermanentDelete";
 import { useWindowEvent } from "@/composable/useWindowEvent";
+import { hasOpenDialog } from "@/lib/utils";
 import { useUiStore } from "@/store/uiStore";
 import { useViewerStore } from "@/store/viewerStore";
 import { Icon } from "@iconify/vue";
@@ -66,7 +67,6 @@ let stopWindowMaximized = () => {};
 // 새 창 모드용 윈도우 제어
 const minimizeWindow = () => ipcRenderer.send("minimize-window");
 const maximizeToggleWindow = () => ipcRenderer.send("maximize-toggle-window");
-const closeWindow = () => ipcRenderer.send("close-window");
 
 const {
   bookId,
@@ -301,6 +301,8 @@ const handleDeleteBook = async () => {
 };
 
 const handleWheel = (e: WheelEvent) => {
+  if (hasOpenDialog()) return;
+
   // Ctrl + 휠로 확대/축소 (모든 모드에서 동작)
   if (e.ctrlKey) {
     e.preventDefault();
@@ -377,11 +379,12 @@ const handleScroll = useThrottleFn(
     const scrollTop = webtoonRef.value.scrollTop;
     const images = webtoonImageRef.value;
     let newCurrentPage = 1;
+    const imageSpaceScrollTop = scrollTop / (zoomLevel.value / 100);
 
     for (const img of images) {
       if (
-        img.offsetTop <= scrollTop + 10 &&
-        img.offsetTop + img.offsetHeight > scrollTop
+        img.offsetTop <= imageSpaceScrollTop + 10 &&
+        img.offsetTop + img.offsetHeight > imageSpaceScrollTop
       ) {
         newCurrentPage = Number(img.getAttribute("data-page-num"));
         break;
@@ -660,6 +663,51 @@ useKeybindings(
             </h1>
           </div>
           <div class="flex items-center gap-1">
+            <!-- 시리즈 네비게이션 버튼 -->
+            <div
+              v-if="book?.series_collection_id"
+              class="border-background/25 mr-1 flex items-center gap-1 border-r pr-1"
+            >
+              <Tooltip>
+                <TooltipTrigger as-child>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    class="text-background hover:bg-background/15 hover:text-background size-8"
+                    style="-webkit-app-region: no-drag"
+                    @click="store.loadPrevBookInSeries()"
+                  >
+                    <Icon
+                      icon="solar:skip-previous-bold-duotone"
+                      class="size-5"
+                    />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p class="flex items-center gap-1">
+                    시리즈 이전 권 <kbd>Shift</kbd>+<kbd>[</kbd>
+                  </p>
+                </TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger as-child>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    class="text-background hover:bg-background/15 hover:text-background size-8"
+                    style="-webkit-app-region: no-drag"
+                    @click="store.loadNextBookInSeries()"
+                  >
+                    <Icon icon="solar:skip-next-bold-duotone" class="size-5" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p class="flex items-center gap-1">
+                    시리즈 다음 권 <kbd>Shift</kbd>+<kbd>]</kbd>
+                  </p>
+                </TooltipContent>
+              </Tooltip>
+            </div>
             <Tooltip>
               <TooltipTrigger as-child>
                 <Button
@@ -744,51 +792,6 @@ useKeybindings(
                 <p class="flex items-center gap-1">랜덤 책 <kbd>\</kbd></p>
               </TooltipContent>
             </Tooltip>
-            <!-- 시리즈 네비게이션 버튼 -->
-            <div
-              v-if="book?.series_collection_id"
-              class="border-background/25 ml-1 flex items-center gap-1 border-l pl-1"
-            >
-              <Tooltip>
-                <TooltipTrigger as-child>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    class="text-background hover:bg-background/15 hover:text-background size-8"
-                    style="-webkit-app-region: no-drag"
-                    @click="store.loadPrevBookInSeries()"
-                  >
-                    <Icon
-                      icon="solar:skip-previous-bold-duotone"
-                      class="size-5"
-                    />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>
-                  <p class="flex items-center gap-1">
-                    시리즈 이전 권 <kbd>Shift</kbd>+<kbd>[</kbd>
-                  </p>
-                </TooltipContent>
-              </Tooltip>
-              <Tooltip>
-                <TooltipTrigger as-child>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    class="text-background hover:bg-background/15 hover:text-background size-8"
-                    style="-webkit-app-region: no-drag"
-                    @click="store.loadNextBookInSeries()"
-                  >
-                    <Icon icon="solar:skip-next-bold-duotone" class="size-5" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>
-                  <p class="flex items-center gap-1">
-                    시리즈 다음 권 <kbd>Shift</kbd>+<kbd>]</kbd>
-                  </p>
-                </TooltipContent>
-              </Tooltip>
-            </div>
             <Tooltip>
               <TooltipTrigger as-child>
                 <Button
@@ -841,7 +844,7 @@ useKeybindings(
                 type="button"
                 class="text-background hover:bg-destructive hover:text-destructive-foreground flex w-9 items-center justify-center transition-colors"
                 title="닫기"
-                @click="closeWindow"
+                @click="closeCurrentWindow"
               >
                 <Icon icon="lucide:x" class="size-4" />
               </button>

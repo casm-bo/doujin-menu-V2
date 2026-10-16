@@ -12,6 +12,7 @@ import { console } from "../main.js";
 import { detectSeriesForBook } from "../services/seriesDetection/seriesDetector.js";
 import { computeComparisonKey } from "../services/seriesDetection/titlePatternMatcher.js";
 import { normalizeArtistName } from "../utils/artistName.js";
+import { normalizeTagName } from "../utils/tagName.js";
 import { PrefixIndex } from "../services/seriesDetection/prefixIndex.js";
 import type { SerializedIndexEntry } from "../services/seriesDetection/prefixIndex.js";
 import type { DetectionOptions } from "../services/seriesDetection/types.js";
@@ -211,7 +212,7 @@ function parseSeriesSearchQuery(searchQuery: string): SeriesParsedSearchTerms {
         result.artistTerms.push(normalizeArtistName(value));
         break;
       case "tag":
-        result.tagTerms.push(value);
+        result.tagTerms.push(normalizeTagName(value));
         break;
       case "type":
         result.typeTerms.push(value);
@@ -354,7 +355,7 @@ export async function handleGetSeriesCollections(params: {
         const tagParts: string[] = [];
         for (const term of parsedSearch.tagTerms) {
           tagParts.push(
-            "SUM(CASE WHEN LOWER(Tag.name) LIKE ? THEN 1 ELSE 0 END) > 0",
+            "SUM(CASE WHEN LOWER(REPLACE(Tag.name, ' ', '_')) LIKE ? THEN 1 ELSE 0 END) > 0",
           );
           havingBindings.push(`%${term}%`);
         }
