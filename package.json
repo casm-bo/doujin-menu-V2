@@ -106,13 +106,13 @@
   "packageManager": "pnpm@10.26.2",
   "pnpm": {
     "ignoredBuiltDependencies": [
+      "better-sqlite3",
       "esbuild",
       "vue-demi"
     ],
     "onlyBuiltDependencies": [
       "@parcel/watcher",
       "@tailwindcss/oxide",
-      "better-sqlite3",
       "electron",
       "electron-winstaller",
       "sharp"
