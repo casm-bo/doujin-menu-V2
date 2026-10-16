@@ -18,7 +18,6 @@ execFileSync(
 function buildRenderer() {
   return build({
     configFile: join(import.meta.dirname, "..", "vite.config.js"),
-    base: "./",
     mode: "production",
   });
 }
