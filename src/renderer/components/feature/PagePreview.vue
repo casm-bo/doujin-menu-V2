@@ -51,7 +51,7 @@ const initObserver = () => {
 };
 
 watch(
-  () => [props.pages, viewMode.value] as const,
+  () => [props.pages, props.loading, props.error, viewMode.value] as const,
   () => initObserver(),
   { immediate: true, flush: "post" },
 );

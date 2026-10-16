@@ -49,6 +49,12 @@ const previewImageUrls = ref<string[]>([]);
 const isLoadingImages = ref(false);
 const imageLoadError = ref<string | null>(null);
 const libraryBook = ref<Book | null>(null);
+const useLocalPreview = computed(
+  () =>
+    !!libraryBook.value &&
+    !libraryBook.value.is_offline &&
+    (libraryBook.value.page_count || 0) > 0,
+);
 let previewRequest = 0;
 
 const openReader = (page: number) => {
@@ -84,20 +90,33 @@ watch(
     libraryBook.value = null;
 
     try {
-      const [result, existingBook] = await Promise.all([
-        ipcRenderer.invoke("get-gallery-image-urls", galleryId),
-        ipcRenderer.invoke("check-book-exists-by-hitomi-id", galleryId),
-      ]);
+      const existingBook = await ipcRenderer.invoke(
+        "check-book-exists-by-hitomi-id",
+        galleryId,
+      );
+      if (request !== previewRequest) return;
+      if (existingBook.success && existingBook.bookId) {
+        const book = await getBook(existingBook.bookId);
+        if (request !== previewRequest) return;
+        libraryBook.value = book;
+        if (book && useLocalPreview.value) {
+          previewImageUrls.value = Array.from(
+            { length: book.page_count || 0 },
+            (_, index) => `doujin-menu://page/${book.id}/${index}`,
+          );
+          return;
+        }
+      }
+      const result = await ipcRenderer.invoke(
+        "get-gallery-image-urls",
+        galleryId,
+      );
       if (request !== previewRequest) return;
       if (result.success && result.data) {
         previewImageUrls.value = result.data;
       } else {
         imageLoadError.value =
           result.error || "미리보기 URL을 가져오지 못했습니다.";
-      }
-      if (existingBook.success && existingBook.bookId) {
-        const book = await getBook(existingBook.bookId);
-        if (request === previewRequest) libraryBook.value = book;
       }
     } catch (error) {
       if (request !== previewRequest) return;
@@ -127,7 +146,15 @@ watch(
       >
         <div class="flex gap-5">
           <div class="h-56 w-40 shrink-0 overflow-hidden rounded-lg shadow">
+            <img
+              v-if="useLocalPreview"
+              :src="previewImageUrls[0]"
+              :alt="gallery.title.display"
+              class="h-full w-full object-contain"
+            />
             <ProxiedImage
+              v-else-if="!isLoadingImages"
+              :key="gallery.id"
               :id="gallery.id"
               :url="gallery.thumbnailUrl"
               :referer="refererUrl"
@@ -250,7 +277,7 @@ watch(
 
         <PagePreview
           :pages="previewImageUrls"
-          :proxy-id="gallery.id"
+          :proxy-id="useLocalPreview ? undefined : gallery.id"
           :referer="refererUrl"
           :loading="isLoadingImages"
           :error="imageLoadError"
