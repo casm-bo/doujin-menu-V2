@@ -107,6 +107,25 @@ afterEach(() => {
 });
 
 describe("preview loading", () => {
+  it("scrolls pages with the wheel and lets the outer popup scroll at the edge", async () => {
+    const { host } = mount(PagePreview, { pages: ["/1.jpg", "/2.jpg"] });
+    await flush();
+    const strip = host.querySelector(".overflow-x-auto") as HTMLElement;
+    Object.defineProperties(strip, {
+      scrollWidth: { value: 900 },
+      clientWidth: { value: 300 },
+    });
+    const wheel = new WheelEvent("wheel", { deltaY: 120, cancelable: true });
+    strip.dispatchEvent(wheel);
+    expect(strip.scrollLeft).toBe(120);
+    expect(wheel.defaultPrevented).toBe(true);
+    strip.scrollLeft = 600;
+    const edge = new WheelEvent("wheel", { deltaY: 120, cancelable: true });
+    strip.dispatchEvent(edge);
+    expect(edge.defaultPrevented).toBe(false);
+    expect(strip.scrollLeft).toBe(600);
+  });
+
   it("observes pages that appear only after a delayed loading phase", async () => {
     const { state } = mount(PagePreview, {
       pages: [],
