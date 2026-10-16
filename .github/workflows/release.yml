@@ -36,8 +36,14 @@ jobs:
       - name: Install dependencies
         run: pnpm install
 
+      - name: Verify native modules in Electron
+        run: pnpm exec electron scripts/check-electron-native.cjs
+
       - name: Build app
         run: pnpm run ${{ matrix.cmd  }}
+
+      - name: Verify packaged native modules
+        run: pnpm exec electron scripts/check-electron-native.cjs dist/win-unpacked/resources/app.asar
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v6

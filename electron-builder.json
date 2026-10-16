@@ -22,6 +22,7 @@
     "target": ["snap"]
   },
   "asar": true,
+  "npmRebuild": false,
   "publish": {
     "provider": "github",
     "owner": "casm-bo",
