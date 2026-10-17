@@ -1,8 +1,12 @@
 import vue from "@vitejs/plugin-vue";
 import { defineConfig } from "vitest/config";
+import { fileURLToPath } from "node:url";
 
 export default defineConfig({
   plugins: [vue()],
+  resolve: {
+    alias: { "@": fileURLToPath(new URL("./src/renderer", import.meta.url)) },
+  },
   test: {
     environment: "node", // Changed to node for main process testing
     globals: true, // Allows using describe, it, expect without importing

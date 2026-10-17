@@ -53,12 +53,14 @@ vi.mock("electron", () => ({
 
 // electron-store mock 처리
 vi.mock("electron-store", () => ({
-  default: vi.fn(() => ({
-    get: vi.fn(),
-    set: vi.fn(),
-    delete: vi.fn(),
-    store: {},
-  })),
+  default: vi.fn(function () {
+    return {
+      get: vi.fn(),
+      set: vi.fn(),
+      delete: vi.fn(),
+      store: {},
+    };
+  }),
 }));
 
 // electron-window-state mock 처리
