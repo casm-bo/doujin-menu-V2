@@ -36,6 +36,9 @@ jobs:
       - name: Install dependencies
         run: pnpm install
 
+      - name: Verify release changelog
+        run: pnpm exec vitest run tests/unit/renderer/changelog.test.ts
+
       - name: Verify native modules in Electron
         run: pnpm exec electron scripts/check-electron-native.cjs
 
