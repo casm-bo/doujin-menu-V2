@@ -291,9 +291,7 @@ export async function handleGetSeriesCollections(params: {
     const needsJoin = hasPrefixFilters;
 
     // 기본 쿼리: JOIN이 필요하면 명시적으로 테이블명 붙임
-    let query = needsJoin
-      ? db("SeriesCollection").select("SeriesCollection.*")
-      : db("SeriesCollection").select("*");
+    let query = db("SeriesCollection").select("SeriesCollection.*");
 
     // 프리픽스 필터가 있으면 Book JOIN 필요
     if (needsJoin) {

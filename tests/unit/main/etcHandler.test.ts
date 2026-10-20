@@ -33,12 +33,9 @@ vi.mock("electron", () => ({
 
 // electron-store mock 처리
 vi.mock("electron-store", () => ({
-  default: vi.fn(() => ({
-    get: vi.fn(),
-    set: vi.fn(),
-    delete: vi.fn(),
-    store: {},
-  })),
+  default: vi.fn(function () {
+    return { get: vi.fn(), set: vi.fn(), delete: vi.fn(), store: {} };
+  }),
 }));
 
 // electron-updater mock 처리
@@ -91,9 +88,19 @@ import {
 } from "../../../src/main/handlers/etcHandler";
 
 // mock 함수 타입 캐스팅
-const mockLstat = lstat as unknown as ReturnType<typeof vi.fn>;
-const mockReaddir = readdir as unknown as ReturnType<typeof vi.fn>;
-const mockRm = rm as unknown as ReturnType<typeof vi.fn>;
+const mockLstat = lstat as unknown as ReturnType<
+  typeof vi.fn<
+    (
+      path: string,
+    ) => Promise<{ size: number; isDirectory: () => boolean } | null>
+  >
+>;
+const mockReaddir = readdir as unknown as ReturnType<
+  typeof vi.fn<
+    (path: string) => Promise<{ name: string; isDirectory: () => boolean }[]>
+  >
+>;
+const mockRm = rm as unknown as ReturnType<typeof vi.fn<typeof rm>>;
 
 // getDirSize는 복잡한 fs 의존성 때문에 별도 mock 함수로 테스트
 async function getDirSize(dirPath: string): Promise<number> {
@@ -111,6 +118,7 @@ async function getDirSize(dirPath: string): Promise<number> {
     for (const file of files) {
       const filePath = `${dirPath}/${file.name}`;
       const fileStats = await mockLstat(filePath);
+      if (!fileStats) continue;
 
       if (fileStats.isDirectory()) {
         totalSize += await getDirSize(filePath);
