@@ -548,7 +548,7 @@ export class CompanionServer {
       if (request.method === "POST") {
         try {
           const mutation = parsePresentationMutation(
-            await this.readJsonBody(request),
+            await this.readJsonBody(request, 2 * 1024 * 1024),
           );
           if (!mutation) {
             this.sendJson(response, 400, {
@@ -1011,6 +1011,7 @@ export class CompanionServer {
 
   private async readJsonBody(
     request: IncomingMessage,
+    maxBytes = MAX_REQUEST_BODY_BYTES,
   ): Promise<Record<string, unknown>> {
     const chunks: Buffer[] = [];
     let totalBytes = 0;
@@ -1018,7 +1019,7 @@ export class CompanionServer {
     for await (const chunk of request) {
       const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
       totalBytes += buffer.length;
-      if (totalBytes > MAX_REQUEST_BODY_BYTES) {
+      if (totalBytes > maxBytes) {
         throw new Error("Request body is too large.");
       }
       chunks.push(buffer);

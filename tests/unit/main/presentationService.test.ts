@@ -163,8 +163,10 @@ describe("presentation storage and transfer", () => {
       .png()
       .toBuffer();
     const hash = createHash("sha256").update(bytes).digest("hex");
-    await service.putCover(hash, bytes);
-    await service.putCover(hash, bytes);
+    await Promise.all([
+      service.putCover(hash, bytes),
+      service.putCover(hash, bytes),
+    ]);
     expect((await service.getCover(hash))?.contentType).toBe("image/png");
     await expect(service.putCover("a".repeat(64), bytes)).rejects.toThrow();
     await expect(service.putCover("../escape", bytes)).rejects.toThrow();

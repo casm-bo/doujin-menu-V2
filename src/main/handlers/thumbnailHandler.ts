@@ -209,6 +209,11 @@ export const handleGenerateThumbnail = async (bookId: number) => {
   if (result) {
     await db("Book")
       .where("id", result.bookId)
+      .where((query) =>
+        query
+          .whereNull("cover_path")
+          .orWhereNot("cover_path", "like", "%presentation-covers%"),
+      )
       .update({ cover_path: result.thumbnailPath });
   }
 };
@@ -244,6 +249,11 @@ export const handleRegenerateAllThumbnails = async () => {
       for (const { bookId, thumbnailPath } of updatedThumbnails) {
         await trx("Book")
           .where("id", bookId)
+          .where((query) =>
+            query
+              .whereNull("cover_path")
+              .orWhereNot("cover_path", "like", "%presentation-covers%"),
+          )
           .update({ cover_path: thumbnailPath });
       }
     });

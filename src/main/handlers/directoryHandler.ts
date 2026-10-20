@@ -1321,6 +1321,11 @@ export async function scanDirectory(
           for (const { bookId, thumbnailPath } of thumbnailChunk) {
             await updateTrx("Book")
               .where("id", bookId)
+              .where((query) =>
+                query
+                  .whereNull("cover_path")
+                  .orWhereNot("cover_path", "like", "%presentation-covers%"),
+              )
               .update({ cover_path: thumbnailPath });
           }
         });
@@ -1427,6 +1432,11 @@ export async function scanFile(
       if (thumbnail) {
         await db("Book")
           .where("id", thumbnail.bookId)
+          .where((query) =>
+            query
+              .whereNull("cover_path")
+              .orWhereNot("cover_path", "like", "%presentation-covers%"),
+          )
           .update({ cover_path: thumbnail.thumbnailPath });
       }
     }

@@ -583,6 +583,28 @@ describe("CompanionServer", () => {
         value: expect.objectContaining({ key: "hitomi:123" }),
       }),
     );
+    const large = {
+      ...value,
+      metadata: {
+        ...value.metadata,
+        tags: Array.from({ length: 300 }, (_, index) =>
+          `태그${index}`.padEnd(200, "가"),
+        ),
+      },
+    };
+    expect(
+      (
+        await fetch(`${baseUrl}/v1/library/presentations`, {
+          headers,
+          method: "POST",
+          body: JSON.stringify({
+            mutationId: "large-edit",
+            baseVersion: 1,
+            value: large,
+          }),
+        })
+      ).status,
+    ).toBe(200);
     expect(
       (
         await fetch(`${baseUrl}/v1/library/presentations`, {
@@ -601,6 +623,15 @@ describe("CompanionServer", () => {
       Buffer.from("image"),
     );
     expect(await (await fetch(endpoint, { headers })).text()).toBe("image");
+    expect(
+      (
+        await fetch(endpoint, {
+          headers,
+          method: "PUT",
+          body: Buffer.alloc(5 * 1024 * 1024 + 1),
+        })
+      ).status,
+    ).toBe(413);
   });
 
   async function pairTestDevice(): Promise<string> {

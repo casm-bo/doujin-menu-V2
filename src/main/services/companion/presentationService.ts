@@ -311,7 +311,9 @@ export class DesktopPresentationService {
     const temporary = `${target}.${randomUUID()}.part`;
     try {
       await fs.writeFile(temporary, bytes, { flag: "wx" });
-      await fs.rename(temporary, target);
+      await fs.rename(temporary, target).catch(async (error) => {
+        if (!(await this.hasCover(hash))) throw error;
+      });
     } finally {
       await fs.unlink(temporary).catch(() => {});
     }
