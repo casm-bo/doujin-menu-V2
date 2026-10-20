@@ -1,5 +1,6 @@
 import { randomUUID } from "crypto";
 import type { Knex } from "knex";
+import { DesktopPresentationService } from "./presentationService.js";
 import type {
   CompanionSyncBookState,
   CompanionSyncChange,
@@ -344,6 +345,15 @@ export class DesktopCompanionSyncService {
       .where("sync_id", book.sync_id)
       .whereNot("id", book.id)
       .update(update);
+    if (
+      mutation.customTitle !== undefined &&
+      (mutation.customTitle?.trim() || null) !== book.custom_title
+    ) {
+      await new DesktopPresentationService(
+        this.database,
+        "",
+      ).captureDesktopEdit(book.id, trx);
+    }
     const updatedBook = (await trx("Book")
       .select(
         "id",

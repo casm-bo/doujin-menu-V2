@@ -5,6 +5,7 @@ import fs from "fs/promises";
 import os from "os";
 import path from "path";
 import sharp from "sharp";
+import { DesktopCompanionSyncService } from "../../../src/main/services/companion/companionSyncService.js";
 import {
   createTestDb,
   seedBook,
@@ -53,6 +54,28 @@ describe("presentation storage and transfer", () => {
     await fs.rm(directory, { recursive: true, force: true });
   });
 
+  it("publishes legacy title edits through the metadata feed without replacing tags", async () => {
+    const book = await seedBook(db, { hitomi_id: "123" });
+    await service.apply("phone", {
+      mutationId: "metadata",
+      baseVersion: 0,
+      value: value(),
+    });
+    const current = await db("Book").where("id", book.id).first();
+    await new DesktopCompanionSyncService(db).applyMutations("old-client", [
+      {
+        mutationId: "rename",
+        bookSyncId: current.sync_id,
+        baseVersion: current.state_version,
+        customTitle: "Legacy renamed",
+      },
+    ]);
+    const snapshot = (await service.changes()).values[0];
+    expect(snapshot.title).toBe("Legacy renamed");
+    expect(snapshot.metadata.series).toEqual(["Original IP"]);
+    expect(snapshot.version).toBe(2);
+  });
+
   it("applies once, reports conflicts and preserves separate episode membership", async () => {
     const book = await seedBook(db, { hitomi_id: "123" });
     const edit = { mutationId: "first", baseVersion: 0, value: value() };
@@ -93,7 +116,9 @@ describe("presentation storage and transfer", () => {
       "Edited",
     );
     await db.transaction(async (trx) => {
-      await trx("Book").where("id", book.id).update({ title: "PC edit" });
+      await trx("Book")
+        .where("id", book.id)
+        .update({ title: "PC edit", custom_title: "PC edit" });
       await service.captureDesktopEdit(book.id, trx);
     });
     const delta = await service.changes(first.value.revision, 1);

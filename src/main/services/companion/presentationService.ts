@@ -215,7 +215,7 @@ export class DesktopPresentationService {
         trx,
         {
           key,
-          title: book.title,
+          title: book.custom_title || book.title,
           coverHash: old?.coverHash ?? null,
           webtoon: old?.webtoon ?? null,
           version: previous?.version ?? 0,
