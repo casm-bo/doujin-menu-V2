@@ -522,6 +522,87 @@ describe("CompanionServer", () => {
     expect(syncService.applyMutations).not.toHaveBeenCalled();
   });
 
+  it("authenticates and validates presentation edits and cover transfer", async () => {
+    const value = {
+      key: "hitomi:123",
+      title: "Title",
+      metadata: {
+        artists: [],
+        groups: [],
+        series: [],
+        characters: [],
+        tags: [],
+      },
+    };
+    libraryService.getPresentationChanges = vi
+      .fn()
+      .mockResolvedValue({ values: [], cursor: 5, hasMore: false });
+    libraryService.savePresentation = vi
+      .fn()
+      .mockResolvedValue({ status: "applied", value });
+    libraryService.putPresentationCover = vi.fn().mockResolvedValue(undefined);
+    libraryService.getPresentationCover = vi.fn().mockResolvedValue({
+      stream: Readable.from(Buffer.from("image")),
+      contentType: "image/webp",
+      contentLength: 5,
+    });
+    expect((await fetch(`${baseUrl}/v1/library/presentations`)).status).toBe(
+      401,
+    );
+    const token = await pairTestDevice();
+    const headers = {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    };
+    expect(
+      (
+        await fetch(`${baseUrl}/v1/library/presentations?cursor=-1`, {
+          headers,
+        })
+      ).status,
+    ).toBe(400);
+    const page = await fetch(
+      `${baseUrl}/v1/library/presentations?cursor=2&limit=10`,
+      { headers },
+    );
+    expect((await page.json()).data.cursor).toBe(5);
+    expect(libraryService.getPresentationChanges).toHaveBeenCalledWith(2, 10);
+    expect(
+      (
+        await fetch(`${baseUrl}/v1/library/presentations`, {
+          headers,
+          method: "POST",
+          body: JSON.stringify({ mutationId: "edit", baseVersion: 0, value }),
+        })
+      ).status,
+    ).toBe(200);
+    expect(libraryService.savePresentation).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({
+        mutationId: "edit",
+        value: expect.objectContaining({ key: "hitomi:123" }),
+      }),
+    );
+    expect(
+      (
+        await fetch(`${baseUrl}/v1/library/presentations`, {
+          headers,
+          method: "POST",
+          body: "{}",
+        })
+      ).status,
+    ).toBe(400);
+    const endpoint = `${baseUrl}/v1/library/presentation-covers/${"a".repeat(64)}`;
+    expect(
+      (await fetch(endpoint, { headers, method: "PUT", body: "image" })).status,
+    ).toBe(200);
+    expect(libraryService.putPresentationCover).toHaveBeenCalledWith(
+      "a".repeat(64),
+      Buffer.from("image"),
+    );
+    expect(await (await fetch(endpoint, { headers })).text()).toBe("image");
+  });
+
   async function pairTestDevice(): Promise<string> {
     const pairing = server.createPairingCode();
     const response = await fetch(`${baseUrl}/v1/pair`, {

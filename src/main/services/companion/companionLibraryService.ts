@@ -18,6 +18,8 @@ import type {
   CompanionSeriesAssignmentResult,
 } from "./companionServer.js";
 import { handleDeleteBook } from "../../handlers/bookHandler.js";
+import { DesktopPresentationService } from "./presentationService.js";
+import type { PresentationMutation } from "../../../types/presentation.js";
 
 const IMAGE_EXTENSIONS = new Set([
   ".jpg",
@@ -55,6 +57,7 @@ interface LibraryBookRow {
   series: string | null;
   characters: string | null;
   tags: string | null;
+  published_date: string | null;
   series_collection_name: string | null;
   series_order_index: number | null;
   series_state_updated_at: number | null;
@@ -65,7 +68,27 @@ export class DesktopLibraryService implements CompanionLibraryService {
   constructor(
     private readonly database: Knex = db,
     private readonly getDownloadPath: () => string = () => "",
+    private readonly getCoverDirectory: () => string = () => "",
   ) {}
+
+  private get presentations() {
+    return new DesktopPresentationService(
+      this.database,
+      this.getCoverDirectory(),
+    );
+  }
+  getPresentationChanges(cursor: number, limit: number) {
+    return this.presentations.changes(cursor, limit);
+  }
+  savePresentation(deviceId: string, mutation: PresentationMutation) {
+    return this.presentations.apply(deviceId, mutation);
+  }
+  putPresentationCover(hash: string, bytes: Buffer) {
+    return this.presentations.putCover(hash, bytes);
+  }
+  getPresentationCover(hash: string) {
+    return this.presentations.getCover(hash);
+  }
 
   async saveSeriesAssignments(
     assignments: CompanionSeriesAssignment[],
@@ -387,6 +410,7 @@ export class DesktopLibraryService implements CompanionLibraryService {
         stateVersion: Math.max(0, book.state_version || 0),
         stateUpdatedAt: book.state_updated_at ?? null,
         hitomiId: book.hitomi_id ?? null,
+        publishedDate: book.published_date ?? null,
         type: book.type ?? null,
         language:
           book.language_name_local ?? book.language_name_english ?? null,
@@ -400,7 +424,7 @@ export class DesktopLibraryService implements CompanionLibraryService {
           order: Math.max(0, (book.series_order_index || 1) - 1),
           modifiedAt: Number(book.series_state_updated_at || 0),
         },
-        coverUrl: `/v1/library/books/${book.id}/cover`,
+        coverUrl: `/v1/library/books/${book.id}/cover?v=${Math.max(0, book.state_version || 0)}`,
       }));
     if (!paginated) return mapped;
     return {
@@ -426,6 +450,9 @@ export class DesktopLibraryService implements CompanionLibraryService {
     if (!book) return null;
 
     if (book.cover_path) {
+      const hash = path.basename(book.cover_path, ".image");
+      if (/^[a-f0-9]{64}$/.test(hash) && this.getCoverDirectory())
+        return this.presentations.getCover(hash);
       const cover = await imageFile(book.cover_path);
       if (cover) return cover;
     }

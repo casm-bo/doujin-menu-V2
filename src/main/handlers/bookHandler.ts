@@ -10,6 +10,10 @@ import { normalizeArtistName } from "../utils/artistName.js";
 import { normalizeTagName } from "../utils/tagName.js";
 import { DesktopCompanionSyncService } from "../services/companion/companionSyncService.js";
 import { notifyCompanionLibraryChanged } from "../services/companion/companionSyncSignal.js";
+import {
+  DesktopPresentationService,
+  isPresentationCoverPath,
+} from "../services/companion/presentationService.js";
 import { store as configStore } from "./configHandler.js";
 
 export interface ExcludeTerms {
@@ -611,6 +615,9 @@ export const handleUpdateBookMetadata = async ({
         .where("id", bookId)
         .update({
           title,
+          custom_title: title,
+          state_version: trx.raw("coalesce(state_version, 0) + 1"),
+          state_updated_at: trx.fn.now(),
           hitomi_id: metadata.hitomi_id?.trim() || null,
           type: metadata.type?.trim() || null,
           language_name_local: metadata.language_name_local?.trim() || null,
@@ -661,8 +668,12 @@ export const handleUpdateBookMetadata = async ({
           });
         }
       }
+      await new DesktopPresentationService(db, "").captureDesktopEdit(
+        bookId,
+        trx,
+      );
     });
-    notifyCompanionLibraryChanged(false);
+    notifyCompanionLibraryChanged();
     return { success: true };
   } catch (error) {
     return { success: false, error: (error as Error).message };
@@ -1445,7 +1456,11 @@ export const handleDeleteBook = async (
     });
 
     // 썸네일은 캐시 파일이므로 즉시 삭제 (플레이스홀더 제외)
-    if (book.cover_path && !isPlaceholderCover(book.cover_path)) {
+    if (
+      book.cover_path &&
+      !isPlaceholderCover(book.cover_path) &&
+      !isPresentationCoverPath(book.cover_path)
+    ) {
       try {
         await fs.unlink(book.cover_path);
       } catch {

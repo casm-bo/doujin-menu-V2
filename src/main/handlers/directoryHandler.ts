@@ -1,4 +1,4 @@
-import { BrowserWindow, dialog, ipcMain } from "electron";
+import { app, BrowserWindow, dialog, ipcMain } from "electron";
 import fg from "fast-glob";
 import fs from "fs/promises";
 import type { Knex } from "knex";
@@ -20,6 +20,10 @@ import { normalizeArtistName } from "../utils/artistName.js";
 import { filterLibraryPathRows } from "../utils/libraryPath.js";
 import { normalizeTagName } from "../utils/tagName.js";
 import { notifyCompanionLibraryChanged } from "../services/companion/companionSyncSignal.js";
+import {
+  DesktopPresentationService,
+  isPresentationCoverPath,
+} from "../services/companion/presentationService.js";
 import {
   generateThumbnailForBook,
   handleGenerateThumbnail,
@@ -417,7 +421,10 @@ async function removeThumbnailFiles(
   await Promise.all(
     books
       .map((book) => book.cover_path)
-      .filter((coverPath): coverPath is string => Boolean(coverPath))
+      .filter(
+        (coverPath): coverPath is string =>
+          Boolean(coverPath) && !isPresentationCoverPath(coverPath!),
+      )
       .map((coverPath) =>
         fs.unlink(coverPath).catch((error) => {
           console.error(`[Main] 썸네일 파일 삭제 실패 ${coverPath}:`, error);
@@ -761,8 +768,15 @@ async function processBatchInTransaction(
       }
     }
 
+    await new DesktopPresentationService(
+      db,
+      path.join(app.getPath("userData"), "presentation-covers"),
+    ).preserveScannedBook(trx, bookId);
     // 썸네일 생성 필요 여부 결정
-    const currentBookInDb = existingBooksInBatch.find((b) => b.id === bookId);
+    const currentBookInDb = await trx("Book")
+      .select("cover_path")
+      .where("id", bookId)
+      .first();
     let shouldGenerateThumbnail = false;
     if (!currentBookInDb?.cover_path) {
       shouldGenerateThumbnail = true;

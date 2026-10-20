@@ -12,6 +12,7 @@ import { DesktopCompanionSyncService } from "../services/companion/companionSync
 import { setCompanionLibraryChangedHandler } from "../services/companion/companionSyncSignal.js";
 import db from "../db/index.js";
 import { store } from "./configHandler.js";
+import path from "path";
 import {
   handleAddToDownloadQueue,
   handleClearCompletedDownloads,
@@ -73,7 +74,11 @@ export const companionServer = new CompanionServer(
   hitomiService,
   deviceStore,
   downloadService,
-  new DesktopLibraryService(db, () => store.get("downloadPath", "")),
+  new DesktopLibraryService(
+    db,
+    () => store.get("downloadPath", ""),
+    () => path.join(app.getPath("userData"), "presentation-covers"),
+  ),
   new DesktopCompanionSyncService(db),
 );
 setCompanionLibraryChangedHandler((affectsLibrarySnapshot) => {

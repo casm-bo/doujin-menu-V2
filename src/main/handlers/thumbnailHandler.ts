@@ -9,6 +9,7 @@ import db from "../db/index.js";
 import { console } from "../main.js";
 import { isImageFile, sortImageFiles } from "../utils/imageFiles.js";
 import { extractCoverFromZip } from "./directoryHandler.js";
+import { isPresentationCoverPath } from "../services/companion/presentationService.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -101,6 +102,9 @@ export async function generateThumbnailForBook(bookId: number) {
   // 2. 책 정보나 경로가 없으면 중단
   if (!book || !book.path) {
     return null;
+  }
+  if (book.cover_path && isPresentationCoverPath(book.cover_path)) {
+    return { bookId, thumbnailPath: book.cover_path };
   }
 
   // 오프라인 책은 소스 파일에 접근할 수 없으므로 썸네일 생성 생략

@@ -17,6 +17,13 @@ import type {
   SearchGalleriesResult,
 } from "../hitomi/hitomiService.js";
 import type { DownloadQueueItem } from "../../../types/ipc.js";
+import {
+  COVER_HASH,
+  parsePresentationMutation,
+  type PresentationChanges,
+  type PresentationMutation,
+  type PresentationMutationResult,
+} from "../../../types/presentation.js";
 
 const DEFAULT_PORT = 47831;
 const MAX_REQUEST_BODY_BYTES = 64 * 1024;
@@ -70,6 +77,7 @@ export interface CompanionLibraryBook {
   stateVersion: number;
   stateUpdatedAt: string | null;
   hitomiId?: string | null;
+  publishedDate?: string | null;
   type?: string | null;
   language?: string | null;
   artists: { name: string }[];
@@ -117,6 +125,16 @@ export interface CompanionLibraryImage {
 }
 
 export interface CompanionLibraryService {
+  getPresentationChanges?(
+    cursor: number,
+    limit: number,
+  ): Promise<PresentationChanges>;
+  savePresentation?(
+    deviceId: string,
+    mutation: PresentationMutation,
+  ): Promise<PresentationMutationResult>;
+  putPresentationCover?(hash: string, bytes: Buffer): Promise<void>;
+  getPresentationCover?(hash: string): Promise<CompanionLibraryImage | null>;
   listBooks(
     cursor?: number,
     limit?: number,
@@ -318,6 +336,7 @@ export class CompanionServer {
           version: 2,
           pairingAvailable: this.getStatus().pairingAvailable,
           syncGeneration: this.syncGeneration,
+          presentationSync: Boolean(this.libraryService?.savePresentation),
         },
       });
       return;
@@ -361,7 +380,7 @@ export class CompanionServer {
 
     if (
       this.libraryService &&
-      (await this.handleLibraryRequest(request, response, pathname))
+      (await this.handleLibraryRequest(request, response, pathname, device))
     ) {
       return;
     }
@@ -496,9 +515,104 @@ export class CompanionServer {
     request: IncomingMessage,
     response: ServerResponse,
     pathname: string,
+    device: CompanionDevice,
   ): Promise<boolean> {
     const service = this.libraryService;
     if (!service) return false;
+
+    if (
+      pathname === "/v1/library/presentations" &&
+      service.getPresentationChanges &&
+      service.savePresentation
+    ) {
+      if (request.method === "GET") {
+        const url = new URL(request.url || "/", "http://companion.local");
+        const cursor = parseNonNegativeInteger(
+          url.searchParams.get("cursor") ?? "0",
+        );
+        const limit = parsePositiveInteger(
+          url.searchParams.get("limit") ?? "200",
+        );
+        if (cursor === null || limit === null || limit > 200)
+          this.sendJson(response, 400, {
+            success: false,
+            error: "Invalid presentation cursor or limit",
+          });
+        else
+          this.sendJson(response, 200, {
+            success: true,
+            data: await service.getPresentationChanges(cursor, limit),
+          });
+        return true;
+      }
+      if (request.method === "POST") {
+        try {
+          const mutation = parsePresentationMutation(
+            await this.readJsonBody(request),
+          );
+          if (!mutation) {
+            this.sendJson(response, 400, {
+              success: false,
+              error: "Invalid presentation edit",
+            });
+            return true;
+          }
+          const result = await service.savePresentation(device.id, mutation);
+          if (result.status === "applied") notifyCompanionLibraryChanged();
+          this.sendJson(response, 200, { success: true, data: result });
+        } catch {
+          this.sendJson(response, 400, {
+            success: false,
+            error: "Presentation edit could not be saved",
+          });
+        }
+        return true;
+      }
+    }
+    const coverObject = pathname.match(
+      /^\/v1\/library\/presentation-covers\/([a-f0-9]{64})$/,
+    );
+    if (coverObject && COVER_HASH.test(coverObject[1])) {
+      const hash = coverObject[1];
+      if (request.method === "PUT" && service.putPresentationCover) {
+        if (Number(request.headers["content-length"]) > 5 * 1024 * 1024) {
+          request.resume();
+          this.sendJson(response, 413, {
+            success: false,
+            error: "Cover too large",
+          });
+          return true;
+        }
+        try {
+          const chunks: Buffer[] = [];
+          let total = 0;
+          for await (const chunk of request) {
+            const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+            total += bytes.length;
+            if (total > 5 * 1024 * 1024) throw new Error("Cover too large");
+            chunks.push(bytes);
+          }
+          await service.putPresentationCover(hash, Buffer.concat(chunks));
+          this.sendJson(response, 200, { success: true, data: { hash } });
+        } catch {
+          this.sendJson(response, 400, {
+            success: false,
+            error: "Invalid cover image or hash",
+          });
+        }
+        return true;
+      }
+      if (request.method === "GET" && service.getPresentationCover) {
+        const image = await service.getPresentationCover(hash);
+        if (image) this.sendImage(response, image);
+        else
+          this.sendJson(response, 404, {
+            success: false,
+            error: "Cover not found",
+          });
+        return true;
+      }
+    }
 
     if (request.method === "POST" && pathname === "/v1/library/series") {
       const body = await this.readJsonBody(request);
