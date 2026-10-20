@@ -31,7 +31,9 @@ const mockStoreInstance = {
 };
 
 vi.mock("electron-store", () => ({
-  default: vi.fn(() => mockStoreInstance),
+  default: vi.fn(function () {
+    return mockStoreInstance;
+  }),
 }));
 
 // electron 모듈 모킹 (dialog, app 등)
