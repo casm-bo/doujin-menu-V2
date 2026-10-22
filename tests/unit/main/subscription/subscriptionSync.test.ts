@@ -57,6 +57,12 @@ describe("subscription synchronization", () => {
   it("retries lost acknowledgements and rejects a reused mutation ID", async () => {
     const first = await service.save("test-device", "mutation-a", value);
     expect(first.status).toBe("applied");
+    const reordered = Object.fromEntries(
+      Object.entries(value).reverse(),
+    ) as unknown as SyncedSubscription;
+    expect(await service.save("test-device", "mutation-a", reordered)).toEqual(
+      first,
+    );
     expect(await service.save("test-device", "mutation-a", value)).toEqual(
       first,
     );

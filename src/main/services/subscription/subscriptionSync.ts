@@ -86,7 +86,15 @@ export class SubscriptionSyncService {
     };
   }
   async save(deviceId: string, mutationId: string, value: SyncedSubscription) {
-    const request = JSON.stringify(value);
+    const request = JSON.stringify({
+      id: value.id,
+      name: value.name,
+      query: value.query,
+      languages: [...new Set(value.languages)].sort(),
+      enabled: value.enabled,
+      deleted: value.deleted,
+      version: value.version,
+    });
     return this.db.transaction(async (tx) => {
       const receipt = await tx("SubscriptionMutation")
         .where({ device_id: deviceId, mutation_id: mutationId })
