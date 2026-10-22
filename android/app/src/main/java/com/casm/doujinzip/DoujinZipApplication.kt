@@ -1,4 +1,4 @@
-package com.casm.doujinmenu
+package com.casm.doujinzip
 
 import android.app.Application
 import androidx.work.Constraints
@@ -6,17 +6,17 @@ import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.NetworkType
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
-import com.casm.doujinmenu.data.SyncRepository
-import com.casm.doujinmenu.data.local.DoujinMenuDatabase
-import com.casm.doujinmenu.data.network.CompanionClient
-import com.casm.doujinmenu.data.security.SecureConnectionStore
-import com.casm.doujinmenu.sync.SyncWorker
+import com.casm.doujinzip.data.SyncRepository
+import com.casm.doujinzip.data.local.DoujinZipDatabase
+import com.casm.doujinzip.data.network.CompanionClient
+import com.casm.doujinzip.data.security.SecureConnectionStore
+import com.casm.doujinzip.sync.SyncWorker
 import java.util.concurrent.TimeUnit
 
-class DoujinMenuApplication : Application() {
+class DoujinZipApplication : Application() {
     val repository: SyncRepository by lazy {
         SyncRepository(
-            DoujinMenuDatabase.getInstance(this),
+            DoujinZipDatabase.getInstance(this),
             CompanionClient(),
             SecureConnectionStore(this),
         )

@@ -1,4 +1,4 @@
-package com.casm.doujinmenu.data
+package com.casm.doujinzip.data
 
 data class RemoteBook(
     val remoteId: Long,

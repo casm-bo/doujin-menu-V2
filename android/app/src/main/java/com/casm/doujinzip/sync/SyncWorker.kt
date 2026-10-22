@@ -1,9 +1,9 @@
-package com.casm.doujinmenu.sync
+package com.casm.doujinzip.sync
 
 import android.content.Context
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
-import com.casm.doujinmenu.DoujinMenuApplication
+import com.casm.doujinzip.DoujinZipApplication
 import java.io.IOException
 
 class SyncWorker(
@@ -11,7 +11,7 @@ class SyncWorker(
     workerParams: WorkerParameters,
 ) : CoroutineWorker(appContext, workerParams) {
     override suspend fun doWork(): Result {
-        val repository = (applicationContext as DoujinMenuApplication).repository
+        val repository = (applicationContext as DoujinZipApplication).repository
         if (!repository.hasConnection()) return Result.success()
         return try {
             repository.syncNow()

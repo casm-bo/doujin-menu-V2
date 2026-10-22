@@ -1,4 +1,4 @@
-package com.casm.doujinmenu.data.security
+package com.casm.doujinzip.data.security
 
 import android.content.Context
 import android.security.keystore.KeyGenParameterSpec

@@ -1,23 +1,23 @@
-package com.casm.doujinmenu.data
+package com.casm.doujinzip.data
 
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.util.LruCache
 import androidx.room.withTransaction
-import com.casm.doujinmenu.data.local.BookEntity
-import com.casm.doujinmenu.data.local.DoujinMenuDatabase
-import com.casm.doujinmenu.data.local.HistoryEntity
-import com.casm.doujinmenu.data.local.PendingMutationEntity
-import com.casm.doujinmenu.data.local.SyncMetadataEntity
-import com.casm.doujinmenu.data.network.CompanionClient
-import com.casm.doujinmenu.data.network.PrivateLanUrl
-import com.casm.doujinmenu.data.security.SecureConnectionStore
+import com.casm.doujinzip.data.local.BookEntity
+import com.casm.doujinzip.data.local.DoujinZipDatabase
+import com.casm.doujinzip.data.local.HistoryEntity
+import com.casm.doujinzip.data.local.PendingMutationEntity
+import com.casm.doujinzip.data.local.SyncMetadataEntity
+import com.casm.doujinzip.data.network.CompanionClient
+import com.casm.doujinzip.data.network.PrivateLanUrl
+import com.casm.doujinzip.data.security.SecureConnectionStore
 import kotlinx.coroutines.flow.Flow
 import java.time.Instant
 import java.util.UUID
 
 class SyncRepository(
-    private val database: DoujinMenuDatabase,
+    private val database: DoujinZipDatabase,
     private val client: CompanionClient,
     private val connectionStore: SecureConnectionStore,
 ) {

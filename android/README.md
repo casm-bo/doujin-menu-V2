@@ -1,6 +1,9 @@
-# 동인메뉴 Android
+# 동인집 Companion Android
 
 데스크톱 Companion 서버와 같은 Wi-Fi에서 페어링하고 동기화하는 Android 클라이언트입니다.
+
+프로젝트 이름은 `doujinzip-companion-android`, 패키지는 `com.casm.doujinzip`입니다. 패키지 변경으로 이전 클라이언트와 별도 설치되며 페어링을 다시 지정해야 합니다.
+검색과 기기 다운로드를 지원하는 현재 Android 앱은 [동인집 Android](https://github.com/casm-bo/doujin-menu-android)를 사용하세요.
 
 ## 현재 구현 범위
 

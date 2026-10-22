@@ -1,4 +1,4 @@
-package com.casm.doujinmenu.data.local
+package com.casm.doujinzip.data.local
 
 import android.content.Context
 import androidx.room.Database
@@ -15,18 +15,18 @@ import androidx.room.RoomDatabase
     version = 1,
     exportSchema = false,
 )
-abstract class DoujinMenuDatabase : RoomDatabase() {
+abstract class DoujinZipDatabase : RoomDatabase() {
     abstract fun syncDao(): SyncDao
 
     companion object {
-        @Volatile private var instance: DoujinMenuDatabase? = null
+        @Volatile private var instance: DoujinZipDatabase? = null
 
-        fun getInstance(context: Context): DoujinMenuDatabase =
+        fun getInstance(context: Context): DoujinZipDatabase =
             instance ?: synchronized(this) {
                 instance ?: Room.databaseBuilder(
                     context.applicationContext,
-                    DoujinMenuDatabase::class.java,
-                    "doujin-menu-sync.db",
+                    DoujinZipDatabase::class.java,
+                    "doujinzip-sync.db",
                 ).build().also { instance = it }
             }
     }

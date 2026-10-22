@@ -4,11 +4,11 @@ plugins {
 }
 
 android {
-    namespace = "com.casm.doujinmenu"
+    namespace = "com.casm.doujinzip"
     compileSdk = 37
 
     defaultConfig {
-        applicationId = "com.casm.doujinmenu"
+        applicationId = "com.casm.doujinzip"
         minSdk = 26
         targetSdk = 37
         versionCode = 1

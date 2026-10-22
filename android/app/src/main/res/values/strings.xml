@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">동인메뉴</string>
-    <string name="sync_title">동인메뉴 내부 동기화</string>
+    <string name="app_name">동인집</string>
+    <string name="sync_title">동인집 내부 동기화</string>
     <string name="sync_description">데스크톱 설정에서 Companion 서버를 켜고 표시된 내부 IP와 페어링 코드를 입력하세요.</string>
     <string name="address_hint">예: 192.168.0.10:47831</string>
     <string name="pairing_code_hint">6자리 페어링 코드</string>

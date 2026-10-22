@@ -1,4 +1,4 @@
-package com.casm.doujinmenu.data.network
+package com.casm.doujinzip.data.network
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertThrows

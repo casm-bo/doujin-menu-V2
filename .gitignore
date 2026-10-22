@@ -4,6 +4,7 @@ dist
 build
 coverage
 android/.gradle/
+android/.kotlin/
 android/local.properties
 android/app/schemas/
 

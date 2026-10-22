@@ -1,4 +1,4 @@
-package com.casm.doujinmenu
+package com.casm.doujinzip
 
 import android.os.Build
 import android.os.Bundle
@@ -18,9 +18,9 @@ import androidx.activity.ComponentActivity
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
-import com.casm.doujinmenu.data.SyncRepository
-import com.casm.doujinmenu.data.local.BookEntity
-import com.casm.doujinmenu.ui.BookGridAdapter
+import com.casm.doujinzip.data.SyncRepository
+import com.casm.doujinzip.data.local.BookEntity
+import com.casm.doujinzip.ui.BookGridAdapter
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
@@ -45,7 +45,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        repository = (application as DoujinMenuApplication).repository
+        repository = (application as DoujinZipApplication).repository
         gridAdapter = BookGridAdapter(lifecycleScope, repository, ::toggleFavorite)
         setContentView(createContentView())
         val registered = repository.hasConnection()
