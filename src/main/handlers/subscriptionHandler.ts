@@ -16,7 +16,7 @@ import {
   getStatus,
   getSubscriptionErrors,
   isFeedReady,
-  markAllSeen,
+  markSubscriptionRead,
   runCycle,
   setToastTarget,
   startPolling,
@@ -27,6 +27,10 @@ import {
   validateSubscriptionQuery,
 } from "../services/subscription/query.js";
 import { store as configStore } from "./configHandler.js";
+import {
+  subscriptionKey,
+  isSyncedSubscription,
+} from "../services/subscription/subscriptionSync.js";
 
 /** DB 행을 렌더러용 모양으로 바꾼다 (SQLite는 boolean을 0/1로 준다) */
 const toSubscription = (row: Record<string, unknown>): Subscription => ({
@@ -38,11 +42,12 @@ const toSubscription = (row: Record<string, unknown>): Subscription => ({
   last_seen_id: (row.last_seen_id as number | null) ?? null,
   created_at: String(row.created_at),
   last_checked_at: row.last_checked_at ? String(row.last_checked_at) : null,
+  languages: JSON.parse(String(row.languages ?? "[]")),
 });
 
 export const handleGetSubscriptions = async () => {
   try {
-    const rows = await db("Subscription").orderBy("id");
+    const rows = await db("Subscription").where("deleted", false).orderBy("id");
     return {
       success: true,
       data: rows.map(toSubscription),
@@ -72,6 +77,24 @@ export const handleAddSubscription = async (params: {
       .where("normalized_query", normalized)
       .first();
     if (existing) {
+      if (existing.deleted) {
+        await db("Subscription")
+          .where("id", existing.id)
+          .update({
+            query: params.query.trim(),
+            label: params.label?.trim() || null,
+            enabled: true,
+            deleted: false,
+            last_seen_id: null,
+          });
+        await runCycle({ silent: true });
+        return {
+          success: true,
+          data: toSubscription(
+            await db("Subscription").where("id", existing.id).first(),
+          ),
+        };
+      }
       return { success: false, error: "이미 같은 검색어를 구독하고 있습니다." };
     }
 
@@ -101,17 +124,25 @@ export const handleUpdateSubscription = async (params: {
   query?: string;
   label?: string;
   enabled?: boolean;
+  languages?: string[];
 }) => {
   try {
     const patch: Record<string, unknown> = {};
+    const current = await db("Subscription").where("id", params.id).first();
+    if (!current || current.deleted)
+      return { success: false, error: "구독을 찾을 수 없습니다." };
+    const languages = params.languages ?? JSON.parse(current.languages);
+    if (
+      !Array.isArray(languages) ||
+      languages.length > 20 ||
+      languages.some(
+        (l) => typeof l !== "string" || !/^[a-z0-9_-]{1,50}$/.test(l),
+      )
+    )
+      return { success: false, error: "언어 설정이 올바르지 않습니다." };
 
     if (params.query !== undefined) {
-      const validation = validateSubscriptionQuery(params.query);
-      if (!validation.ok) {
-        return { success: false, error: validation.reason };
-      }
-
-      const normalized = normalizeQuery(params.query);
+      const normalized = subscriptionKey(params.query, languages);
 
       // unique 제약에 맡기면 SQLite 원문 에러가 그대로 토스트에 뜬다.
       // 자기 자신은 빼야 검색어를 그대로 둔 저장이 중복으로 걸리지 않는다
@@ -137,6 +168,41 @@ export const handleUpdateSubscription = async (params: {
 
     if (params.label !== undefined) patch.label = params.label.trim() || null;
     if (params.enabled !== undefined) patch.enabled = params.enabled;
+    if (params.languages !== undefined) {
+      patch.languages = JSON.stringify([...new Set(languages)].sort());
+      patch.normalized_query = subscriptionKey(
+        params.query ?? current.query,
+        languages,
+      );
+    }
+    if (
+      !isSyncedSubscription({
+        id: current.sync_id,
+        name:
+          params.label?.trim() ||
+          current.label ||
+          params.query ||
+          current.query,
+        query: params.query ?? current.query,
+        languages,
+        enabled: params.enabled ?? Boolean(current.enabled),
+        deleted: false,
+        version: current.sync_version,
+      })
+    )
+      return {
+        success: false,
+        error:
+          "신작 확인은 포함 태그가 있는 조건만 지원합니다. 제목 키워드를 제거하세요.",
+      };
+
+    if (params.enabled === true) {
+      const row = await db("Subscription").where("id", params.id).first();
+      const validation = validateSubscriptionQuery(
+        params.query ?? row?.query ?? "",
+      );
+      if (!validation.ok) return { success: false, error: validation.reason };
+    }
 
     if (Object.keys(patch).length === 0) return { success: true };
 
@@ -145,7 +211,11 @@ export const handleUpdateSubscription = async (params: {
     // 검색어를 바꾸거나 켜고 끄면 피드 구성이 달라진다. 다음 폴링까지 기다리면
     // 목록이 안 맞는다.
     // 재활성화로 한꺼번에 잡히는 신작은 유저가 방금 켠 결과라 알리지 않는다
-    if (params.enabled !== undefined || params.query !== undefined) {
+    if (
+      params.enabled !== undefined ||
+      params.query !== undefined ||
+      params.languages !== undefined
+    ) {
       await runCycle({ silent: true });
     }
 
@@ -159,7 +229,9 @@ export const handleUpdateSubscription = async (params: {
 
 export const handleRemoveSubscription = async (id: number) => {
   try {
-    await db("Subscription").where("id", id).delete();
+    await db("Subscription")
+      .where("id", id)
+      .update({ deleted: true, enabled: false });
     await runCycle({ silent: true });
     return { success: true };
   } catch (error) {
@@ -205,7 +277,6 @@ export const handleGetSubscriptionStatus = async () => {
 export const handleEnterSubscriptionTab = async () => {
   try {
     if (!isFeedReady()) await runCycle({ silent: true });
-    await markAllSeen();
     return { success: true };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -248,6 +319,17 @@ export const applySubscriptionEnabled = (enabled: boolean): void => {
 };
 
 export function registerSubscriptionHandlers(mainWindow: BrowserWindow) {
+  ipcMain.handle(
+    "mark-subscription-read",
+    async (_event, params: { galleryId?: number }) => {
+      try {
+        await markSubscriptionRead(params.galleryId);
+        return { success: true };
+      } catch {
+        return { success: false, error: "읽음 처리에 실패했습니다." };
+      }
+    },
+  );
   // 토스트는 메인 창에만 보낸다. broadcast로 보내면 뷰어 창에도 뜬다
   setToastTarget(mainWindow.webContents);
 

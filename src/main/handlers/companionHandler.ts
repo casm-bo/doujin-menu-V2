@@ -11,6 +11,11 @@ import { DesktopLibraryService } from "../services/companion/companionLibrarySer
 import { DesktopCompanionSyncService } from "../services/companion/companionSyncService.js";
 import { setCompanionLibraryChangedHandler } from "../services/companion/companionSyncSignal.js";
 import db from "../db/index.js";
+import { SubscriptionSyncService } from "../services/subscription/subscriptionSync.js";
+import {
+  refreshReadState,
+  runCycle,
+} from "../services/subscription/subscriptionPoller.js";
 import { store } from "./configHandler.js";
 import path from "path";
 import {
@@ -80,7 +85,13 @@ export const companionServer = new CompanionServer(
     () => path.join(app.getPath("userData"), "presentation-covers"),
   ),
   new DesktopCompanionSyncService(db),
+  new SubscriptionSyncService(db),
 );
+companionServer.subscriptionChanged = (readsOnly) => {
+  void (readsOnly ? refreshReadState() : runCycle({ silent: true })).catch(
+    (error) => console.error("Subscription refresh failed", error),
+  );
+};
 setCompanionLibraryChangedHandler((affectsLibrarySnapshot) => {
   if (affectsLibrarySnapshot) companionServer.requestSync();
   BrowserWindow.getAllWindows().forEach((window) => {

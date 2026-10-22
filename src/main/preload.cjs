@@ -105,6 +105,7 @@ const invokeChannels = new Set([
   "toggle-book-favorite",
   "toggle-series-favorite",
   "enter-subscription-tab",
+  "mark-subscription-read",
   "update-book-metadata",
   "set-book-read",
   "set-series-read",

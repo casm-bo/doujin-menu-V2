@@ -155,6 +155,7 @@ export interface Subscription {
   last_seen_id: number | null;
   created_at: string;
   last_checked_at: string | null;
+  languages?: string[];
 }
 
 export interface SubscriptionStatus {
@@ -686,6 +687,10 @@ export interface IpcChannels {
   };
 
   // Subscription handlers
+  "mark-subscription-read": {
+    request: { galleryId?: number };
+    response: { success: boolean; error?: string };
+  };
   "get-subscriptions": {
     request: void;
     response: {
@@ -700,7 +705,13 @@ export interface IpcChannels {
     response: { success: boolean; data?: Subscription; error?: string };
   };
   "update-subscription": {
-    request: { id: number; query?: string; label?: string; enabled?: boolean };
+    request: {
+      id: number;
+      query?: string;
+      label?: string;
+      enabled?: boolean;
+      languages?: string[];
+    };
     response: { success: boolean; error?: string };
   };
   "remove-subscription": {

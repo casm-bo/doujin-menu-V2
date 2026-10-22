@@ -194,6 +194,10 @@ let observer: IntersectionObserver | null = null;
 
 const handleSelectGallery = (gallery: HitomiGalleryDetails) => {
   selectedGallery.value = gallery;
+  if (activeSource.value === "subscription")
+    void ipcRenderer.invoke("mark-subscription-read", {
+      galleryId: gallery.id,
+    });
 };
 
 const handleBookDeleted = (galleryId: number) => {
@@ -367,7 +371,6 @@ const changeSource = async (source: "search" | "subscription") => {
   selectedGallery.value = null;
   if (source !== "subscription") return;
 
-  subscriptionStore.markSeenLocally();
   await enterSubscriptionTab();
   subscriptionKey.value++;
   await subscriptionStore.refreshStatus();

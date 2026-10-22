@@ -57,6 +57,7 @@ const newQuery = ref("");
 const editingId = ref<number | null>(null);
 const editingQuery = ref("");
 const editingLabel = ref("");
+const editingLanguages = ref("");
 const isSaving = ref(false);
 
 const lastCheckedText = computed(() => {
@@ -90,7 +91,11 @@ const rows = computed(() =>
     const { language, rest } = splitLanguage(subscription.query);
     return {
       subscription,
-      language: language ? languageLabel(language) : null,
+      language: subscription.languages?.length
+        ? subscription.languages.map(languageLabel).join(", ")
+        : language
+          ? languageLabel(language)
+          : null,
       // 언어만으로 이뤄진 구독이면 뗄 게 없어 원문을 그대로 쓴다
       queryText: rest || subscription.query,
       error: errors.value[subscription.id],
@@ -175,6 +180,7 @@ const startEditing = (subscription: Subscription) => {
   editingId.value = subscription.id;
   editingQuery.value = subscription.query;
   editingLabel.value = subscription.label ?? "";
+  editingLanguages.value = subscription.languages?.join(", ") ?? "";
 };
 
 const cancelEditing = () => {
@@ -202,13 +208,27 @@ const commitEditing = async () => {
   }
 
   // 바뀐 것만 보낸다. 검색어를 그대로 둔 저장까지 폴링 사이클을 돌 이유는 없다
-  const params: { id: number; query?: string; label?: string } = { id };
+  const params: {
+    id: number;
+    query?: string;
+    label?: string;
+    languages?: string[];
+  } = { id };
+  if (editingLanguages.value !== (target?.languages?.join(", ") ?? ""))
+    params.languages = editingLanguages.value
+      .split(",")
+      .map((l) => l.trim())
+      .filter(Boolean);
   if (query !== target?.query) params.query = query;
   if (editingLabel.value !== (target?.label ?? "")) {
     params.label = editingLabel.value;
   }
 
-  if (params.query === undefined && params.label === undefined) {
+  if (
+    params.query === undefined &&
+    params.label === undefined &&
+    params.languages === undefined
+  ) {
     editingId.value = null;
     return;
   }
@@ -219,7 +239,8 @@ const commitEditing = async () => {
     editingId.value = null;
     await load();
     // 검색어가 바뀌면 피드 구성이 달라진다
-    if (params.query !== undefined) emit("changed");
+    if (params.query !== undefined || params.languages !== undefined)
+      emit("changed");
   } catch (err) {
     // 검증 실패·중복이면 고칠 수 있게 편집 상태를 그대로 둔다
     toast.error(
@@ -230,6 +251,14 @@ const commitEditing = async () => {
   }
 };
 
+const markAllRead = async () => {
+  const result = await api.ipcRenderer.invoke("mark-subscription-read", {});
+  if (!result.success) {
+    toast.error(result.error ?? "읽음 처리 실패");
+    return;
+  }
+  emit("changed");
+};
 const handleRefresh = async () => {
   isRefreshing.value = true;
   try {
@@ -245,6 +274,13 @@ onMounted(load);
 
 <template>
   <div class="flex min-w-0 flex-1 items-center gap-2">
+    <Button
+      variant="outline"
+      size="sm"
+      :disabled="newCount === 0"
+      @click="markAllRead"
+      >모두 읽음</Button
+    >
     <Popover v-model:open="isOpen">
       <PopoverTrigger as-child>
         <Button variant="outline" @click="load">
@@ -329,6 +365,11 @@ onMounted(load);
                   placeholder="표시할 이름 (비우면 검색어)"
                   @keyup.enter="commitEditing"
                   @keyup.esc="cancelEditing"
+                />
+                <Input
+                  v-model="editingLanguages"
+                  placeholder="언어 코드: korean, japanese (비우면 검색어 기준)"
+                  aria-label="구독 언어"
                 />
               </div>
 

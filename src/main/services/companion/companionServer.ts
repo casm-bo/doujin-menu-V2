@@ -210,6 +210,7 @@ export class CompanionServer {
     ReturnType<typeof setTimeout>
   >();
   private syncGeneration = 0;
+  subscriptionChanged?: (readsOnly: boolean) => void;
 
   constructor(
     private readonly hitomiService: CompanionHitomiService,
@@ -217,6 +218,7 @@ export class CompanionServer {
     private readonly downloadService?: CompanionDownloadService,
     private readonly libraryService?: CompanionLibraryService,
     private readonly syncService?: CompanionSyncService,
+    private readonly subscriptionService?: import("../subscription/subscriptionSync.js").SubscriptionSyncService,
   ) {}
 
   async start(port = DEFAULT_PORT): Promise<CompanionServerStatus> {
@@ -337,6 +339,7 @@ export class CompanionServer {
           pairingAvailable: this.getStatus().pairingAvailable,
           syncGeneration: this.syncGeneration,
           presentationSync: Boolean(this.libraryService?.savePresentation),
+          subscriptionSync: Boolean(this.subscriptionService),
         },
       });
       return;
@@ -361,6 +364,74 @@ export class CompanionServer {
         success: true,
         data: { connected: true, serverTime: new Date().toISOString() },
       });
+      return;
+    }
+
+    if (this.subscriptionService && pathname === "/v1/subscriptions") {
+      if (request.method === "GET") {
+        const cursor = Number(requestUrl.searchParams.get("cursor") ?? "0");
+        if (!Number.isSafeInteger(cursor) || cursor < 0) {
+          this.sendJson(response, 400, {
+            success: false,
+            error: "Invalid cursor",
+          });
+          return;
+        }
+        this.sendJson(response, 200, {
+          success: true,
+          data: await this.subscriptionService.changes(cursor),
+        });
+      } else if (request.method === "POST") {
+        const body = await this.readJsonBody(request);
+        const { isSyncedSubscription } =
+          await import("../subscription/subscriptionSync.js");
+        if (
+          typeof body.mutationId !== "string" ||
+          !/^[a-zA-Z0-9-]{1,80}$/.test(body.mutationId) ||
+          !isSyncedSubscription(body.value)
+        ) {
+          this.sendJson(response, 400, {
+            success: false,
+            error: "Invalid subscription",
+          });
+          return;
+        }
+        this.sendJson(response, 200, {
+          success: true,
+          data: await this.subscriptionService.save(
+            device.id,
+            body.mutationId,
+            body.value,
+          ),
+        });
+        this.subscriptionChanged?.(false);
+      } else
+        this.sendJson(response, 405, {
+          success: false,
+          error: "Method not allowed",
+        });
+      return;
+    }
+    if (
+      this.subscriptionService &&
+      pathname === "/v1/subscriptions/read" &&
+      request.method === "POST"
+    ) {
+      const body = await this.readJsonBody(request);
+      if (
+        !Array.isArray(body.ids) ||
+        body.ids.length > 200 ||
+        body.ids.some((id) => !Number.isSafeInteger(id) || Number(id) <= 0)
+      ) {
+        this.sendJson(response, 400, {
+          success: false,
+          error: "Invalid gallery IDs",
+        });
+        return;
+      }
+      await this.subscriptionService.read(body.ids as number[]);
+      this.subscriptionChanged?.(true);
+      this.sendJson(response, 200, { success: true, data: { applied: true } });
       return;
     }
 

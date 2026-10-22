@@ -288,7 +288,9 @@ describe("handleRemoveSubscription", () => {
 
     const feed = await handleGetSubscriptionFeed({ start: 0, count: 10 });
     expect(feed.total).toBe(0);
-    expect(await db("Subscription").count("* as c").first()).toMatchObject({
+    expect(
+      await db("Subscription").where("deleted", false).count("* as c").first(),
+    ).toMatchObject({
       c: 0,
     });
   });
@@ -329,7 +331,7 @@ describe("handleGetSubscriptionFeed", () => {
 });
 
 describe("handleEnterSubscriptionTab", () => {
-  it("모든 구독을 읽음 처리한다", async () => {
+  it("탭 진입은 확인 기준선을 변경하지 않는다", async () => {
     const added = await handleAddSubscription({ query: "artist:foo" });
     await db("Subscription")
       .where("id", added.data!.id)
@@ -339,10 +341,10 @@ describe("handleEnterSubscriptionTab", () => {
     await handleEnterSubscriptionTab();
 
     const row = await db("Subscription").where("id", added.data!.id).first();
-    expect(row.last_seen_id).toBe(30);
+    expect(row.last_seen_id).toBe(5);
   });
 
-  it("읽음 처리 후 신작 건수가 0이 된다", async () => {
+  it("탭 진입으로 미확인 신작이 사라지지 않는다", async () => {
     await db("Subscription").insert({
       query: "artist:foo",
       normalized_query: "artist:foo",
@@ -353,7 +355,7 @@ describe("handleEnterSubscriptionTab", () => {
 
     await handleEnterSubscriptionTab();
 
-    expect(getStatus().newCount).toBe(0);
+    expect(getStatus().newCount).toBe(3);
   });
 });
 

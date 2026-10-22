@@ -10,7 +10,7 @@ import type { Tag } from "node-hitomi";
 import db from "../../db/index.js";
 import { store as configStore } from "../../handlers/configHandler.js";
 import { broadcast, sendTo } from "../../utils/broadcast.js";
-import { buildFeed, countNew, intersect, maxId } from "./feed.js";
+import { buildFeed, intersect, maxId } from "./feed.js";
 import { fetchTagIds } from "./nozomi.js";
 import { parseSubscriptionQuery } from "./query.js";
 
@@ -29,12 +29,14 @@ interface SubscriptionRow {
   query: string;
   enabled: number | boolean;
   last_seen_id: number | null;
+  languages?: string;
 }
 
 interface SubscriptionState {
   ids: number[];
   maxId: number | null;
   newCount: number;
+  newIds?: number[];
   error?: string;
 }
 
@@ -43,6 +45,7 @@ let feed: Int32Array = new Int32Array(0);
 let feedGeneration = 0;
 let feedReady = false;
 let lastCheckedAt: string | null = null;
+let readIds = new Set<number>();
 
 /** 이번 세션에 이미 알린 신작 총 건수. 같은 신작으로 매시간 다시 알리지 않기 위해 쓴다 */
 let notifiedCount = 0;
@@ -65,6 +68,7 @@ export const __resetSubscriptionState = (): void => {
   feedGeneration = 0;
   feedReady = false;
   lastCheckedAt = null;
+  readIds = new Set();
   notifiedCount = 0;
   cycleInFlight = null;
   if (timer) clearInterval(timer);
@@ -111,6 +115,43 @@ const checkSubscription = async (
   blacklist: string[],
   cache: Map<string, number[]>,
 ): Promise<SubscriptionState> => {
+  const languages: string[] = JSON.parse(row.languages ?? "[]");
+  if (languages.length) {
+    const query = row.query
+      .split(/\s+/)
+      .filter((term) => !term.startsWith("language:"))
+      .join(" ");
+    const results = [];
+    for (const language of languages)
+      results.push(
+        await checkSubscription(
+          {
+            ...row,
+            query: `${query} language:${language}`,
+            languages: "[]",
+            last_seen_id: row.last_seen_id ?? 0,
+          },
+          blacklist,
+          cache,
+        ),
+      );
+    const ids = [...new Set(results.flatMap((result) => result.ids))];
+    const max = maxId(ids);
+    if (row.last_seen_id === null)
+      await db("Subscription")
+        .where("id", row.id)
+        .update({ last_seen_id: max ?? 0 });
+    const newIds =
+      row.last_seen_id === null
+        ? []
+        : ids.filter((id) => id > row.last_seen_id!);
+    return {
+      ids,
+      maxId: max,
+      newIds,
+      newCount: newIds.filter((id) => !readIds.has(id)).length,
+    };
+  }
   const { positive, negative } = parseSubscriptionQuery(row.query, blacklist);
 
   if (positive.length === 0) {
@@ -139,12 +180,20 @@ const checkSubscription = async (
     return { ids, maxId: max, newCount: 0 };
   }
 
-  return { ids, maxId: max, newCount: countNew(ids, row.last_seen_id) };
+  const newIds = ids.filter((id) => id > row.last_seen_id!);
+  return {
+    ids,
+    maxId: max,
+    newIds,
+    newCount: newIds.filter((id) => !readIds.has(id)).length,
+  };
 };
 
 const doCycle = async (silent: boolean): Promise<void> => {
+  await loadReadIds();
   const subscriptions: SubscriptionRow[] = await db("Subscription")
     .where("enabled", true)
+    .where("deleted", false)
     .orderBy("id");
 
   const blacklist = (configStore.get("downloaderBlacklistTags", []) ??
@@ -160,7 +209,12 @@ const doCycle = async (silent: boolean): Promise<void> => {
     const fresh: SubscriptionRow | undefined = await db("Subscription")
       .where("id", subscription.id)
       .first();
-    if (!fresh || !fresh.enabled) continue;
+    if (
+      !fresh ||
+      !fresh.enabled ||
+      (fresh as SubscriptionRow & { deleted?: boolean }).deleted
+    )
+      continue;
 
     const previous = states.get(fresh.id);
 
@@ -181,6 +235,7 @@ const doCycle = async (silent: boolean): Promise<void> => {
         ids: previous?.ids ?? [],
         maxId: previous?.maxId ?? null,
         newCount: previous?.newCount ?? 0,
+        newIds: previous?.newIds,
         error: message,
       });
       // last_checked_at은 갱신하지 않는다 — 다음 주기에 다시 시도한다
@@ -227,8 +282,10 @@ export const runCycle = (opts: { silent?: boolean } = {}): Promise<void> => {
 };
 
 export const getStatus = (): SubscriptionStatus => {
-  let newCount = 0;
-  for (const state of states.values()) newCount += state.newCount;
+  const unread = new Set<number>();
+  for (const state of states.values())
+    for (const id of state.newIds ?? []) if (!readIds.has(id)) unread.add(id);
+  const newCount = unread.size;
 
   return {
     newCount,
@@ -265,19 +322,52 @@ export const getSubscriptionErrors = (): Record<number, string> => {
  * 아직 폴링되지 않은 구독(maxId 없음)은 건드리지 않는다.
  */
 export const markAllSeen = async (): Promise<void> => {
-  for (const [id, state] of states) {
-    if (state.maxId === null) continue;
-    await db("Subscription")
-      .where("id", id)
-      .update({ last_seen_id: state.maxId });
-    state.newCount = 0;
+  for (const [subscriptionId, state] of states) {
+    for (const id of state.newIds ?? [])
+      await db("SubscriptionRead")
+        .insert({ gallery_id: id })
+        .onConflict("gallery_id")
+        .ignore();
+    if (state.maxId !== null)
+      await db("Subscription")
+        .where("id", subscriptionId)
+        .update({ last_seen_id: state.maxId });
+    state.newIds = [];
   }
+  await refreshReadState();
 
   // 신작 건수가 0으로 내려갔으므로 알림 기준도 같이 내린다.
   // 안 내리면 다음 신작이 이전 건수보다 적을 때 영영 조용해진다
   notifiedCount = 0;
   broadcast("subscriptions-updated");
 };
+
+async function loadReadIds(): Promise<void> {
+  readIds = new Set(
+    (await db("SubscriptionRead").select("gallery_id")).map((row) =>
+      Number(row.gallery_id),
+    ),
+  );
+  for (const state of states.values())
+    state.newCount = (state.newIds ?? []).filter(
+      (id) => !readIds.has(id),
+    ).length;
+}
+export async function refreshReadState(): Promise<void> {
+  await loadReadIds();
+  if (getStatus().newCount === 0) notifiedCount = 0;
+  broadcast("subscriptions-updated");
+}
+export async function markSubscriptionRead(galleryId?: number): Promise<void> {
+  if (galleryId === undefined) return markAllSeen();
+  if (!Number.isSafeInteger(galleryId) || galleryId <= 0)
+    throw new Error("Invalid gallery ID");
+  await db("SubscriptionRead")
+    .insert({ gallery_id: galleryId })
+    .onConflict("gallery_id")
+    .ignore();
+  await refreshReadState();
+}
 
 export const startPolling = (): void => {
   if (timer) return;
