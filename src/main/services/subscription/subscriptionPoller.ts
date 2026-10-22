@@ -124,7 +124,7 @@ const checkSubscription = async (
       .split(/\s+/)
       .filter((term) => !term.startsWith("language:"))
       .join(" ");
-    const results = [];
+    const results: SubscriptionState[] = [];
     for (const language of languages)
       results.push(
         await checkSubscription(
