@@ -16,6 +16,7 @@ import {
 } from "../services/companion/presentationService.js";
 import { store as configStore } from "./configHandler.js";
 import { getPresentationService } from "./presentationHandler.js";
+import { parsePresentationMutation } from "../../types/presentation.js";
 
 export interface ExcludeTerms {
   titleTerms: string[];
@@ -612,7 +613,28 @@ export const handleUpdateBookMetadata = async ({
   bookId: number;
   metadata: EditableBookMetadata;
 }) => {
-  const title = metadata.title.trim();
+  const checked = parsePresentationMutation({
+    mutationId: "validate",
+    baseVersion: 0,
+    value: {
+      key: metadata.hitomi_id?.trim()
+        ? `hitomi:${metadata.hitomi_id.trim()}`
+        : "sync:validate",
+      title: metadata.title,
+      metadata: {
+        ...metadata,
+        hitomiId: metadata.hitomi_id,
+        galleryType: metadata.type,
+        language: metadata.language_name_local,
+      },
+    },
+  });
+  if (!checked)
+    return {
+      success: false,
+      error: "제목·Hitomi ID·메타데이터 형식이나 길이를 확인하세요.",
+    };
+  const title = checked.value.title;
 
   try {
     await db.transaction(async (trx) => {

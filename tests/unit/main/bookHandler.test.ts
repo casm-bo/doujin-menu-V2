@@ -465,9 +465,9 @@ describe("handleGetBooks - 통합 테스트", () => {
           characters: [],
         },
       }),
-    ).toEqual({ success: true });
+    ).toMatchObject({ success: false });
     expect(await db("Book").where("id", book.id).first("title")).toEqual({
-      title: "",
+      title: "new title",
     });
   });
 
