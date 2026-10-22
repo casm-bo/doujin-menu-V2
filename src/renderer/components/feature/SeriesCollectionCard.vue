@@ -15,6 +15,7 @@ interface Props {
   series: {
     id: number;
     name: string;
+    display_title?: string;
     description: string | null;
     cover_image: string | null;
     book_count?: number;
@@ -106,7 +107,7 @@ const emit = defineEmits<{
     <div class="space-y-2 p-4">
       <div class="flex items-start justify-between gap-2">
         <h3 class="line-clamp-2 flex-1 font-semibold" :title="series.name">
-          {{ series.name }}
+          {{ series.display_title || series.name }}
         </h3>
       </div>
 

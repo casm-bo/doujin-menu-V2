@@ -11,7 +11,11 @@ import {
   seedBook,
   truncateAll,
 } from "../../../src/main/db/test-utils.js";
-import { DesktopPresentationService } from "../../../src/main/services/companion/presentationService.js";
+import {
+  seriesPresentationKey,
+  seriesCoverPresentationKey,
+  DesktopPresentationService,
+} from "../../../src/main/services/companion/presentationService.js";
 import {
   parsePresentationMutation,
   type GalleryPresentation,
@@ -216,6 +220,63 @@ describe("presentation storage and transfer", () => {
       for await (const chunk of cover!.stream) chunks.push(Buffer.from(chunk));
       expect(Buffer.concat(chunks)).toEqual(bytes);
     }
+  });
+
+  it("keeps series metadata and covers independent from episodes and round-trips PC/phone versions", async () => {
+    const name = "Synthetic Series";
+    const key = seriesPresentationKey(name);
+    expect(key).toBe(
+      "sync:series_" + createHash("sha256").update(name).digest("hex"),
+    );
+    expect(seriesPresentationKey(name + " ")).not.toBe(key);
+    const book = await seedBook(db, {
+      sync_id: key.slice(5),
+      title: "Episode",
+    });
+    const bytes = await sharp({
+      create: { width: 8, height: 12, channels: 3, background: "blue" },
+    })
+      .png()
+      .toBuffer();
+    const hash = createHash("sha256").update(bytes).digest("hex");
+    await service.putCover(hash, bytes);
+    await service.apply("phone", {
+      mutationId: "series-cover",
+      baseVersion: 0,
+      value: { ...value(seriesCoverPresentationKey(name)), coverHash: hash },
+    });
+    const pc = await service.apply("desktop", {
+      mutationId: "series-edit",
+      baseVersion: 0,
+      value: { ...value(key), title: "PC Series" },
+    });
+    expect(await service.getSeries(name)).toMatchObject({
+      display_title: "PC Series",
+      coverPath: path.join(directory, hash + ".image"),
+    });
+    expect((await db("Book").where("id", book.id).first()).title).toBe(
+      "Episode",
+    );
+    expect(
+      (
+        await service.apply("phone", {
+          mutationId: "stale-series",
+          baseVersion: 0,
+          value: value(key),
+        })
+      ).status,
+    ).toBe("conflict");
+    const phone = await service.apply("phone", {
+      mutationId: "fresh-series",
+      baseVersion: pc.value.version,
+      value: { ...pc.value, title: "Phone Series" },
+    });
+    expect((await service.changes(pc.value.revision)).values).toEqual([
+      phone.value,
+    ]);
+    expect((await service.getSeries(name)).coverPath).toBe(
+      path.join(directory, hash + ".image"),
+    );
   });
 
   it("rejects malformed identities and overlong fields while allowing explicit empty facets", () => {

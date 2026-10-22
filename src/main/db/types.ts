@@ -83,6 +83,11 @@ export interface BookSeries {
 }
 
 export interface SeriesCollection {
+  display_title?: string;
+  presentation_key?: string;
+  presentation?:
+    | import("../../types/presentation.js").GalleryPresentation
+    | null;
   id: number;
   name: string;
   description: string | null;

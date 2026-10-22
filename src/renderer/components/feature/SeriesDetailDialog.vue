@@ -25,6 +25,7 @@ import { toast } from "vue-sonner";
 import type { SeriesCollectionWithBooks } from "../../../main/db/types";
 import type { Book } from "../../../types/ipc";
 import {
+  ipcRenderer,
   deleteSeriesCollection,
   getSeriesCollectionById,
   getThumbnailUrl,
@@ -34,6 +35,8 @@ import {
 } from "../../api";
 import AddBookToSeriesDialog from "./AddBookToSeriesDialog.vue";
 import BookDetailDialog from "./BookDetailDialog.vue";
+import PresentationEditor from "./PresentationEditor.vue";
+import type { GalleryPresentation } from "../../../types/presentation";
 import MetadataField from "./MetadataField.vue";
 import { reorderForDrop, type DropPosition } from "./seriesReorder";
 import { getSeriesResumeTarget } from "./seriesResume";
@@ -67,6 +70,7 @@ const searchInDownloader = (text: string, prefix: string) => {
 
 // 편집 모드
 const isEditing = ref(false);
+const metadataEditing = ref(false);
 const editName = ref("");
 
 // 책 추가 다이얼로그
@@ -273,13 +277,16 @@ const openReader = (book: Book | null, page: number) => {
   });
 };
 const uniqueNames = (key: "artists" | "tags" | "groups" | "characters") =>
-  computed(() => [
-    ...new Set(
-      books.value.flatMap((book) =>
-        (book[key] || []).map((item: { name: string }) => item.name),
-      ),
-    ),
-  ]);
+  computed(
+    () =>
+      seriesDetail.value?.presentation?.metadata[key] ?? [
+        ...new Set(
+          books.value.flatMap((book) =>
+            (book[key] || []).map((item: { name: string }) => item.name),
+          ),
+        ),
+      ],
+  );
 const seriesArtists = uniqueNames("artists");
 const seriesTags = uniqueNames("tags");
 const seriesGroups = uniqueNames("groups");
@@ -291,19 +298,62 @@ const uniqueBookValues = (key: "hitomi_id" | "type") =>
     ),
   ]);
 const seriesHitomiIds = uniqueBookValues("hitomi_id");
-const seriesTypes = uniqueBookValues("type");
-const seriesLanguages = computed(() => [
-  ...new Set(
-    books.value
-      .map((book) => book.language_name_local || book.language_name_english)
-      .filter(Boolean) as string[],
-  ),
-]);
+const defaultSeriesTypes = uniqueBookValues("type");
+const seriesTypes = computed(() =>
+  seriesDetail.value?.presentation
+    ? [seriesDetail.value.presentation.metadata.galleryType || ""].filter(
+        Boolean,
+      )
+    : defaultSeriesTypes.value,
+);
+const seriesLanguages = computed(() =>
+  seriesDetail.value?.presentation
+    ? [seriesDetail.value.presentation.metadata.language || ""].filter(Boolean)
+    : [
+        ...new Set(
+          books.value
+            .map(
+              (book) => book.language_name_local || book.language_name_english,
+            )
+            .filter(Boolean) as string[],
+        ),
+      ],
+);
 
 const handleEpisodeUpdated = async () => {
   await refetch();
   emit("updated");
 };
+
+const metadataSeed = computed<GalleryPresentation | null>(() => {
+  const detail = seriesDetail.value;
+  if (!detail?.presentation_key) return null;
+  return (
+    detail.presentation || {
+      key: detail.presentation_key,
+      title: detail.name,
+      coverHash: null,
+      webtoon: null,
+      version: 0,
+      revision: 0,
+      metadata: {
+        hitomiId: null,
+        artists: seriesArtists.value,
+        groups: seriesGroups.value,
+        series: [],
+        characters: seriesCharacters.value,
+        tags: seriesTags.value,
+        galleryType: seriesTypes.value[0] || null,
+        language: seriesLanguages.value[0] || null,
+        publishedDate: null,
+      },
+    }
+  );
+});
+const stopPresentationUpdates = ipcRenderer.on("presentation-updated", () => {
+  if (props.open) void refetch();
+});
+onBeforeUnmount(stopPresentationUpdates);
 
 // 썸네일 URL 생성
 const getCoverUrl = (book: Book) => {
@@ -408,8 +458,12 @@ const excludeBookIds = computed(() => books.value.map((book) => book.id));
         <div class="space-y-6 pb-4">
           <div class="flex gap-5">
             <img
-              v-if="firstBook"
-              :src="getCoverUrl(firstBook)"
+              v-if="seriesDetail?.cover_image || firstBook"
+              :src="
+                getThumbnailUrl(
+                  seriesDetail?.cover_image || firstBook?.cover_path,
+                )
+              "
               :alt="series?.name"
               class="h-56 w-40 rounded-lg object-cover shadow"
             />
@@ -431,7 +485,11 @@ const excludeBookIds = computed(() => books.value.map((book) => book.id));
                     )
                   "
                 >
-                  {{ seriesDetail?.name || series?.name }}
+                  {{
+                    seriesDetail?.display_title ||
+                    seriesDetail?.name ||
+                    series?.name
+                  }}
                 </h2>
                 <div class="flex shrink-0 gap-2">
                   <template v-if="isEditing">
@@ -448,7 +506,7 @@ const excludeBookIds = computed(() => books.value.map((book) => book.id));
                   </template>
                   <Button v-else variant="outline" size="sm" @click="startEdit">
                     <Icon icon="solar:pen-bold-duotone" class="mr-2 h-4 w-4" />
-                    편집
+                    이름 변경
                   </Button>
                   <Button
                     v-if="!isEditing"
@@ -464,6 +522,13 @@ const excludeBookIds = computed(() => books.value.map((book) => book.id));
                   </Button>
                 </div>
               </div>
+              <Button
+                variant="outline"
+                size="sm"
+                :disabled="!metadataSeed"
+                @click="metadataEditing = true"
+                >메타데이터 편집</Button
+              >
               <div class="grid gap-2">
                 <MetadataField
                   label="Hitomi ID"
@@ -724,6 +789,11 @@ const excludeBookIds = computed(() => books.value.map((book) => book.id));
       </div>
     </DialogContent>
   </Dialog>
+  <PresentationEditor
+    v-model:open="metadataEditing"
+    :initial="metadataSeed"
+    @saved="handleEpisodeUpdated"
+  />
 
   <BookDetailDialog
     v-model="showEpisodeDetail"

@@ -14,6 +14,12 @@ import {
 import type { CompanionLibraryImage } from "./companionServer.js";
 import { normalizeArtistName } from "../../utils/artistName.js";
 import { normalizeTagName } from "../../utils/tagName.js";
+import { notifyCompanionLibraryChanged } from "./companionSyncSignal.js";
+
+export const seriesPresentationKey = (name: string) =>
+  `sync:series_${digest(name)}`;
+export const seriesCoverPresentationKey = (name: string) =>
+  `sync:series_cover_${digest(name)}`;
 
 interface Row {
   resource_key: string;
@@ -32,6 +38,25 @@ export class DesktopPresentationService {
     private readonly database: Knex,
     private readonly coverDirectory: string,
   ) {}
+
+  async get(key: string): Promise<GalleryPresentation | null> {
+    const row = await this.database<Row>("GalleryPresentation")
+      .where("resource_key", key)
+      .first();
+    return row ? JSON.parse(row.payload) : null;
+  }
+
+  async getSeries(name: string) {
+    const presentation = await this.get(seriesPresentationKey(name));
+    const cover =
+      (await this.get(seriesCoverPresentationKey(name))) ?? presentation;
+    return {
+      presentation,
+      presentation_key: seriesPresentationKey(name),
+      display_title: presentation?.title,
+      coverPath: cover?.coverHash ? this.coverFile(cover.coverHash) : null,
+    };
+  }
 
   async changes(after = 0, limit = 200): Promise<PresentationChanges> {
     const rows = await this.database<Row>("GalleryPresentation")
@@ -57,51 +82,59 @@ export class DesktopPresentationService {
     )
       throw new Error("Upload the cover before saving metadata");
     const requestHash = digest(JSON.stringify(mutation));
-    return this.database.transaction(async (trx) => {
-      const receipt = await trx("PresentationMutation")
-        .where({ device_id: deviceId, mutation_id: mutation.mutationId })
-        .first();
-      if (receipt) {
-        if (receipt.request_hash !== requestHash)
-          throw new Error("Mutation ID was reused for a different edit");
-        const result = JSON.parse(receipt.result) as PresentationMutationResult;
-        return {
-          ...result,
-          status:
-            result.status === "applied" ? "already_applied" : result.status,
-        };
-      }
-      const previous = await trx<Row>("GalleryPresentation")
-        .where("resource_key", mutation.value.key)
-        .first();
-      if ((previous?.version ?? 0) !== mutation.baseVersion) {
-        if (!previous) throw new Error("Unknown metadata version");
-        return {
-          status: "conflict",
-          value: JSON.parse(previous.payload) as GalleryPresentation,
-        };
-      }
-      const value = await this.write(
-        trx,
-        mutation.value,
-        (previous?.version ?? 0) + 1,
-      );
-      await this.applyToBooks(trx, value);
-      const result: PresentationMutationResult = { status: "applied", value };
-      await trx("PresentationMutation").insert({
-        device_id: deviceId,
-        mutation_id: mutation.mutationId,
-        request_hash: requestHash,
-        result: JSON.stringify(result),
-      });
-      return result;
-    });
+    const result = await this.database.transaction<PresentationMutationResult>(
+      async (trx) => {
+        const receipt = await trx("PresentationMutation")
+          .where({ device_id: deviceId, mutation_id: mutation.mutationId })
+          .first();
+        if (receipt) {
+          if (receipt.request_hash !== requestHash)
+            throw new Error("Mutation ID was reused for a different edit");
+          const result = JSON.parse(
+            receipt.result,
+          ) as PresentationMutationResult;
+          return {
+            ...result,
+            status:
+              result.status === "applied" ? "already_applied" : result.status,
+          };
+        }
+        const previous = await trx<Row>("GalleryPresentation")
+          .where("resource_key", mutation.value.key)
+          .first();
+        if ((previous?.version ?? 0) !== mutation.baseVersion) {
+          if (!previous) throw new Error("Unknown metadata version");
+          return {
+            status: "conflict",
+            value: JSON.parse(previous.payload) as GalleryPresentation,
+          };
+        }
+        const value = await this.write(
+          trx,
+          mutation.value,
+          (previous?.version ?? 0) + 1,
+        );
+        await this.applyToBooks(trx, value);
+        const result: PresentationMutationResult = { status: "applied", value };
+        await trx("PresentationMutation").insert({
+          device_id: deviceId,
+          mutation_id: mutation.mutationId,
+          request_hash: requestHash,
+          result: JSON.stringify(result),
+        });
+        return result;
+      },
+    );
+    if (result.status === "applied")
+      notifyCompanionLibraryChanged(true, result.value.key);
+    return result;
   }
 
   async applyToBooks(
     trx: Knex.Transaction,
     value: GalleryPresentation,
   ): Promise<void> {
+    if (value.key.startsWith("sync:series_")) return;
     const books = value.key.startsWith("hitomi:")
       ? await trx("Book").where("hitomi_id", value.key.slice(7)).select("id")
       : await trx("Book").where("sync_id", value.key.slice(5)).select("id");

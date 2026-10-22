@@ -47,7 +47,10 @@ const emit = defineEmits([
 const queryClient = useQueryClient();
 const { getTagDisplayInfo } = useTagDisplay();
 const displayTitle = computed(
-  () => props.book.series_collection_name || props.book.title,
+  () =>
+    props.book.series_display_title ||
+    props.book.series_collection_name ||
+    props.book.title,
 );
 
 const viewerLink = computed(() => ({
@@ -99,7 +102,10 @@ const handleCardClick = (event: MouseEvent) => {
 const thumbnailKey = ref(0);
 
 const coverUrl = computed(() => {
-  return api.getThumbnailUrl(props.book.cover_path, thumbnailKey.value);
+  return api.getThumbnailUrl(
+    props.book.series_cover_path || props.book.cover_path,
+    thumbnailKey.value,
+  );
 });
 
 const validArtists = computed(() => {

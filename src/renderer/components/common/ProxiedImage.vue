@@ -25,6 +25,7 @@ const props = defineProps<{
   lazy?: boolean;
 }>();
 
+let requestId = 0;
 const localSrc = ref<string>("");
 const isLoading = ref(true);
 const retryCount = ref(0);
@@ -58,6 +59,15 @@ const loadImage = async () => {
     return;
   }
 
+  const request = ++requestId;
+  isRetrying.value = false;
+  if (
+    /^doujin-menu:\/\/presentation-cover\/[a-f0-9]{64}\.image$/.test(props.url)
+  ) {
+    localSrc.value = props.url;
+    isLoading.value = false;
+    return;
+  }
   isLoading.value = true;
   isRetrying.value = false; // 로딩 시작 시 재시도 상태 초기화
 
@@ -69,6 +79,7 @@ const loadImage = async () => {
         typeof props.id === "number" ? props.id : Number.parseInt(props.id, 10),
     });
 
+    if (request !== requestId) return;
     if (result.success && result.data) {
       localSrc.value = result.data;
       retryCount.value = 0; // 성공 시 재시도 카운트 초기화
@@ -77,10 +88,11 @@ const loadImage = async () => {
       handleLoadError();
     }
   } catch (error) {
+    if (request !== requestId) return;
     console.error("download-temp-thumbnail 호출 오류:", error);
     handleLoadError();
   } finally {
-    isLoading.value = false;
+    if (request === requestId) isLoading.value = false;
   }
 };
 
@@ -97,6 +109,8 @@ const handleLoadError = () => {
 watch(
   () => [props.url, props.id, activateLoad.value],
   ([_newUrl, _newId, newActivateLoad]) => {
+    requestId++;
+    localSrc.value = "";
     if (newActivateLoad) {
       // 기존 타임아웃이 있다면 취소
       if (retryTimeoutId.value) {
@@ -112,6 +126,7 @@ watch(
 
 // 컴포넌트 언마운트 시 타이머 정리
 onUnmounted(() => {
+  requestId++;
   if (retryTimeoutId.value) {
     clearTimeout(retryTimeoutId.value);
   }

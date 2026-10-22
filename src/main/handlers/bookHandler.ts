@@ -15,6 +15,7 @@ import {
   isPresentationCoverPath,
 } from "../services/companion/presentationService.js";
 import { store as configStore } from "./configHandler.js";
+import { getPresentationService } from "./presentationHandler.js";
 
 export interface ExcludeTerms {
   titleTerms: string[];
@@ -552,18 +553,25 @@ export const handleGetBooks = async (
   );
 
   const relations = await fetchBookRelations(books.map((book) => book.id));
-  const formattedBooks = books.map((book) => {
-    const related = relations.get(book.id);
-    return {
-      ...book,
-      title: extractKoreanTitle(book.title, prioritizeKoreanTitles),
-      artists: toNameList(related?.artists),
-      tags: toNameList(related?.tags),
-      series: toNameList(related?.series),
-      groups: toNameList(related?.groups),
-      characters: toNameList(related?.characters),
-    };
-  });
+  const formattedBooks = await Promise.all(
+    books.map(async (book) => {
+      const presentation = book.series_collection_name
+        ? await getPresentationService().getSeries(book.series_collection_name)
+        : null;
+      const related = relations.get(book.id);
+      return {
+        ...book,
+        series_display_title: presentation?.display_title,
+        series_cover_path: presentation?.coverPath,
+        title: extractKoreanTitle(book.title, prioritizeKoreanTitles),
+        artists: toNameList(related?.artists),
+        tags: toNameList(related?.tags),
+        series: toNameList(related?.series),
+        groups: toNameList(related?.groups),
+        characters: toNameList(related?.characters),
+      };
+    }),
+  );
 
   return {
     data: formattedBooks,
@@ -608,8 +616,21 @@ export const handleUpdateBookMetadata = async ({
 
   try {
     await db.transaction(async (trx) => {
-      if (!(await trx("Book").where("id", bookId).first())) {
+      const currentBook = await trx("Book").where("id", bookId).first();
+      if (!currentBook) {
         throw new Error("책을 찾을 수 없습니다");
+      }
+      if (metadata.presentationVersion !== undefined) {
+        const key = currentBook.hitomi_id
+          ? `hitomi:${currentBook.hitomi_id}`
+          : `sync:${currentBook.sync_id}`;
+        const current = await trx("GalleryPresentation")
+          .where("resource_key", key)
+          .first();
+        if ((current?.version ?? 0) !== metadata.presentationVersion)
+          throw new Error(
+            "다른 기기에서 변경했습니다. 편집을 취소한 뒤 다시 열어 최신 내용을 확인하세요.",
+          );
       }
       await trx("Book")
         .where("id", bookId)
@@ -673,7 +694,13 @@ export const handleUpdateBookMetadata = async ({
         trx,
       );
     });
-    notifyCompanionLibraryChanged();
+    const editedBook = await db("Book").where("id", bookId).first();
+    notifyCompanionLibraryChanged(
+      true,
+      editedBook.hitomi_id
+        ? `hitomi:${editedBook.hitomi_id}`
+        : `sync:${editedBook.sync_id}`,
+    );
     return { success: true };
   } catch (error) {
     return { success: false, error: (error as Error).message };

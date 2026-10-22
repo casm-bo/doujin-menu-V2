@@ -58,6 +58,7 @@ import { readZipPage } from "./utils/zipPages.js";
 import { parseMediaRequestUrl } from "./mediaProtocol.js";
 import { DesktopPresentationService } from "./services/companion/presentationService.js";
 import { Readable } from "stream";
+import { registerPresentationHandlers } from "./handlers/presentationHandler.js";
 
 log.initialize();
 export const console = log;
@@ -376,6 +377,7 @@ app.whenReady().then(async () => {
 
   registerUpdaterHandlers(mainWindow);
   registerBookHandlers();
+  registerPresentationHandlers();
   registerConfigHandlers();
   registerDirectoryHandlers();
   registerDownloaderHandlers();

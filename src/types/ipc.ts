@@ -49,6 +49,7 @@ export interface UpdateCheckResult {
 }
 
 export interface Book {
+  sync_id?: string;
   id: number;
   title: string;
   path: string;
@@ -65,6 +66,8 @@ export interface Book {
   series_name?: string;
   series_collection_id?: number;
   series_collection_name?: string;
+  series_display_title?: string;
+  series_cover_path?: string | null;
   series_collection_description?: string | null;
   series_book_count?: number;
   series_read_count?: number;
@@ -80,6 +83,7 @@ export interface Book {
 }
 
 export interface EditableBookMetadata {
+  presentationVersion?: number;
   title: string;
   hitomi_id: string | null;
   type: string | null;
@@ -102,6 +106,9 @@ export interface BookHistory {
 }
 
 export interface SeriesCollection {
+  display_title?: string;
+  presentation_key?: string;
+  presentation?: import("./presentation.js").GalleryPresentation | null;
   id: number;
   name: string;
   description: string | null;
@@ -240,6 +247,17 @@ export interface LibraryScanProgress {
 
 // IPC 채널 이름과 요청/응답 타입 매핑
 export interface IpcChannels {
+  "get-presentation": {
+    request: string;
+    response: import("./presentation.js").GalleryPresentation | null;
+  };
+  "save-presentation": {
+    request: {
+      value: import("./presentation.js").GalleryPresentation;
+      baseVersion: number;
+    };
+    response: import("./presentation.js").PresentationMutationResult;
+  };
   // Book handlers
   "get-books": {
     request: FilterParams & { pageParam?: number; pageSize?: number };
@@ -1002,6 +1020,7 @@ export interface IpcSendChannels {
 }
 
 export interface IpcListenChannels {
+  "presentation-updated": string;
   "subscriptions-updated": void;
   "subscription-new-found": { subscriptionCount: number; newCount: number };
 }

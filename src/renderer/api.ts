@@ -11,6 +11,12 @@ import type {
 export const ipcRenderer: TypedIpcRenderer = window.ipcRenderer;
 
 export { getThumbnailUrl } from "./lib/thumbnailUrl";
+export const getPresentation = (key: string) =>
+  ipcRenderer.invoke("get-presentation", key);
+export const savePresentation = (
+  value: import("../types/presentation").GalleryPresentation,
+  baseVersion: number,
+) => ipcRenderer.invoke("save-presentation", { value, baseVersion });
 
 export async function getBook(bookId: number) {
   return ipcRenderer.invoke("get-book", bookId);

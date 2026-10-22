@@ -94,8 +94,9 @@ companionServer.subscriptionChanged = (readsOnly) => {
     readsOnly ? refreshReadState() : runCycle({ silent: true, rerun: true })
   ).catch((error) => console.error("Subscription refresh failed", error));
 };
-setCompanionLibraryChangedHandler((affectsLibrarySnapshot) => {
+setCompanionLibraryChangedHandler((affectsLibrarySnapshot, presentationKey) => {
   if (affectsLibrarySnapshot) companionServer.requestSync();
+  if (presentationKey) broadcast("presentation-updated", presentationKey);
   BrowserWindow.getAllWindows().forEach((window) => {
     window.webContents.send("books-updated");
     window.webContents.send("series-collections-updated");

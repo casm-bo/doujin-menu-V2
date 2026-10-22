@@ -17,6 +17,7 @@ import { PrefixIndex } from "../services/seriesDetection/prefixIndex.js";
 import type { SerializedIndexEntry } from "../services/seriesDetection/prefixIndex.js";
 import type { DetectionOptions } from "../services/seriesDetection/types.js";
 import { store } from "./configHandler.js";
+import { getPresentationService } from "./presentationHandler.js";
 
 // 전역 접두사 인덱스 (앱 시작 시 초기화)
 let prefixIndex: PrefixIndex | null = null;
@@ -453,10 +454,20 @@ export async function handleGetSeriesCollections(params: {
           .select("cover_path")
           .first();
 
+        const presentation = await getPresentationService().getSeries(
+          collection.name,
+        );
         return {
           ...collection,
+          presentation: presentation.presentation,
+          presentation_key: presentation.presentation_key,
+          display_title: presentation.display_title,
           book_count: (bookCount as { count: number } | undefined)?.count || 0,
-          cover_image: collection.cover_image || firstBook?.cover_path || null,
+          cover_image:
+            presentation.coverPath ||
+            collection.cover_image ||
+            firstBook?.cover_path ||
+            null,
         };
       }),
     );
@@ -546,8 +557,19 @@ export async function handleGetSeriesCollectionById(seriesId: number) {
         : [],
     }));
 
+    const presentation = await getPresentationService().getSeries(
+      collection.name,
+    );
     const result: SeriesCollectionWithBooks = {
       ...collection,
+      presentation: presentation.presentation,
+      presentation_key: presentation.presentation_key,
+      display_title: presentation.display_title,
+      cover_image:
+        presentation.coverPath ||
+        collection.cover_image ||
+        formattedBooks[0]?.cover_path ||
+        null,
       books: formattedBooks,
       book_count: formattedBooks.length,
     };

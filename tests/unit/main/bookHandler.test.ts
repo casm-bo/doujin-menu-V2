@@ -471,6 +471,35 @@ describe("handleGetBooks - 통합 테스트", () => {
     });
   });
 
+  it("rejects a stale desktop form after a phone edit without changing the book", async () => {
+    const book = await seedBook(db, { path: "/conflict", hitomi_id: "12345" });
+    const metadata = {
+      title: "PC edit",
+      hitomi_id: "12345",
+      type: null,
+      language_name_local: null,
+      artists: [],
+      tags: [],
+      series: [],
+      groups: [],
+      characters: [],
+      presentationVersion: 0,
+    };
+    expect(
+      await handleUpdateBookMetadata({ bookId: book.id, metadata }),
+    ).toEqual({ success: true });
+    const result = await handleUpdateBookMetadata({
+      bookId: book.id,
+      metadata: { ...metadata, title: "Stale overwrite" },
+    });
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("다른 기기");
+    expect((await db("Book").where("id", book.id).first()).title).toBe(
+      "PC edit",
+    );
+    expect((await db("GalleryPresentation").first()).version).toBe(1);
+  });
+
   afterAll(async () => {
     await db.destroy();
   });

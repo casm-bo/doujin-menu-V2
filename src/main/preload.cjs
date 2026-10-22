@@ -107,6 +107,8 @@ const invokeChannels = new Set([
   "enter-subscription-tab",
   "mark-subscription-read",
   "update-book-metadata",
+  "get-presentation",
+  "save-presentation",
   "set-book-read",
   "set-series-read",
   "update-book-current-page",
@@ -140,6 +142,7 @@ const eventChannels = new Set([
   "series-collections-updated",
   "subscription-new-found",
   "subscriptions-updated",
+  "presentation-updated",
   "update-status",
   "window-maximized",
 ]);

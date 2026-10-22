@@ -1,5 +1,10 @@
 <script setup lang="ts">
-import { enterSubscriptionTab, ipcRenderer, refreshSubscriptions } from "@/api";
+import {
+  getPresentation,
+  enterSubscriptionTab,
+  ipcRenderer,
+  refreshSubscriptions,
+} from "@/api";
 import HelpDialog from "@/components/common/HelpDialog.vue"; // HelpDialog 임포트
 import SmartSearchInput from "@/components/common/SmartSearchInput.vue";
 import { Button } from "@/components/ui/button";
@@ -21,12 +26,44 @@ import { useSubscriptionStore } from "@/store/subscriptionStore";
 import { useUiStore } from "@/store/uiStore";
 import { Icon } from "@iconify/vue";
 import PageHeader from "../layout/PageHeader.vue";
-import { useInfiniteQuery } from "@tanstack/vue-query";
+import { applyGalleryPresentation } from "../../../types/presentationGallery";
+import { useInfiniteQuery, useQueryClient } from "@tanstack/vue-query";
 import type { HitomiGalleryDetails } from "../../../types/hitomi.js";
 import { AcceptableValue } from "reka-ui";
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from "vue";
 
 const uiStore = useUiStore();
+const queryClient = useQueryClient();
+const stopPresentationUpdates = ipcRenderer.on(
+  "presentation-updated",
+  async (key: unknown) => {
+    if (typeof key !== "string") return;
+    if (!key.startsWith("hitomi:")) return;
+    const value = await getPresentation(key).catch(() => null);
+    if (!value) return;
+    queryClient.setQueriesData<{
+      pages: { galleries: HitomiGalleryDetails[]; nextPage?: number }[];
+      pageParams: number[];
+    }>({ queryKey: ["galleries"] }, (old) =>
+      old
+        ? {
+            ...old,
+            pages: old.pages.map((page) => ({
+              ...page,
+              galleries: page.galleries.map((gallery) =>
+                applyGalleryPresentation(gallery, value),
+              ),
+            })),
+          }
+        : old,
+    );
+    if (selectedGallery.value)
+      selectedGallery.value = applyGalleryPresentation(
+        selectedGallery.value,
+        value,
+      );
+  },
+);
 
 // 썸네일 그리드 줌 스타일
 const downloaderGridStyle = computed(() => ({
@@ -342,6 +379,7 @@ onMounted(() => {
 });
 
 onUnmounted(() => {
+  stopPresentationUpdates();
   if (observer) {
     observer.disconnect();
   }

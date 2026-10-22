@@ -41,7 +41,7 @@ export interface HitomiGallery {
     display: string;
     japanese: string | null;
   };
-  type: "doujinshi" | "manga" | "artistcg" | "gamecg" | "imageset" | "anime";
+  type: string;
   languageName: HitomiLanguageName;
   artists: string[];
   groups: string[];

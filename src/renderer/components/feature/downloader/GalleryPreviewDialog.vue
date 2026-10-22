@@ -14,6 +14,8 @@ import { useRouter } from "vue-router";
 import { toast } from "vue-sonner";
 import type { HitomiGalleryDetails } from "../../../../types/hitomi.js";
 import type { Book } from "../../../../types/ipc";
+import PresentationEditor from "../PresentationEditor.vue";
+import { galleryPresentation } from "../../../../types/presentationGallery";
 import MetadataField from "../MetadataField.vue";
 import PagePreview from "../PagePreview.vue";
 
@@ -26,6 +28,10 @@ const emit = defineEmits<{
   "update:open": [value: boolean];
 }>();
 const router = useRouter();
+const metadataEditing = ref(false);
+const metadataSeed = computed(() =>
+  props.gallery ? galleryPresentation(props.gallery) : null,
+);
 
 const dialogOpen = computed({
   get: () => props.open,
@@ -119,6 +125,13 @@ watch(
     >
       <DialogHeader>
         <DialogTitle>다운로드 상세</DialogTitle>
+        <Button
+          variant="outline"
+          size="sm"
+          :disabled="!gallery"
+          @click="metadataEditing = true"
+          >메타데이터 편집</Button
+        >
       </DialogHeader>
 
       <div
@@ -263,4 +276,5 @@ watch(
       </div>
     </DialogContent>
   </Dialog>
+  <PresentationEditor v-model:open="metadataEditing" :initial="metadataSeed" />
 </template>

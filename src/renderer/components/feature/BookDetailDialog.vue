@@ -1,5 +1,10 @@
 <script setup lang="ts">
-import { getBook, getThumbnailUrl, updateBookMetadata } from "@/api";
+import {
+  getPresentation,
+  getBook,
+  getThumbnailUrl,
+  updateBookMetadata,
+} from "@/api";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -34,6 +39,7 @@ const detailBook = ref<Book | null>(null);
 const book = computed(() => detailBook.value || props.book);
 const isEditing = ref(false);
 const saving = ref(false);
+const presentationVersion = ref<number | undefined>();
 type ListField = "artists" | "tags" | "series" | "groups" | "characters";
 type ScalarField = "hitomi_id" | "type" | "language";
 const draft = ref({
@@ -111,9 +117,35 @@ const resetDraft = () => {
   };
 };
 
-const startEdit = () => {
-  resetDraft();
-  isEditing.value = true;
+const startEdit = async () => {
+  if (!book.value) return;
+  try {
+    const key = book.value.hitomi_id
+      ? `hitomi:${book.value.hitomi_id}`
+      : book.value.sync_id
+        ? `sync:${book.value.sync_id}`
+        : null;
+    const value = key ? await getPresentation(key) : null;
+    presentationVersion.value = key ? value?.version || 0 : undefined;
+    resetDraft();
+    if (value) {
+      const m = value.metadata;
+      draft.value = {
+        title: value.title,
+        hitomi_id: draft.value.hitomi_id,
+        type: m.galleryType ? [m.galleryType] : [],
+        language: m.language ? [m.language] : [],
+        artists: [...m.artists],
+        groups: [...m.groups],
+        series: [...m.series],
+        characters: [...m.characters],
+        tags: [...m.tags],
+      };
+    }
+    isEditing.value = true;
+  } catch (error) {
+    toast.error((error as Error).message);
+  }
 };
 const cancelEdit = () => {
   isEditing.value = false;
@@ -132,6 +164,7 @@ const saveMetadata = async () => {
   try {
     await updateBookMetadata(book.value.id, {
       title: draft.value.title,
+      presentationVersion: presentationVersion.value,
       hitomi_id: draft.value.hitomi_id[0] || null,
       type: draft.value.type[0] || null,
       language_name_local: draft.value.language[0] || null,

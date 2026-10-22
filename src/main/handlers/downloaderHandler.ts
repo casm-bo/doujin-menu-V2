@@ -18,6 +18,8 @@ import {
   publishStagedDownload,
 } from "../utils/downloadStaging.js";
 import { normalizeTagName } from "../utils/tagName.js";
+import { getPresentationService } from "./presentationHandler.js";
+import { applyGalleryPresentation } from "../../types/presentationGallery.js";
 import { store as configStore } from "./configHandler.js";
 import {
   extractInfoTxtAndImageCountFromZip,
@@ -162,7 +164,13 @@ export const handleSearchGalleries = async (params: SearchGalleriesParams) => {
 export const handleGetGalleryDetails = async (galleryId: number) => {
   try {
     const gallery = await hitomiService.getGalleryDetails(galleryId);
-    return { success: true, data: gallery };
+    return {
+      success: true,
+      data: applyGalleryPresentation(
+        gallery,
+        await getPresentationService().get(`hitomi:${galleryId}`),
+      ),
+    };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     console.error(`Error getting gallery details for ID ${galleryId}:`, error);
