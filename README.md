@@ -8,7 +8,7 @@
 [![GitHub Downloads](https://img.shields.io/github/downloads/casm-bo/doujin-menu-V2/total)](https://github.com/casm-bo/doujin-menu-V2/releases/latest)
 
 ## **Android 앱 안내:** 
-- Android 앱은 데스크톱 앱과 기능 구성이 다르며, 단독으로 사용하지 않고 데스크톱 앱의 Companion Server와 페어링해 사용합니다. 설치 및 페어링 방법은 [doujin-menu-android](https://github.com/casm-bo/doujin-menu-android)를 확인하세요.
+- Android 앱은 PC 연결 없이 검색·온라인 읽기·기기 다운로드·로컬 라이브러리를 사용할 수 있습니다. PC 다운로드 큐와 라이브러리·검색 구독 동기화는 데스크톱 앱의 Companion Server와 페어링해 사용합니다. 설치 및 페어링 방법은 [doujin-menu-android](https://github.com/casm-bo/doujin-menu-android)를 확인하세요.
 
 
 **만화책 라이브러리 관리 및 뷰어 데스크톱 애플리케이션. 대용량 만화 파일 컬렉션을 효율적으로 관리하고, 사용자 친화적인 뷰잉 경험을 제공합니다.**
