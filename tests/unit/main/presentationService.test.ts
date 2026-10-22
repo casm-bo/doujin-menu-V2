@@ -190,6 +190,34 @@ describe("presentation storage and transfer", () => {
     );
   });
 
+  it("applies chosen page JPEGs and external PNGs to existing books and detects their MIME despite the image extension", async () => {
+    const book = await seedBook(db, { hitomi_id: "123" });
+    let version = 0;
+    for (const format of ["jpeg", "png"] as const) {
+      const bytes = await sharp({
+        create: { width: 16, height: 24, channels: 3, background: "blue" },
+      })
+        .toFormat(format)
+        .toBuffer();
+      const hash = createHash("sha256").update(bytes).digest("hex");
+      await service.putCover(hash, bytes);
+      const result = await service.apply("synthetic-phone", {
+        mutationId: `cover-${format}`,
+        baseVersion: version,
+        value: { ...value(), coverHash: hash },
+      });
+      version = result.value.version;
+      expect((await db("Book").where("id", book.id).first()).cover_path).toBe(
+        path.join(directory, `${hash}.image`),
+      );
+      const cover = await service.getCover(hash);
+      expect(cover?.contentType).toBe(`image/${format}`);
+      const chunks: Buffer[] = [];
+      for await (const chunk of cover!.stream) chunks.push(Buffer.from(chunk));
+      expect(Buffer.concat(chunks)).toEqual(bytes);
+    }
+  });
+
   it("rejects malformed identities and overlong fields while allowing explicit empty facets", () => {
     const valid = { mutationId: "valid", baseVersion: 0, value: value() };
     expect(parsePresentationMutation(valid)?.value.metadata.tags).toEqual([]);

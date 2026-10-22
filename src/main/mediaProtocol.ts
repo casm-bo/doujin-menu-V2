@@ -1,7 +1,7 @@
 export type MediaRequest =
   | { kind: "page"; bookId: number; pageIndex: number }
   | {
-      kind: "thumbnail" | "download-thumbnail";
+      kind: "thumbnail" | "download-thumbnail" | "presentation-cover";
       fileName: string;
     };
 
@@ -25,6 +25,13 @@ export function parseMediaRequestUrl(rawUrl: string): MediaRequest | null {
         ? { kind: "page", bookId, pageIndex }
         : null;
     }
+
+    if (
+      url.hostname === "presentation-cover" &&
+      segments.length === 1 &&
+      /^[a-f0-9]{64}\.image$/.test(segments[0])
+    )
+      return { kind: "presentation-cover", fileName: segments[0] };
 
     if (
       (url.hostname === "thumbnail" || url.hostname === "download-thumbnail") &&

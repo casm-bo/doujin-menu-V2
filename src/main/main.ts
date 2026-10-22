@@ -56,6 +56,8 @@ import { registerUpdaterHandlers } from "./updater.js";
 import { imageMimeType, sortImageFiles } from "./utils/imageFiles.js";
 import { readZipPage } from "./utils/zipPages.js";
 import { parseMediaRequestUrl } from "./mediaProtocol.js";
+import { DesktopPresentationService } from "./services/companion/presentationService.js";
+import { Readable } from "stream";
 
 log.initialize();
 export const console = log;
@@ -289,6 +291,19 @@ app.whenReady().then(async () => {
     }
 
     try {
+      if (mediaRequest.kind === "presentation-cover") {
+        const cover = await new DesktopPresentationService(
+          db,
+          path.join(app.getPath("userData"), "presentation-covers"),
+        ).getCover(mediaRequest.fileName.slice(0, -6));
+        if (!cover) return new Response("Cover not found", { status: 404 });
+        return new Response(
+          Readable.toWeb(cover.stream) as ReadableStream<Uint8Array>,
+          {
+            headers: { "Content-Type": cover.contentType },
+          },
+        );
+      }
       if (mediaRequest.kind !== "page") {
         const thumbnailPath = path.join(
           app.getPath("userData"),
