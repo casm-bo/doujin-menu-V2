@@ -1,3 +1,4 @@
+import "./appIdentity.js";
 import {
   app,
   BrowserWindow,
@@ -63,17 +64,17 @@ import { registerPresentationHandlers } from "./handlers/presentationHandler.js"
 log.initialize();
 export const console = log;
 
-protocol.registerSchemesAsPrivileged([
-  {
-    scheme: "doujin-menu",
+protocol.registerSchemesAsPrivileged(
+  ["doujinzip", "doujin-menu"].map((scheme) => ({
+    scheme,
     privileges: {
       secure: true,
       standard: true,
       supportFetchAPI: true,
       corsEnabled: true,
     },
-  },
-]);
+  })),
+);
 
 // 앱이 중복으로 켜지지 않도록 방지
 const gotTheLock = app.requestSingleInstanceLock();
@@ -143,10 +144,10 @@ function quitApplication(): void {
 function createTray(): void {
   if (tray && !tray.isDestroyed()) return;
   tray = new Tray(getAppIconPath());
-  tray.setToolTip("동인메뉴판 - 백그라운드 실행 중");
+  tray.setToolTip("동인집 - 백그라운드 실행 중");
   tray.setContextMenu(
     Menu.buildFromTemplate([
-      { label: "동인메뉴판 열기", click: showMainWindow },
+      { label: "동인집 열기", click: showMainWindow },
       { type: "separator" },
       { label: "완전 종료", click: quitApplication },
     ]),
@@ -285,7 +286,9 @@ app.whenReady().then(async () => {
   if (!gotTheLock) return;
 
   // 렌더러가 만들어질 때 이미 스킴이 등록되어 있어야 합니다.
-  protocol.handle("doujin-menu", async (request) => {
+  const handleMediaRequest: Parameters<typeof protocol.handle>[1] = async (
+    request,
+  ) => {
     const mediaRequest = parseMediaRequestUrl(request.url);
     if (!mediaRequest) {
       return new Response("Invalid URL", { status: 400 });
@@ -364,13 +367,12 @@ app.whenReady().then(async () => {
         return new Response("Unsupported book format", { status: 400 });
       }
     } catch (error) {
-      console.error(
-        `[Main] Error handling doujin-menu protocol request:`,
-        error,
-      );
+      console.error(`[Main] Error handling doujinzip protocol request:`, error);
       return new Response("Internal server error", { status: 500 });
     }
-  });
+  };
+  protocol.handle("doujinzip", handleMediaRequest);
+  protocol.handle("doujin-menu", handleMediaRequest);
 
   createWindow();
   createTray();

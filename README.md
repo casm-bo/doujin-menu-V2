@@ -1,21 +1,25 @@
-# 동인메뉴판
+# 동인집 (DoujinZip)
 
 ![image](screenshots.webp)
 
-> 이 프로젝트는 [qqoro/doujin-menu](https://github.com/qqoro/doujin-menu)를 기반으로 `casm`이 개발하고 유지보수하는 포크입니다. 2026년 이후 이 포크에 추가된 변경 사항의 저작권은 `casm`에게 있습니다.
+동인집(DoujinZip)은 만화책을 모으고 검색하고 읽는 데스크톱 앱입니다. 프로젝트·패키지 이름은 `doujinzip`, 앱 ID는 `com.casm.doujinzip`입니다.
+
+> [qqoro/doujin-menu](https://github.com/qqoro/doujin-menu)를 기반으로 `casm`이 개발하고 유지보수합니다. 원본 MIT 라이선스와 저작권 고지를 유지합니다. 2026년 이후 추가된 변경 사항의 저작권은 `casm`에게 있습니다.
+
+이름 변경 후에도 기존 라이브러리·설정·페어링을 유지하도록 데이터 폴더는 기존 `doujin-menu` 경로를 사용합니다. 기존 앱과 새 앱을 동시에 실행하지 마세요. GitHub 저장소와 업데이트 주소는 저장소 이름을 실제로 변경하기 전까지 기존 주소를 사용합니다.
 
 [![GitHub latest release](https://img.shields.io/github/v/release/casm-bo/doujin-menu-V2)](https://github.com/casm-bo/doujin-menu-V2/releases/latest)
 [![GitHub Downloads](https://img.shields.io/github/downloads/casm-bo/doujin-menu-V2/total)](https://github.com/casm-bo/doujin-menu-V2/releases/latest)
 
 ## **Android 앱 안내:** 
-- Android 앱은 PC 연결 없이 검색·온라인 읽기·기기 다운로드·로컬 라이브러리를 사용할 수 있습니다. PC 다운로드 큐와 라이브러리·검색 구독 동기화는 데스크톱 앱의 Companion Server와 페어링해 사용합니다. 설치 및 페어링 방법은 [doujin-menu-android](https://github.com/casm-bo/doujin-menu-android)를 확인하세요.
+- 동인집 Android는 PC 연결 없이 검색·온라인 읽기·기기 다운로드·로컬 라이브러리를 사용할 수 있습니다. PC 다운로드 큐와 라이브러리·검색 구독 동기화는 데스크톱 앱의 Companion Server와 페어링해 사용합니다. 설치 및 페어링 방법은 [동인집 Android](https://github.com/casm-bo/doujin-menu-android)를 확인하세요.
 
 
 **만화책 라이브러리 관리 및 뷰어 데스크톱 애플리케이션. 대용량 만화 파일 컬렉션을 효율적으로 관리하고, 사용자 친화적인 뷰잉 경험을 제공합니다.**
 
 ## 🚀 설치 방법
 
-1. [릴리즈 페이지](https://github.com/casm-bo/doujin-menu-V2/releases/latest)에서 최신 인스톨러(`yasig-menu-setup-x.x.x.exe`)또는 포터블 버전을 다운로드합니다.
+1. [릴리즈 페이지](https://github.com/casm-bo/doujin-menu-V2/releases/latest)에서 최신 인스톨러(`doujinzip-setup-x.x.x.exe`)또는 포터블 버전을 다운로드합니다.
 2. 다운로드한 파일을 실행합니다.
 
 ## ✨ 주요 기능

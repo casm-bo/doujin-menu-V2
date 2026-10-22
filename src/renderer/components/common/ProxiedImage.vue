@@ -62,7 +62,7 @@ const loadImage = async () => {
   const request = ++requestId;
   isRetrying.value = false;
   if (
-    /^doujin-menu:\/\/presentation-cover\/[a-f0-9]{64}\.image$/.test(props.url)
+    /^doujinzip:\/\/presentation-cover\/[a-f0-9]{64}\.image$/.test(props.url)
   ) {
     localSrc.value = props.url;
     isLoading.value = false;

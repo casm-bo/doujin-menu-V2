@@ -37,7 +37,7 @@ it("round-trips edited metadata and local covers without replacing gallery ident
   expect(result.languageName.local).toBeNull();
   expect(result.type).toBe("custom type");
   expect(result.thumbnailUrl).toBe(
-    `doujin-menu://presentation-cover/${value.coverHash}.image`,
+    `doujinzip://presentation-cover/${value.coverHash}.image`,
   );
   expect(result.files).toBe(gallery.files);
   expect(gallery.title.display).toBe("Original");

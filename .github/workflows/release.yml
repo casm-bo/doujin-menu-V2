@@ -69,9 +69,9 @@ jobs:
           body_path: RELEASE_NOTES.md
           generate_release_notes: false
           files: |
-            artifacts/build_win/doujin-menu-setup-*.exe
+            artifacts/build_win/doujinzip-setup-*.exe
             artifacts/build_win/*.blockmap
             artifacts/build_win/latest.yml
-            artifacts/build_port_win/doujin-menu-portable-*.exe
+            artifacts/build_port_win/doujinzip-portable-*.exe
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -56,7 +56,7 @@ export function applyGalleryPresentation(
       ? new Date(metadata.publishedDate)
       : null,
     thumbnailUrl: value.coverHash
-      ? `doujin-menu://presentation-cover/${value.coverHash}.image`
+      ? `doujinzip://presentation-cover/${value.coverHash}.image`
       : gallery.thumbnailUrl,
   };
 }

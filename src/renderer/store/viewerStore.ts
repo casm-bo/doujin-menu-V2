@@ -767,7 +767,7 @@ export const useViewerStore = defineStore("viewer", () => {
     if (newTitle) {
       setWindowTitle(newTitle);
     } else {
-      setWindowTitle("동인메뉴판");
+      setWindowTitle("동인집");
     }
   });
 

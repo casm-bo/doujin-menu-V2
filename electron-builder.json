@@ -1,6 +1,6 @@
 {
-  "appId": "com.casm.doujinmenu",
-  "productName": "동인메뉴판",
+  "appId": "com.casm.doujinzip",
+  "productName": "동인집",
   "directories": {
     "output": "dist",
     "buildResources": "src/main/static"
@@ -12,11 +12,11 @@
     "oneClick": false,
     "perMachine": false,
     "allowToChangeInstallationDirectory": true,
-    "artifactName": "doujin-menu-setup-${version}.${ext}",
-    "shortcutName": "동인메뉴판"
+    "artifactName": "doujinzip-setup-${version}.${ext}",
+    "shortcutName": "동인집"
   },
   "portable": {
-    "artifactName": "doujin-menu-portable-${version}.${ext}"
+    "artifactName": "doujinzip-portable-${version}.${ext}"
   },
   "linux": {
     "target": ["snap"]

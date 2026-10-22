@@ -47,7 +47,7 @@ export async function buildLicenseInfo() {
 
   try {
     const { stdout } = await execPromise(
-      "pnpm license-checker-rseidelsohn --excludePackages ';doujin-menu;' --json ",
+      "pnpm license-checker-rseidelsohn --excludePackages ';doujinzip;' --json ",
     );
     const rawLicenses = JSON.parse(stdout);
     const processedLicenses = {};

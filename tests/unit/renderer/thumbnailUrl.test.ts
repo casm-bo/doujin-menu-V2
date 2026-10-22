@@ -9,7 +9,7 @@ it("routes chosen page and external image covers to their content-addressed dire
     "/synthetic/presentation-covers/",
   ]) {
     const url = getThumbnailUrl(root + name, 42);
-    expect(url).toBe(`doujin-menu://presentation-cover/${name}?v=42`);
+    expect(url).toBe(`doujinzip://presentation-cover/${name}?v=42`);
     expect(parseMediaRequestUrl(url)).toEqual({
       kind: "presentation-cover",
       fileName: name,
@@ -19,7 +19,7 @@ it("routes chosen page and external image covers to their content-addressed dire
 
 it("preserves normal thumbnail paths, encoding and empty covers", () => {
   expect(getThumbnailUrl("/synthetic/thumbnails/cover image.webp")).toBe(
-    "doujin-menu://thumbnail/cover%20image.webp",
+    "doujinzip://thumbnail/cover%20image.webp",
   );
   expect(getThumbnailUrl(null)).toBe("");
   expect(getThumbnailUrl("")).toBe("");
@@ -34,7 +34,7 @@ it("rejects arbitrary filenames and traversal in the presentation cover route", 
     "a".repeat(64) + ".image/extra",
   ]) {
     expect(
-      parseMediaRequestUrl(`doujin-menu://presentation-cover/${name}`),
+      parseMediaRequestUrl(`doujinzip://presentation-cover/${name}`),
     ).toBeNull();
   }
 });

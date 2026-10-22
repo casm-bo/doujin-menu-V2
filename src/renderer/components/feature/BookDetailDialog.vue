@@ -73,7 +73,7 @@ const previewPages = computed(() =>
   book.value
     ? Array.from(
         { length: book.value.page_count || 0 },
-        (_, index) => `doujin-menu://page/${book.value!.id}/${index}`,
+        (_, index) => `doujinzip://page/${book.value!.id}/${index}`,
       )
     : [],
 );

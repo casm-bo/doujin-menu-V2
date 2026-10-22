@@ -1,6 +1,6 @@
 {
-  "name": "doujin-menu",
-  "displayName": "동인메뉴판",
+  "name": "doujinzip",
+  "displayName": "동인집",
   "version": "2.5.0",
   "description": "만화책 관리를 위한 데스크톱 어플리케이션",
   "license": "MIT",

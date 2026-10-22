@@ -712,7 +712,7 @@ export const handleDownloadTempThumbnail = async ({
       await fs.access(filePath);
       return {
         success: true,
-        data: `doujin-menu://download-thumbnail/${encodeURIComponent(fileName)}`,
+        data: `doujinzip://download-thumbnail/${encodeURIComponent(fileName)}`,
       };
     } catch {
       // 파일이 없으면 다운로드 계속
@@ -735,7 +735,7 @@ export const handleDownloadTempThumbnail = async ({
 
     return {
       success: true,
-      data: `doujin-menu://download-thumbnail/${encodeURIComponent(fileName)}`,
+      data: `doujinzip://download-thumbnail/${encodeURIComponent(fileName)}`,
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

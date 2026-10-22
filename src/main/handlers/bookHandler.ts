@@ -797,7 +797,7 @@ export const handleGetBookPagePaths = async (bookId: number) => {
     if (isDirectory) {
       const imageFiles = sortImageFiles(await fs.readdir(bookPath));
       for (let i = 0; i < imageFiles.length; i++) {
-        pagePaths.push(`doujin-menu://page/${bookId}/${i}`);
+        pagePaths.push(`doujinzip://page/${bookId}/${i}`);
       }
       return {
         success: true,
@@ -808,7 +808,7 @@ export const handleGetBookPagePaths = async (bookId: number) => {
     } else if (/.(cbz|zip)$/i.exec(bookPath)) {
       const fileNames = await getZipPageNames(bookPath);
       for (let i = 0; i < fileNames.length; i++) {
-        pagePaths.push(`doujin-menu://page/${bookId}/${i}`);
+        pagePaths.push(`doujinzip://page/${bookId}/${i}`);
       }
       return {
         success: true,

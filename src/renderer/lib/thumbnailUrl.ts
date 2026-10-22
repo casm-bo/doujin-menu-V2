@@ -11,5 +11,5 @@ export function getThumbnailUrl(
       ? "presentation-cover"
       : "thumbnail";
   const query = version ? `?v=${version}` : "";
-  return `doujin-menu://${kind}/${encodeURIComponent(fileName)}${query}`;
+  return `doujinzip://${kind}/${encodeURIComponent(fileName)}${query}`;
 }

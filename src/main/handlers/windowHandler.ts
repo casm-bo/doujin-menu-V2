@@ -35,7 +35,7 @@ export const handleIsWindowMaximized = (win: BrowserWindow): boolean => {
 
 export const isAllowedViewerRoute = (route: string): boolean => {
   try {
-    const base = "https://doujin-menu.local";
+    const base = "https://doujinzip.local";
     const url = new URL(route, base);
     return url.origin === base && /^\/viewer\/[1-9]\d*$/.test(url.pathname);
   } catch {

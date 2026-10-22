@@ -16,7 +16,8 @@ export function parseMediaRequestUrl(rawUrl: string): MediaRequest | null {
     const url = new URL(rawUrl);
     const segments = url.pathname.split("/").filter(Boolean);
 
-    if (url.protocol !== "doujin-menu:") return null;
+    if (url.protocol !== "doujinzip:" && url.protocol !== "doujin-menu:")
+      return null;
 
     if (url.hostname === "page" && segments.length === 2) {
       const bookId = parseNonNegativeInteger(segments[0]);

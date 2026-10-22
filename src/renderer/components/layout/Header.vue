@@ -40,7 +40,7 @@ onUnmounted(() => {
         icon="solar:book-bookmark-bold-duotone"
         class="text-primary size-5"
       />
-      <h1 class="text-foreground text-sm font-semibold">동인메뉴판</h1>
+      <h1 class="text-foreground text-sm font-semibold">동인집</h1>
     </div>
 
     <div class="flex h-full items-center">
