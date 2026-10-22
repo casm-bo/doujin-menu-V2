@@ -21,6 +21,7 @@ export interface SubscriptionStatus {
   newCount: number;
   subscriptionCount: number;
   feedTotal: number;
+  generation: number;
   lastCheckedAt: string | null;
 }
 
@@ -52,6 +53,7 @@ let notifiedCount = 0;
 
 /** 진행 중인 사이클. 재진입 가드 겸 대기 지점이다 */
 let cycleInFlight: Promise<void> | null = null;
+let queuedSilent: boolean | null = null;
 
 let timer: NodeJS.Timeout | null = null;
 let toastTarget: WebContents | null = null;
@@ -71,6 +73,7 @@ export const __resetSubscriptionState = (): void => {
   readIds = new Set();
   notifiedCount = 0;
   cycleInFlight = null;
+  queuedSilent = null;
   if (timer) clearInterval(timer);
   timer = null;
   toastTarget = null;
@@ -272,10 +275,23 @@ const doCycle = async (silent: boolean): Promise<void> => {
  * 자동 폴링·수동 새로고침·구독 변경·탭 첫 진입이 겹칠 수 있어 가드가 필수다.
  * 가드가 없으면 새로고침 연타만으로 사이클이 여러 개 동시에 돈다.
  */
-export const runCycle = (opts: { silent?: boolean } = {}): Promise<void> => {
-  if (cycleInFlight) return cycleInFlight;
+export const runCycle = (
+  opts: { silent?: boolean; rerun?: boolean } = {},
+): Promise<void> => {
+  if (cycleInFlight) {
+    if (opts.rerun)
+      queuedSilent = (queuedSilent ?? true) && (opts.silent ?? false);
+    return cycleInFlight;
+  }
 
-  cycleInFlight = doCycle(opts.silent ?? false).finally(() => {
+  cycleInFlight = (async () => {
+    let silent = opts.silent ?? false;
+    do {
+      queuedSilent = null;
+      await doCycle(silent);
+      silent = queuedSilent ?? false;
+    } while (queuedSilent !== null);
+  })().finally(() => {
     cycleInFlight = null;
   });
   return cycleInFlight;
@@ -291,6 +307,7 @@ export const getStatus = (): SubscriptionStatus => {
     newCount,
     subscriptionCount: states.size,
     feedTotal: feed.length,
+    generation: feedGeneration,
     lastCheckedAt,
   };
 };

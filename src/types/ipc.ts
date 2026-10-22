@@ -162,6 +162,7 @@ export interface SubscriptionStatus {
   newCount: number;
   subscriptionCount: number;
   feedTotal: number;
+  generation: number;
   lastCheckedAt: string | null;
 }
 

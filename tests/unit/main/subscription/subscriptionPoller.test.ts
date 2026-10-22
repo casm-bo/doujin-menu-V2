@@ -202,6 +202,47 @@ describe("runCycle — 기준선", () => {
 });
 
 describe("runCycle — 재진입 가드와 캐시", () => {
+  it("coalesces subscription changes during a cycle into a fresh silent cycle", async () => {
+    await addSubscription("artist:foo", { last_seen_id: 0 });
+    let release!: (ids: number[]) => void;
+    let started!: () => void;
+    const checking = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    stubTags({ foo: [10], bar: [20] });
+    mockFetchTagIds.mockImplementationOnce(() => {
+      started();
+      return new Promise<number[]>((resolve) => {
+        release = resolve;
+      });
+    });
+    const first = runCycle({ silent: true });
+    await checking;
+    await addSubscription("artist:bar", { last_seen_id: 0 });
+    const changed = runCycle({ silent: true, rerun: true });
+    const repeated = runCycle({ silent: true, rerun: true });
+    release([10]);
+    await Promise.all([first, changed, repeated]);
+    expect(getFeedSlice(0, 10).ids).toEqual([20, 10]);
+    expect(getStatus().generation).toBe(2);
+    expect(mockFetchTagIds).toHaveBeenCalledTimes(3);
+    expect(mockSendTo).not.toHaveBeenCalled();
+  });
+
+  it("publishes a new feed generation when the last subscription is paused", async () => {
+    const id = await addSubscription("artist:foo", { last_seen_id: 0 });
+    stubTags({ foo: [10] });
+    await runCycle();
+    const previous = getStatus();
+    await db("Subscription").where({ id }).update({ enabled: false });
+    await runCycle({ silent: true });
+    expect(getStatus()).toMatchObject({
+      lastCheckedAt: previous.lastCheckedAt,
+      generation: previous.generation + 1,
+      feedTotal: 0,
+    });
+  });
+
   it("진행 중이면 두 번째 사이클을 새로 시작하지 않는다", async () => {
     await addSubscription("artist:foo", { last_seen_id: 0 });
     stubTags({ foo: [1] });

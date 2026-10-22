@@ -1,4 +1,5 @@
 import type { Knex } from "knex";
+import { SubscriptionSyncService } from "../../../../src/main/services/subscription/subscriptionSync.js";
 import {
   afterAll,
   beforeAll,
@@ -174,6 +175,77 @@ describe("handleGetSubscriptions", () => {
 });
 
 describe("handleUpdateSubscription", () => {
+  it("rejects a language-only edit that duplicates a phone subscription", async () => {
+    const service = new SubscriptionSyncService(db);
+    await service.save("synthetic-phone", "create-phone", {
+      id: "phone-subscription",
+      name: "Phone",
+      query: "artist:foo",
+      languages: ["korean"],
+      enabled: true,
+      deleted: false,
+      version: 0,
+    });
+    const added = await handleAddSubscription({ query: "artist:foo" });
+    const result = await handleUpdateSubscription({
+      id: added.data!.id,
+      languages: ["korean"],
+    });
+    expect(result).toEqual({
+      success: false,
+      error: "이미 같은 검색어를 구독하고 있습니다.",
+    });
+    expect(
+      (await db("Subscription").where("id", added.data!.id).first()).languages,
+    ).toBe("[]");
+  });
+
+  it("shares phone subscriptions with desktop CRUD and returns desktop changes to the phone", async () => {
+    const service = new SubscriptionSyncService(db);
+    const created = await service.save("synthetic-phone", "create-phone", {
+      id: "phone-subscription",
+      name: "Phone",
+      query: "artist:foo",
+      languages: ["korean", "japanese"],
+      enabled: false,
+      deleted: false,
+      version: 0,
+    });
+    const listed = await handleGetSubscriptions();
+    expect(listed.data).toHaveLength(1);
+    const desktop = listed.data![0];
+    expect(desktop).toMatchObject({
+      label: "Phone",
+      enabled: false,
+      languages: ["japanese", "korean"],
+    });
+    expect(
+      (
+        await handleUpdateSubscription({
+          id: desktop.id,
+          label: "Desktop edit",
+          languages: ["english"],
+        })
+      ).success,
+    ).toBe(true);
+    const changes = await service.changes(0);
+    expect(changes.changes.at(-1)!.value).toMatchObject({
+      id: created.value.id,
+      name: "Desktop edit",
+      languages: ["english"],
+      version: 2,
+    });
+    expect((await handleRemoveSubscription(desktop.id)).success).toBe(true);
+    expect((await handleGetSubscriptions()).data).toEqual([]);
+    expect(
+      (await service.changes(changes.cursor)).changes.at(-1)!.value,
+    ).toMatchObject({
+      id: created.value.id,
+      deleted: true,
+      version: 3,
+    });
+  });
+
   it("이름을 바꾼다", async () => {
     const added = await handleAddSubscription({ query: "artist:foo" });
 

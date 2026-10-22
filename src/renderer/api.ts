@@ -607,6 +607,7 @@ export async function updateSubscription(params: {
   query?: string;
   label?: string;
   enabled?: boolean;
+  languages?: string[];
 }) {
   const result = await ipcRenderer.invoke("update-subscription", params);
   if (!result.success) {

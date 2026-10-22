@@ -10,13 +10,14 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { Switch } from "@/components/ui/switch";
+import { useSubscriptionStore } from "@/store/subscriptionStore";
 import {
   languageLabel,
   splitLanguage,
   withLanguage,
 } from "@/lib/subscriptionQuery";
 import { Icon } from "@iconify/vue";
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 import { toast } from "vue-sonner";
 import type { Subscription } from "../../../../types/ipc";
 
@@ -37,6 +38,7 @@ const emit = defineEmits<{
 }>();
 
 const isOpen = ref(false);
+const subscriptionStore = useSubscriptionStore();
 const isLoading = ref(false);
 const isAdding = ref(false);
 const isRefreshing = ref(false);
@@ -103,18 +105,22 @@ const rows = computed(() =>
   }),
 );
 
+let loadRevision = 0;
 const load = async () => {
+  const request = ++loadRevision;
   isLoading.value = true;
   try {
     const result = await api.getSubscriptions();
+    if (request !== loadRevision) return;
     subscriptions.value = result.items;
     errors.value = result.errors;
   } catch (err) {
+    if (request !== loadRevision) return;
     toast.error(
       err instanceof Error ? err.message : "구독 목록을 불러오지 못했습니다.",
     );
   } finally {
-    isLoading.value = false;
+    if (request === loadRevision) isLoading.value = false;
   }
 };
 
@@ -270,6 +276,7 @@ const handleRefresh = async () => {
 };
 
 onMounted(load);
+watch(() => subscriptionStore.revision, load);
 </script>
 
 <template>

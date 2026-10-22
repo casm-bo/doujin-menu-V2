@@ -15,6 +15,8 @@ export const useSubscriptionStore = defineStore("subscription", () => {
   const subscriptionCount = ref(0);
   const feedTotal = ref(0);
   const lastCheckedAt = ref<string | null>(null);
+  const feedGeneration = ref(0);
+  const revision = ref(0);
 
   /** 사이드바·탭의 빨간 점 */
   const hasUnseen = computed(() => newCount.value > 0);
@@ -24,6 +26,7 @@ export const useSubscriptionStore = defineStore("subscription", () => {
     subscriptionCount.value = status.subscriptionCount;
     feedTotal.value = status.feedTotal;
     lastCheckedAt.value = status.lastCheckedAt;
+    feedGeneration.value = status.generation;
   };
 
   const refreshStatus = async () => {
@@ -46,6 +49,7 @@ export const useSubscriptionStore = defineStore("subscription", () => {
   // subscriptions-updated는 payload 없는 신호다. 받으면 당겨온다
   // (books-updated 등 기존 채널과 같은 관례)
   const handleUpdated = () => {
+    revision.value++;
     void refreshStatus();
   };
 
@@ -71,6 +75,8 @@ export const useSubscriptionStore = defineStore("subscription", () => {
     subscriptionCount,
     feedTotal,
     lastCheckedAt,
+    feedGeneration,
+    revision,
     hasUnseen,
     refreshStatus,
     markSeenLocally,

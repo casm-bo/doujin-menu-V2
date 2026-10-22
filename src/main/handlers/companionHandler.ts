@@ -17,6 +17,7 @@ import {
   runCycle,
 } from "../services/subscription/subscriptionPoller.js";
 import { store } from "./configHandler.js";
+import { broadcast } from "../utils/broadcast.js";
 import path from "path";
 import {
   handleAddToDownloadQueue,
@@ -88,9 +89,10 @@ export const companionServer = new CompanionServer(
   new SubscriptionSyncService(db),
 );
 companionServer.subscriptionChanged = (readsOnly) => {
-  void (readsOnly ? refreshReadState() : runCycle({ silent: true })).catch(
-    (error) => console.error("Subscription refresh failed", error),
-  );
+  if (!readsOnly) broadcast("subscriptions-updated");
+  void (
+    readsOnly ? refreshReadState() : runCycle({ silent: true, rerun: true })
+  ).catch((error) => console.error("Subscription refresh failed", error));
 };
 setCompanionLibraryChangedHandler((affectsLibrarySnapshot) => {
   if (affectsLibrarySnapshot) companionServer.requestSync();

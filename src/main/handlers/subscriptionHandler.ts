@@ -87,7 +87,7 @@ export const handleAddSubscription = async (params: {
             deleted: false,
             last_seen_id: null,
           });
-        await runCycle({ silent: true });
+        await runCycle({ silent: true, rerun: true });
         return {
           success: true,
           data: toSubscription(
@@ -107,7 +107,7 @@ export const handleAddSubscription = async (params: {
     });
 
     // 기준선을 채우고 피드를 다시 만든다. 유저가 방금 한 행동이라 알리지 않는다
-    await runCycle({ silent: true });
+    await runCycle({ silent: true, rerun: true });
 
     const row = await db("Subscription").where("id", id).first();
     return { success: true, data: toSubscription(row) };
@@ -141,8 +141,11 @@ export const handleUpdateSubscription = async (params: {
     )
       return { success: false, error: "언어 설정이 올바르지 않습니다." };
 
-    if (params.query !== undefined) {
-      const normalized = subscriptionKey(params.query, languages);
+    if (params.query !== undefined || params.languages !== undefined) {
+      const normalized = subscriptionKey(
+        params.query ?? current.query,
+        languages,
+      );
 
       // unique 제약에 맡기면 SQLite 원문 에러가 그대로 토스트에 뜬다.
       // 자기 자신은 빼야 검색어를 그대로 둔 저장이 중복으로 걸리지 않는다
@@ -157,7 +160,7 @@ export const handleUpdateSubscription = async (params: {
         };
       }
 
-      patch.query = params.query.trim();
+      if (params.query !== undefined) patch.query = params.query.trim();
       patch.normalized_query = normalized;
 
       // last_seen_id는 일부러 건드리지 않는다. 이 값은 검색어에 매인 게 아니라
@@ -216,7 +219,7 @@ export const handleUpdateSubscription = async (params: {
       params.query !== undefined ||
       params.languages !== undefined
     ) {
-      await runCycle({ silent: true });
+      await runCycle({ silent: true, rerun: true });
     }
 
     return { success: true };
@@ -232,7 +235,7 @@ export const handleRemoveSubscription = async (id: number) => {
     await db("Subscription")
       .where("id", id)
       .update({ deleted: true, enabled: false });
-    await runCycle({ silent: true });
+    await runCycle({ silent: true, rerun: true });
     return { success: true };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

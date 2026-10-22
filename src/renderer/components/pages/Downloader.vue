@@ -388,7 +388,7 @@ const handleSubscriptionsChanged = async () => {
 };
 
 watch(
-  () => subscriptionStore.lastCheckedAt,
+  () => subscriptionStore.feedGeneration,
   () => {
     if (activeSource.value === "subscription") subscriptionKey.value++;
   },
