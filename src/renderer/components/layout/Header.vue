@@ -36,10 +36,7 @@ onUnmounted(() => {
     style="-webkit-app-region: drag"
   >
     <div class="flex items-center gap-2">
-      <Icon
-        icon="solar:book-bookmark-bold-duotone"
-        class="text-primary size-5"
-      />
+      <img src="@/assets/logo.png" alt="" class="size-5 rounded-sm" />
       <h1 class="text-foreground text-sm font-semibold">동인집</h1>
     </div>
 

@@ -6,6 +6,7 @@
     "buildResources": "src/main/static"
   },
   "win": {
+    "icon": "src/main/static/icon.ico",
     "target": ["nsis"]
   },
   "nsis": {
@@ -19,6 +20,7 @@
     "artifactName": "doujinzip-portable-${version}.${ext}"
   },
   "linux": {
+    "icon": "src/main/static/logo.png",
     "target": ["snap"]
   },
   "asar": true,

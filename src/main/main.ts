@@ -226,9 +226,7 @@ function createWindow() {
     y: mainWindowState.y,
     width: mainWindowState.width,
     height: mainWindowState.height,
-    icon: process.resourcesPath
-      ? path.join(process.resourcesPath, "static", "icon.ico")
-      : undefined,
+    icon: getAppIconPath(),
     titleBarStyle: "hidden",
     webPreferences: {
       preload: path.join(import.meta.dirname, "preload.cjs"),
