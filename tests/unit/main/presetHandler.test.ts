@@ -1,6 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Preset } from "../../../src/types/ipc";
 
+vi.mock("../../../src/main/main.js", () => ({
+  console: { log: vi.fn(), error: vi.fn(), warn: vi.fn() },
+}));
+
 // DB 모킹
 const mockSelect = vi.fn();
 const mockOrderBy = vi.fn();
@@ -54,7 +58,12 @@ vi.mock("electron", () => ({
 // electron-store mock 처리
 vi.mock("electron-store", () => ({
   default: vi.fn(function () {
-    return { get: vi.fn(), set: vi.fn(), delete: vi.fn(), store: {} };
+    return {
+      get: vi.fn(),
+      set: vi.fn(),
+      delete: vi.fn(),
+      store: {},
+    };
   }),
 }));
 

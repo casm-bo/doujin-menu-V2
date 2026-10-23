@@ -16,17 +16,20 @@ export const handleMaximizeToggle = (win: BrowserWindow) => {
 
 // 전체화면 설정
 export const handleSetFullscreen = (win: BrowserWindow, newState: boolean) => {
-  win.setSimpleFullScreen(newState);
+  if (process.platform === "darwin") win.setSimpleFullScreen(newState);
+  else win.setFullScreen(newState);
 };
 
 // 전체화면 토글
 export const handleFullscreenToggle = (win: BrowserWindow) => {
-  win.setSimpleFullScreen(!win.isSimpleFullScreen());
+  handleSetFullscreen(win, !handleIsFullscreen(win));
 };
 
 // 전체화면 상태 확인
 export const handleIsFullscreen = (win: BrowserWindow): boolean => {
-  return win.isSimpleFullScreen();
+  return process.platform === "darwin"
+    ? win.isSimpleFullScreen()
+    : win.isFullScreen();
 };
 
 export const handleIsWindowMaximized = (win: BrowserWindow): boolean => {

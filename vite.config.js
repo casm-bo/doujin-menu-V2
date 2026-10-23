@@ -9,6 +9,7 @@ import { defineConfig } from "vite";
  */
 const config = defineConfig({
   root: join(__dirname, "src/renderer/"),
+  base: "./",
   publicDir: "public",
   server: {
     port: 8080,

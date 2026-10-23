@@ -266,6 +266,36 @@ describe("CompanionServer", () => {
     expect(downloadService.add).toHaveBeenCalledWith(123);
   });
 
+  it("scopes download request IDs to authenticated devices and rejects invalid IDs", async () => {
+    const token = await pairTestDevice();
+    const headers = {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    };
+    vi.mocked(downloadService.add).mockResolvedValue({
+      success: false,
+      error: "test",
+    });
+    const requestId = "00000000-0000-4000-8000-000000000001";
+    await fetch(`${baseUrl}/v1/downloads`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ galleryId: 42, requestId }),
+    });
+    expect(downloadService.add).toHaveBeenCalledWith(
+      42,
+      `${devices[0].id}:${requestId}`,
+    );
+    vi.mocked(downloadService.add).mockClear();
+    const bad = await fetch(`${baseUrl}/v1/downloads`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ galleryId: 42, requestId: "bad" }),
+    });
+    expect(bad.status).toBe(400);
+    expect(downloadService.add).not.toHaveBeenCalled();
+  });
+
   it("returns the desktop download path only to an authenticated device", async () => {
     const unauthenticated = await fetch(`${baseUrl}/v1/downloads/path`);
     expect(unauthenticated.status).toBe(401);

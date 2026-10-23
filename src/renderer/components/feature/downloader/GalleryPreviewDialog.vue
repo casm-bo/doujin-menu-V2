@@ -18,6 +18,7 @@ import PresentationEditor from "../PresentationEditor.vue";
 import { galleryPresentation } from "../../../../types/presentationGallery";
 import MetadataField from "../MetadataField.vue";
 import PagePreview from "../PagePreview.vue";
+import PageFullscreenDialog from "../PageFullscreenDialog.vue";
 
 const props = defineProps<{
   open: boolean;
@@ -55,6 +56,13 @@ const previewImageUrls = ref<string[]>([]);
 const isLoadingImages = ref(false);
 const imageLoadError = ref<string | null>(null);
 const libraryBook = ref<Book | null>(null);
+const fullscreenPage = ref<number | null>(null);
+const useLocalPreview = computed(
+  () =>
+    !!libraryBook.value &&
+    !libraryBook.value.is_offline &&
+    (libraryBook.value.page_count || 0) > 0,
+);
 let previewRequest = 0;
 
 const openReader = (page: number) => {
@@ -82,6 +90,7 @@ watch(
   () => [props.open, props.gallery?.id] as const,
   async ([open]) => {
     const request = ++previewRequest;
+    fullscreenPage.value = null;
     if (!open || !props.gallery) return;
     const galleryId = props.gallery.id;
     isLoadingImages.value = true;
@@ -90,20 +99,33 @@ watch(
     libraryBook.value = null;
 
     try {
-      const [result, existingBook] = await Promise.all([
-        ipcRenderer.invoke("get-gallery-image-urls", galleryId),
-        ipcRenderer.invoke("check-book-exists-by-hitomi-id", galleryId),
-      ]);
+      const existingBook = await ipcRenderer.invoke(
+        "check-book-exists-by-hitomi-id",
+        galleryId,
+      );
+      if (request !== previewRequest) return;
+      if (existingBook.success && existingBook.bookId) {
+        const book = await getBook(existingBook.bookId);
+        if (request !== previewRequest) return;
+        libraryBook.value = book;
+        if (book && useLocalPreview.value) {
+          previewImageUrls.value = Array.from(
+            { length: book.page_count || 0 },
+            (_, index) => `doujinzip://page/${book.id}/${index}`,
+          );
+          return;
+        }
+      }
+      const result = await ipcRenderer.invoke(
+        "get-gallery-image-urls",
+        galleryId,
+      );
       if (request !== previewRequest) return;
       if (result.success && result.data) {
         previewImageUrls.value = result.data;
       } else {
         imageLoadError.value =
           result.error || "미리보기 URL을 가져오지 못했습니다.";
-      }
-      if (existingBook.success && existingBook.bookId) {
-        const book = await getBook(existingBook.bookId);
-        if (request === previewRequest) libraryBook.value = book;
       }
     } catch (error) {
       if (request !== previewRequest) return;
@@ -120,7 +142,7 @@ watch(
 <template>
   <Dialog v-model:open="dialogOpen">
     <DialogContent
-      class="flex max-h-[90vh] w-[calc(100vw-2rem)] flex-col overflow-hidden sm:max-w-[900px]"
+      class="flex h-[90dvh] max-h-[90dvh] w-[calc(100vw-2rem)] flex-col overflow-hidden sm:max-w-[900px]"
       @close-auto-focus.prevent
     >
       <DialogHeader>
@@ -140,8 +162,16 @@ watch(
       >
         <div class="flex gap-5">
           <div class="h-56 w-40 shrink-0 overflow-hidden rounded-lg shadow">
+            <img
+              v-if="useLocalPreview"
+              :src="previewImageUrls[0]"
+              :alt="gallery.title.display"
+              class="h-full w-full object-contain"
+            />
             <ProxiedImage
+              v-else-if="!isLoadingImages"
               :id="gallery.id"
+              :key="gallery.id"
               :url="gallery.thumbnailUrl"
               :referer="refererUrl"
               :alt="gallery.title.display"
@@ -262,12 +292,14 @@ watch(
         </div>
 
         <PagePreview
+          select-label="페이지 전체화면 보기"
+          style="--page-preview-height: min(76.5dvh, calc(90dvh - 6rem))"
           :pages="previewImageUrls"
-          :proxy-id="gallery.id"
+          :proxy-id="useLocalPreview ? undefined : gallery.id"
           :referer="refererUrl"
           :loading="isLoadingImages"
           :error="imageLoadError"
-          :interactive="false"
+          @select-page="fullscreenPage = $event"
         />
       </div>
 
@@ -277,4 +309,13 @@ watch(
     </DialogContent>
   </Dialog>
   <PresentationEditor v-model:open="metadataEditing" :initial="metadataSeed" />
+  <PageFullscreenDialog
+    v-if="fullscreenPage !== null"
+    :open="true"
+    :pages="previewImageUrls"
+    :start-index="fullscreenPage"
+    :proxy-id="useLocalPreview ? undefined : gallery?.id"
+    :referer="refererUrl"
+    @update:open="fullscreenPage = null"
+  />
 </template>

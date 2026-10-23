@@ -1,5 +1,9 @@
 import { app, BrowserWindow, ipcMain } from "electron";
 import Store from "electron-store";
+import {
+  createDownloadRequestAdder,
+  type DownloadReceipts,
+} from "../services/companion/downloadRequests.js";
 import type { CompanionDevice } from "../../types/companion.js";
 import { hitomiService } from "../services/hitomi/hitomiService.js";
 import {
@@ -39,6 +43,11 @@ const deviceStore: CompanionDeviceStore = {
   setDevices: (devices) => companionDeviceStore.set("devices", devices),
 };
 
+const downloadReceiptStore = new Store<{ receipts: DownloadReceipts }>({
+  name: "companion-download-requests",
+  defaults: { receipts: {} },
+});
+
 const downloadService: CompanionDownloadService = {
   getPath: async () => {
     const configuredPath = store.get("downloadPath", "").trim();
@@ -51,24 +60,31 @@ const downloadService: CompanionDownloadService = {
     };
   },
   getQueue: handleGetDownloadQueue,
-  add: async (galleryId) => {
-    const downloadPath = store.get("downloadPath", "").trim();
-    if (!downloadPath) {
-      return {
-        success: false,
-        error: "데스크톱 앱에서 다운로드 폴더를 먼저 설정해주세요.",
-      };
-    }
+  add: createDownloadRequestAdder(
+    async (galleryId) => {
+      const downloadPath = store.get("downloadPath", "").trim();
+      if (!downloadPath) {
+        return {
+          success: false,
+          error: "데스크톱 앱에서 다운로드 폴더를 먼저 설정해주세요.",
+        };
+      }
 
-    const gallery = await hitomiService.getGalleryDetails(galleryId);
-    return handleAddToDownloadQueue({
-      galleryId,
-      galleryTitle: gallery.title.display,
-      galleryArtist: gallery.artists?.[0],
-      thumbnailUrl: gallery.thumbnailUrl,
-      downloadPath,
-    });
-  },
+      const gallery = await hitomiService.getGalleryDetails(galleryId);
+      return handleAddToDownloadQueue({
+        galleryId,
+        galleryTitle: gallery.title.display,
+        galleryArtist: gallery.artists?.[0],
+        thumbnailUrl: gallery.thumbnailUrl,
+        downloadPath,
+      });
+    },
+    handleGetDownloadQueue,
+    {
+      read: () => downloadReceiptStore.get("receipts", {}),
+      write: (receipts) => downloadReceiptStore.set("receipts", receipts),
+    },
+  ),
   remove: handleRemoveFromDownloadQueue,
   pause: handlePauseDownload,
   resume: handleResumeDownload,

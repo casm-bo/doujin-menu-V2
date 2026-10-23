@@ -13,12 +13,14 @@ const props = withDefaults(
     loading?: boolean;
     error?: string | null;
     interactive?: boolean;
+    selectLabel?: string;
   }>(),
   {
     referer: "",
     loading: false,
     error: null,
     interactive: true,
+    selectLabel: "페이지부터 읽기",
   },
 );
 
@@ -30,6 +32,26 @@ const { viewMode, setViewMode } = usePreviewViewMode();
 const pageRefs = ref<HTMLElement[]>([]);
 const loadedPages = ref(new Set<number>());
 let observer: IntersectionObserver | null = null;
+
+const scrollPages = (event: WheelEvent) => {
+  if (
+    event.ctrlKey ||
+    event.shiftKey ||
+    Math.abs(event.deltaX) > Math.abs(event.deltaY)
+  )
+    return;
+  const container = event.currentTarget as HTMLElement;
+  const next = Math.max(
+    0,
+    Math.min(
+      container.scrollWidth - container.clientWidth,
+      container.scrollLeft + event.deltaY,
+    ),
+  );
+  if (next === container.scrollLeft) return;
+  event.preventDefault();
+  container.scrollLeft = next;
+};
 
 const initObserver = () => {
   observer?.disconnect();
@@ -51,7 +73,7 @@ const initObserver = () => {
 };
 
 watch(
-  () => [props.pages, viewMode.value] as const,
+  () => [props.pages, props.loading, props.error, viewMode.value] as const,
   () => initObserver(),
   { immediate: true, flush: "post" },
 );
@@ -107,7 +129,8 @@ onBeforeUnmount(() => observer?.disconnect());
     </div>
     <div
       v-else-if="viewMode === 'scroll'"
-      class="flex h-64 gap-3 overflow-x-auto rounded-md border p-2"
+      class="flex h-[var(--page-preview-height,16rem)] gap-3 overflow-x-auto rounded-md border p-2"
+      @wheel="scrollPages"
     >
       <button
         v-for="(page, index) in pages"
@@ -117,7 +140,7 @@ onBeforeUnmount(() => observer?.disconnect());
         :data-index="index"
         class="h-full shrink-0"
         :class="interactive ? 'cursor-pointer' : 'cursor-default'"
-        :title="interactive ? `${index + 1}페이지부터 읽기` : undefined"
+        :title="interactive ? `${index + 1}${selectLabel}` : undefined"
         @click="interactive && emit('selectPage', index)"
       >
         <ProxiedImage
@@ -127,7 +150,8 @@ onBeforeUnmount(() => observer?.disconnect());
           :referer="referer"
           :alt="`${index + 1}페이지`"
           :lazy="!loadedPages.has(index)"
-          class="h-full w-auto min-w-40 overflow-hidden rounded"
+          fit="contain"
+          class="aspect-[3/4] h-full w-auto min-w-40 overflow-hidden rounded"
         />
         <img
           v-else
@@ -140,7 +164,7 @@ onBeforeUnmount(() => observer?.disconnect());
     </div>
     <div
       v-else
-      class="grid max-h-80 grid-cols-3 gap-2 overflow-y-auto rounded-md border p-2 sm:grid-cols-5"
+      class="grid max-h-[var(--page-preview-height,20rem)] grid-cols-3 gap-2 overflow-y-auto rounded-md border p-2 sm:grid-cols-5"
     >
       <button
         v-for="(page, index) in pages"
@@ -149,7 +173,7 @@ onBeforeUnmount(() => observer?.disconnect());
         type="button"
         :data-index="index"
         :class="interactive ? 'cursor-pointer' : 'cursor-default'"
-        :title="interactive ? `${index + 1}페이지부터 읽기` : undefined"
+        :title="interactive ? `${index + 1}${selectLabel}` : undefined"
         @click="interactive && emit('selectPage', index)"
       >
         <ProxiedImage

@@ -53,7 +53,10 @@ export interface CompanionDownloadService {
     CompanionOperationResult<{ configured: boolean; path: string | null }>
   >;
   getQueue(): Promise<CompanionOperationResult<DownloadQueueItem[]>>;
-  add(galleryId: number): Promise<CompanionOperationResult<DownloadQueueItem>>;
+  add(
+    galleryId: number,
+    requestKey?: string,
+  ): Promise<CompanionOperationResult<DownloadQueueItem>>;
   remove(queueId: number): Promise<CompanionOperationResult>;
   pause(queueId: number): Promise<CompanionOperationResult>;
   resume(queueId: number): Promise<CompanionOperationResult>;
@@ -340,6 +343,7 @@ export class CompanionServer {
           syncGeneration: this.syncGeneration,
           presentationSync: Boolean(this.libraryService?.savePresentation),
           subscriptionSync: Boolean(this.subscriptionService),
+          downloadRequestIds: true,
         },
       });
       return;
@@ -444,7 +448,7 @@ export class CompanionServer {
 
     if (
       this.downloadService &&
-      (await this.handleDownloadRequest(request, response, pathname))
+      (await this.handleDownloadRequest(request, response, pathname, device.id))
     ) {
       return;
     }
@@ -857,6 +861,7 @@ export class CompanionServer {
     request: IncomingMessage,
     response: ServerResponse,
     pathname: string,
+    deviceId: string,
   ): Promise<boolean> {
     const service = this.downloadService;
     if (!service) return false;
@@ -887,7 +892,24 @@ export class CompanionServer {
         });
         return true;
       }
-      const result = await service.add(galleryId);
+      const requestId = body.requestId;
+      if (
+        requestId !== undefined &&
+        (typeof requestId !== "string" ||
+          !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+            requestId,
+          ))
+      ) {
+        this.sendJson(response, 400, {
+          success: false,
+          error: "requestId must be a UUID",
+        });
+        return true;
+      }
+      const result =
+        requestId === undefined
+          ? await service.add(galleryId)
+          : await service.add(galleryId, `${deviceId}:${requestId}`);
       this.sendOperationResult(
         response,
         result.success && result.data

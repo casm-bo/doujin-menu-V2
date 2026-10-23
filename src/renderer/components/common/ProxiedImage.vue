@@ -2,28 +2,32 @@
 import { ipcRenderer } from "@/api";
 import { onUnmounted, ref, watch } from "vue";
 
-const props = defineProps<{
-  /**
-   * 원본 이미지 URL
-   */
-  url: string;
-  /**
-   * 요청에 필요한 레퍼러
-   */
-  referer: string;
-  /**
-   * 캐시/파일 이름에 사용할 고유 ID (예: galleryId)
-   */
-  id: number | string;
-  /**
-   * 이미지 alt 속성
-   */
-  alt?: string;
-  /**
-   * 레이지 로딩 여부
-   */
-  lazy?: boolean;
-}>();
+const props = withDefaults(
+  defineProps<{
+    /**
+     * 원본 이미지 URL
+     */
+    url: string;
+    /**
+     * 요청에 필요한 레퍼러
+     */
+    referer: string;
+    /**
+     * 캐시/파일 이름에 사용할 고유 ID (예: galleryId)
+     */
+    id: number | string;
+    /**
+     * 이미지 alt 속성
+     */
+    alt?: string;
+    /**
+     * 레이지 로딩 여부
+     */
+    lazy?: boolean;
+    fit?: "cover" | "contain";
+  }>(),
+  { fit: "cover" },
+);
 
 let requestId = 0;
 const localSrc = ref<string>("");
@@ -146,7 +150,8 @@ onUnmounted(() => {
       v-else-if="localSrc"
       :src="localSrc"
       :alt="alt"
-      class="h-full w-full object-cover"
+      class="h-full w-full"
+      :class="fit === 'contain' ? 'object-contain' : 'object-cover'"
     />
     <!-- lazy 로딩 시 플레이스홀더 (아직 로딩 시작 안 했을 때) -->
     <div
