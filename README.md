@@ -4,7 +4,7 @@
 
 동인집(DoujinZip)은 만화책을 모으고 검색하고 읽는 데스크톱 앱입니다. 프로젝트·패키지 이름은 `doujinzip`, 앱 ID는 `com.casm.doujinzip`입니다.
 
-> [qqoro/doujin-menu](https://github.com/qqoro/doujin-menu)를 기반으로 `casm`이 개발하고 유지보수합니다. 원본 MIT 라이선스와 저작권 고지를 유지합니다. 2026년 이후 추가된 변경 사항의 저작권은 `casm`에게 있습니다.
+> 동인집(DoujinZip)은 [qqoro/doujin-menu](https://github.com/qqoro/doujin-menu)를 기반으로 개발된 독립 브랜드의 포크 프로젝트입니다. 현재 `casm`이 개발·유지보수하며, 원본 MIT 라이선스와 저작권 고지를 유지합니다. 2026년 이후 추가된 변경 사항의 저작권은 `casm`에게 있습니다.
 
 이름 변경 후에도 기존 라이브러리·설정·페어링을 유지하도록 데이터 폴더는 기존 `doujin-menu` 경로를 사용합니다. 기존 앱과 새 앱을 동시에 실행하지 마세요. GitHub 저장소와 업데이트 주소는 저장소 이름을 실제로 변경하기 전까지 기존 주소를 사용합니다.
 
