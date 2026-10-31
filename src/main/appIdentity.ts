@@ -2,7 +2,7 @@ import { app } from "electron";
 import { mkdirSync } from "fs";
 import path from "path";
 
-// Keep existing libraries, pairing keys and settings across the brand change.
-const userData = path.join(app.getPath("appData"), "doujin-menu");
+// Keep this app's database and settings separate from the original app.
+const userData = path.join(app.getPath("appData"), "doujinzip");
 mkdirSync(userData, { recursive: true });
 app.setPath("userData", userData);
