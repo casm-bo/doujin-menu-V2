@@ -144,10 +144,10 @@ function quitApplication(): void {
 function createTray(): void {
   if (tray && !tray.isDestroyed()) return;
   tray = new Tray(getAppIconPath());
-  tray.setToolTip("동인집 - 백그라운드 실행 중");
+  tray.setToolTip(`${app.getName()} - 백그라운드 실행 중`);
   tray.setContextMenu(
     Menu.buildFromTemplate([
-      { label: "동인집 열기", click: showMainWindow },
+      { label: `${app.getName()} 열기`, click: showMainWindow },
       { type: "separator" },
       { label: "완전 종료", click: quitApplication },
     ]),

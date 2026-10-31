@@ -1,6 +1,7 @@
 {
   "name": "doujinzip",
   "displayName": "동인집",
+  "productName": "동인집",
   "version": "2.6.0",
   "description": "만화책 관리를 위한 데스크톱 어플리케이션",
   "license": "MIT",
