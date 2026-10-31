@@ -318,6 +318,48 @@ export class DesktopPresentationService {
       () => false,
     );
   }
+  async changeCover(key: string, title: string, source: Buffer) {
+    const current = await this.get(key);
+    if (!current && !key.startsWith("sync:series_cover_"))
+      throw new Error("작품 정보를 찾을 수 없습니다.");
+    const bytes = await sharp(source, { limitInputPixels: 40_000_000 })
+      .rotate()
+      .resize({
+        width: 1600,
+        height: 2400,
+        fit: "inside",
+        withoutEnlargement: true,
+      })
+      .jpeg({ quality: 90 })
+      .toBuffer();
+    const hash = digest(bytes);
+    await this.putCover(hash, bytes);
+    return this.apply("desktop", {
+      mutationId: randomUUID(),
+      baseVersion: current?.version ?? 0,
+      value: {
+        ...(current ?? {
+          key,
+          title,
+          webtoon: null,
+          version: 0,
+          revision: 0,
+          metadata: {
+            hitomiId: null,
+            artists: [],
+            groups: [],
+            series: [],
+            characters: [],
+            tags: [],
+            galleryType: null,
+            language: null,
+            publishedDate: null,
+          },
+        }),
+        coverHash: hash,
+      },
+    });
+  }
   async putCover(hash: string, bytes: Buffer): Promise<void> {
     const target = this.coverFile(hash);
     if (

@@ -246,6 +246,16 @@ export interface LibraryScanProgress {
 
 // IPC 채널 이름과 요청/응답 타입 매핑
 export interface IpcChannels {
+  "change-cover": {
+    request: {
+      target: { kind: "book" | "series"; id: number };
+      source:
+        | { kind: "external" }
+        | { kind: "page"; bookId: number; pageIndex: number }
+        | { kind: "book-cover"; bookId: number };
+    };
+    response: import("./presentation.js").PresentationMutationResult | null;
+  };
   "get-presentation": {
     request: string;
     response: import("./presentation.js").GalleryPresentation | null;

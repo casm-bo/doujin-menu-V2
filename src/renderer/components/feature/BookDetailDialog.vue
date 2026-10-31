@@ -21,6 +21,7 @@ import { toast } from "vue-sonner";
 import type { Book } from "../../../types/ipc";
 import MetadataField from "./MetadataField.vue";
 import PagePreview from "./PagePreview.vue";
+import CoverActions from "./CoverActions.vue";
 
 const props = defineProps<{
   modelValue: boolean;
@@ -77,6 +78,22 @@ const previewPages = computed(() =>
       )
     : [],
 );
+const coverSources = computed(() =>
+  book.value?.is_offline
+    ? []
+    : previewPages.value.map((url, pageIndex) => ({
+        url,
+        label: `${pageIndex + 1}페이지`,
+        source: { kind: "page" as const, bookId: book.value!.id, pageIndex },
+      })),
+);
+const refreshCover = async () => {
+  const id = book.value?.id;
+  if (!id) return;
+  const updated = await getBook(id);
+  if (book.value?.id === id) detailBook.value = updated;
+  emit("updated");
+};
 
 const openReader = (page: number) => {
   if (!book.value) return;
@@ -236,11 +253,19 @@ const searchInDownloader = (text: string, prefix: string) => {
         <div
           class="grid grid-cols-1 items-start gap-5 sm:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]"
         >
-          <img
-            :src="getThumbnailUrl(book.cover_path)"
-            alt="Book Cover"
-            class="aspect-[3/4] w-full rounded-lg object-contain shadow"
-          />
+          <div class="min-w-0">
+            <img
+              :src="getThumbnailUrl(book.cover_path)"
+              alt="Book Cover"
+              class="aspect-[3/4] w-full rounded-lg object-contain shadow"
+            />
+            <CoverActions
+              :target="{ kind: 'book', id: book.id }"
+              :sources="coverSources"
+              :disabled="isEditing || saving"
+              @updated="refreshCover"
+            />
+          </div>
           <div class="flex min-w-0 flex-col gap-3">
             <div class="flex items-start justify-between gap-3">
               <div v-if="isEditing" class="relative flex-1">

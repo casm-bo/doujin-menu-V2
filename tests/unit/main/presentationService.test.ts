@@ -53,6 +53,47 @@ describe("presentation storage and transfer", () => {
   beforeEach(async () => {
     await truncateAll(db);
   });
+  it("changes desktop covers without replacing metadata and isolates series covers", async () => {
+    const book = await seedBook(db, { hitomi_id: "123" });
+    const initial = await service.apply("phone", {
+      mutationId: "initial",
+      baseVersion: 0,
+      value: value(),
+    });
+    const image = await sharp({
+      create: { width: 2400, height: 3600, channels: 3, background: "red" },
+    })
+      .png()
+      .toBuffer();
+    const result = await service.changeCover(
+      "hitomi:123",
+      "Ignored title",
+      image,
+    );
+    expect(result.status).toBe("applied");
+    expect(result.value.title).toBe("Edited");
+    expect(result.value.metadata).toEqual(initial.value.metadata);
+    const coverPath = path.join(directory, `${result.value.coverHash}.image`);
+    expect((await db("Book").where("id", book.id).first()).cover_path).toBe(
+      coverPath,
+    );
+    expect(await sharp(coverPath).metadata()).toMatchObject({
+      width: 1600,
+      height: 2400,
+      format: "jpeg",
+    });
+    const seriesKey = seriesCoverPresentationKey("My series");
+    const series = await service.changeCover(seriesKey, "My series", image);
+    expect(series.status).toBe("applied");
+    expect((await service.getSeries("My series")).coverPath).toBe(coverPath);
+    expect(await service.get(seriesPresentationKey("My series"))).toBeNull();
+    await expect(
+      service.changeCover("hitomi:123", "Edited", Buffer.from("invalid")),
+    ).rejects.toThrow();
+    expect((await service.get("hitomi:123"))?.version).toBe(
+      result.value.version,
+    );
+  });
   afterAll(async () => {
     await db.destroy();
     await fs.rm(directory, { recursive: true, force: true });

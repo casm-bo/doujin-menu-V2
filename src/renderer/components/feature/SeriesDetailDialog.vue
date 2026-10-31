@@ -40,6 +40,7 @@ import type { GalleryPresentation } from "../../../types/presentation";
 import MetadataField from "./MetadataField.vue";
 import { reorderForDrop, type DropPosition } from "./seriesReorder";
 import { getSeriesResumeTarget } from "./seriesResume";
+import CoverActions from "./CoverActions.vue";
 
 interface Props {
   open: boolean;
@@ -86,6 +87,17 @@ const draggedIndex = ref<number | null>(null);
 const dragOverIndex = ref<number | null>(null);
 const dragOverPosition = ref<DropPosition>("before");
 const books = ref<Book[]>([]);
+const coverSources = computed(() =>
+  books.value
+    .filter((book) => book.cover_path || !book.is_offline)
+    .map((book) => ({
+      url: book.cover_path
+        ? getThumbnailUrl(book.cover_path)
+        : `doujinzip://page/${book.id}/0`,
+      label: book.title,
+      source: { kind: "book-cover" as const, bookId: book.id },
+    })),
+);
 const selectedEpisode = ref<Book | null>(null);
 const showEpisodeDetail = ref(false);
 let reorderTimer: ReturnType<typeof setTimeout> | null = null;
@@ -459,16 +471,25 @@ const excludeBookIds = computed(() => books.value.map((book) => book.id));
           <div
             class="grid grid-cols-1 items-start gap-5 sm:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]"
           >
-            <img
-              v-if="seriesDetail?.cover_image || firstBook"
-              :src="
-                getThumbnailUrl(
-                  seriesDetail?.cover_image || firstBook?.cover_path,
-                )
-              "
-              :alt="series?.name"
-              class="aspect-[3/4] w-full rounded-lg object-contain shadow"
-            />
+            <div class="min-w-0">
+              <img
+                v-if="seriesDetail?.cover_image || firstBook"
+                :src="
+                  getThumbnailUrl(
+                    seriesDetail?.cover_image || firstBook?.cover_path,
+                  )
+                "
+                :alt="series?.name"
+                class="aspect-[3/4] w-full rounded-lg object-contain shadow"
+              />
+              <CoverActions
+                v-if="series"
+                :target="{ kind: 'series', id: series.id }"
+                :sources="coverSources"
+                :disabled="isEditing || metadataEditing"
+                @updated="handleEpisodeUpdated"
+              />
+            </div>
             <div class="flex min-w-0 flex-1 flex-col gap-3">
               <div class="flex items-start justify-between gap-3">
                 <Input
