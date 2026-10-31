@@ -66,6 +66,8 @@ describe("download queue removal", () => {
     const resolvedPath = path.join(downloadRoot, "Circle", "Book");
     await fs.mkdir(resolvedPath, { recursive: true });
     await fs.writeFile(path.join(resolvedPath, "001.jpg"), "image");
+    await fs.writeFile(`${resolvedPath}.cbz.part`, "partial archive");
+    await fs.writeFile(`${resolvedPath}.zip.part`, "partial archive");
     state.row = {
       id: 7,
       gallery_id: 123,

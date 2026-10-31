@@ -203,7 +203,7 @@ export const handleRemoveFromDownloadQueue = async (queueId: number) => {
 
         await fs.rm(galleryDownloadPath, { recursive: true, force: true });
         await Promise.all(
-          ["cbz", "zip"].map((extension) =>
+          ["cbz", "zip", "cbz.part", "zip.part"].map((extension) =>
             fs.rm(`${galleryDownloadPath}.${extension}`, { force: true }),
           ),
         );

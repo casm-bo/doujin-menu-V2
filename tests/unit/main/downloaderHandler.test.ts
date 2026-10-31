@@ -12,7 +12,7 @@ vi.mock("../../../src/main/main.js", () => ({
   console: { log: vi.fn(), error: vi.fn(), warn: vi.fn() },
 }));
 vi.mock("../../../src/main/services/hitomi/hitomiService.js", () => ({
-  hitomiService: { getGallery: vi.fn() },
+  hitomiService: { getGallery: vi.fn(), resolveImageUrl: vi.fn() },
 }));
 vi.mock("../../../src/main/handlers/configHandler.js", () => ({
   store: { get: vi.fn() },
@@ -30,7 +30,6 @@ vi.mock("../../../src/main/db/index.js", () => ({
 }));
 
 import {
-  createDownloadArchive,
   finalizeDownloadTransfer,
   handleDownloadGallery,
 } from "../../../src/main/handlers/downloaderHandler.js";
@@ -44,6 +43,7 @@ import {
 const createdDirs: string[] = [];
 
 afterEach(async () => {
+  vi.unstubAllGlobals();
   await Promise.all(
     createdDirs
       .splice(0)
@@ -52,41 +52,6 @@ afterEach(async () => {
 });
 
 describe("safe download archive", () => {
-  it("publishes only the completed archive", async () => {
-    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "download-archive-"));
-    createdDirs.push(dir);
-    const source = path.join(dir, "source");
-    const finalPath = path.join(dir, "book.cbz");
-    await fs.mkdir(source);
-    await fs.writeFile(path.join(source, "001.jpg"), "image");
-
-    await createDownloadArchive(source, finalPath);
-
-    expect((await fs.stat(finalPath)).size).toBeGreaterThan(0);
-    await expect(fs.stat(`${finalPath}.part`)).rejects.toMatchObject({
-      code: "ENOENT",
-    });
-  });
-
-  it("does not replace an existing completed archive", async () => {
-    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "download-archive-"));
-    createdDirs.push(dir);
-    const source = path.join(dir, "source");
-    const finalPath = path.join(dir, "book.cbz");
-    await fs.mkdir(source);
-    await fs.writeFile(path.join(source, "001.jpg"), "new");
-    await fs.writeFile(finalPath, "existing");
-    await fs.writeFile(`${finalPath}.part`, "stale");
-
-    await expect(createDownloadArchive(source, finalPath)).rejects.toThrow(
-      "이미 있습니다",
-    );
-    expect(await fs.readFile(finalPath, "utf8")).toBe("existing");
-    await expect(fs.stat(`${finalPath}.part`)).rejects.toMatchObject({
-      code: "ENOENT",
-    });
-  });
-
   it("reconnects an existing archive with the same Hitomi ID", async () => {
     const dir = await fs.mkdtemp(path.join(os.tmpdir(), "download-recover-"));
     createdDirs.push(dir);
@@ -214,5 +179,141 @@ describe("safe download archive", () => {
       status: "completed",
       bookId: null,
     });
+  });
+});
+
+describe("direct archive downloads", () => {
+  async function setup(hdd = false, format = "cbz") {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "direct-download-"));
+    createdDirs.push(dir);
+    vi.mocked(app.getPath).mockReturnValue(path.join(dir, "temp"));
+    vi.mocked(hitomiService.getGallery).mockResolvedValue({
+      id: 123,
+      title: { display: "Direct" },
+      artists: [],
+      groups: [],
+      series: [],
+      characters: [],
+      tags: [],
+      type: "doujinshi",
+      files: [{ hasWebp: true }, { hasWebp: true }],
+    } as never);
+    vi.mocked(hitomiService.resolveImageUrl).mockResolvedValue(
+      "https://example.test/image",
+    );
+    vi.mocked(store.get).mockImplementation(
+      ((key: string, fallback: unknown) =>
+        (
+          ({
+            compressDownload: true,
+            compressFormat: format,
+            hddDownloadMode: hdd,
+            libraryFolders: [],
+            downloadPattern: "%id%",
+            createInfoTxtFile: true,
+          }) as Record<string, unknown>
+        )[key] ?? fallback) as typeof store.get,
+    );
+    const fetchImage = vi.fn(async () => new Response("image"));
+    vi.stubGlobal("fetch", fetchImage);
+    const send = vi.fn();
+    const run = (shouldCancel?: () => boolean) =>
+      handleDownloadGallery({ sender: { send } } as never, {
+        galleryId: 123,
+        downloadPath: dir,
+        shouldCancel,
+      });
+    return { dir, run, fetchImage, send };
+  }
+
+  it.each([
+    [false, "cbz"],
+    [false, "zip"],
+    [true, "cbz"],
+  ])(
+    "writes directly without image folders (HDD=%s, %s)",
+    async (hdd, format) => {
+      const { dir, run, fetchImage } = await setup(
+        hdd as boolean,
+        format as string,
+      );
+      const result = await run();
+      expect(result.success).toBe(true);
+      if ("transfer" in result && result.transfer) {
+        await expect(
+          fs.stat(path.join(path.dirname(result.transfer.stagedPath), "123")),
+        ).rejects.toMatchObject({ code: "ENOENT" });
+        await finalizeDownloadTransfer(
+          { send: vi.fn() } as never,
+          result.transfer,
+        );
+      }
+      const { getZipPageNames, readZipPage } =
+        await import("../../../src/main/utils/zipPages.js");
+      const file = path.join(dir, `123.${format}`);
+      expect(await getZipPageNames(file)).toEqual([
+        "000001.webp",
+        "000002.webp",
+      ]);
+      expect((await readZipPage(file, 0))?.buffer.toString()).toBe("image");
+      expect(fetchImage).toHaveBeenCalledTimes(2);
+      await expect(fs.stat(path.join(dir, "123"))).rejects.toMatchObject({
+        code: "ENOENT",
+      });
+    },
+  );
+
+  it("pauses and resumes without fetching completed pages again", async () => {
+    const { dir, run, fetchImage } = await setup();
+    expect(await run(() => fetchImage.mock.calls.length === 1)).toMatchObject({
+      paused: true,
+    });
+    const prefix = await fs.readFile(path.join(dir, "123.cbz.part"));
+    expect((await run()).success).toBe(true);
+    expect(fetchImage).toHaveBeenCalledTimes(2);
+    const completed = await fs.readFile(path.join(dir, "123.cbz"));
+    expect(completed.subarray(0, prefix.length)).toEqual(prefix);
+  });
+
+  it("reuses image files left by older versions", async () => {
+    const { dir, run, fetchImage } = await setup();
+    const legacy = path.join(dir, "123");
+    await fs.mkdir(legacy);
+    await fs.writeFile(path.join(legacy, "000001.webp"), "legacy image");
+    expect((await run()).success).toBe(true);
+    expect(fetchImage).toHaveBeenCalledTimes(1);
+    const { readZipPage } = await import("../../../src/main/utils/zipPages.js");
+    expect(
+      (await readZipPage(path.join(dir, "123.cbz"), 0))?.buffer.toString(),
+    ).toBe("legacy image");
+    await expect(fs.stat(legacy)).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("keeps folder downloads working when archive storage is disabled", async () => {
+    const { dir, run } = await setup();
+    const get = vi.mocked(store.get).getMockImplementation()!;
+    vi.mocked(store.get).mockImplementation(((
+      key: string,
+      fallback: unknown,
+    ) =>
+      key === "compressDownload"
+        ? false
+        : get(key as never, fallback as never)) as typeof store.get);
+    expect((await run()).success).toBe(true);
+    expect(
+      await fs.readFile(path.join(dir, "123", "000001.webp"), "utf8"),
+    ).toBe("image");
+    await expect(fs.stat(path.join(dir, "123.cbz"))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+  });
+
+  it("retains completed pages after a server failure", async () => {
+    const { run, fetchImage } = await setup();
+    fetchImage.mockResolvedValueOnce(new Response("first"));
+    fetchImage.mockResolvedValueOnce(new Response("missing", { status: 404 }));
+    expect((await run()).success).toBe(false);
+    expect((await run()).success).toBe(true);
+    expect(fetchImage).toHaveBeenCalledTimes(3);
   });
 });
