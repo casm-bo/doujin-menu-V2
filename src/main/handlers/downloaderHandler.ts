@@ -1,3 +1,4 @@
+import PQueue from "p-queue";
 import { DownloadArchive } from "../utils/downloadArchive.js";
 import { app, ipcMain } from "electron";
 import fs from "fs/promises";
@@ -84,6 +85,24 @@ export const handleDownloadGallery = async (
 ) => {
   const webContents = event.sender;
   let downloadArchive: DownloadArchive | undefined;
+  const writes = new PQueue({ concurrency: 1 });
+  let writeError: Error | undefined;
+  const enqueueWrite = (write: () => Promise<void>) => {
+    if (writeError) throw writeError;
+    void writes.add(async () => {
+      try {
+        await write();
+      } catch (error) {
+        writeError ??=
+          error instanceof Error ? error : new Error(String(error));
+        writes.clear();
+      }
+    });
+  };
+  const finishWrites = async () => {
+    await writes.onIdle();
+    if (writeError) throw writeError;
+  };
   try {
     webContents.send("download-progress", {
       galleryId,
@@ -217,8 +236,10 @@ export const handleDownloadGallery = async (
     };
 
     for (let i = 0; i < totalFiles; i++) {
+      if (writeError) throw writeError;
       // 취소 확인
       if (shouldCancel && shouldCancel()) {
+        await finishWrites();
         await downloadArchive?.close();
         return {
           success: false,
@@ -241,10 +262,12 @@ export const handleDownloadGallery = async (
         if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
       }
       if (downloadArchive?.names.has(fileName) || existingImage) {
-        if (downloadArchive && !downloadArchive.names.has(fileName)) {
-          await downloadArchive.append(fileName, await fs.readFile(filePath));
-        }
-        await reportProgress(i, i === totalFiles - 1);
+        enqueueWrite(async () => {
+          if (downloadArchive && !downloadArchive.names.has(fileName)) {
+            await downloadArchive.append(fileName, await fs.readFile(filePath));
+          }
+          await reportProgress(i, i === totalFiles - 1);
+        });
         continue;
       }
 
@@ -254,8 +277,10 @@ export const handleDownloadGallery = async (
       let lastFailure = "알 수 없는 오류";
 
       while (!success && attempt < MAX_DOWNLOAD_ATTEMPTS) {
+        if (writeError) throw writeError;
         // 재시도 루프 내에서도 취소 확인
         if (shouldCancel && shouldCancel()) {
+          await finishWrites();
           await downloadArchive?.close();
           return {
             success: false,
@@ -335,11 +360,15 @@ export const handleDownloadGallery = async (
           await wait(delayMs);
           continue;
         }
-        if (downloadArchive) {
-          await downloadArchive.append(fileName, imageBuffer);
-        } else {
-          await fs.writeFile(filePath, imageBuffer);
-        }
+        // Queue only this gallery; the caller cannot start the next one until all writes finish.
+        enqueueWrite(async () => {
+          if (downloadArchive) {
+            await downloadArchive.append(fileName, imageBuffer);
+          } else {
+            await fs.writeFile(filePath, imageBuffer);
+          }
+          await reportProgress(i, i === totalFiles - 1);
+        });
         success = true;
       }
 
@@ -351,9 +380,9 @@ export const handleDownloadGallery = async (
 
       // 연속 요청으로 이미지 CDN의 일시 제한에 걸리지 않도록 간격을 둡니다.
       await wait(INTER_FILE_DELAY_MS);
-
-      await reportProgress(i, i === totalFiles - 1);
     }
+
+    await finishWrites();
 
     // info.txt 파일 생성 (설정에 따라)
     const createInfoTxtFile = configStore.get("createInfoTxtFile", true);
@@ -428,7 +457,10 @@ export const handleDownloadGallery = async (
 
     return { success: true, bookId };
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    await writes.onIdle();
+    const failure = writeError ?? error;
+    const message =
+      failure instanceof Error ? failure.message : String(failure);
     try {
       await downloadArchive?.close();
     } catch (closeError) {

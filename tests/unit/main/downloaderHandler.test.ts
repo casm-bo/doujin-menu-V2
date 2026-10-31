@@ -3,6 +3,7 @@ import fs from "fs/promises";
 import os from "os";
 import path from "path";
 import { app } from "electron";
+import { DownloadArchive } from "../../../src/main/utils/downloadArchive.js";
 
 vi.mock("electron", () => ({
   app: { getPath: vi.fn(() => "") },
@@ -40,6 +41,7 @@ import {
 const createdDirs: string[] = [];
 
 afterEach(async () => {
+  vi.restoreAllMocks();
   vi.unstubAllGlobals();
   await Promise.all(
     createdDirs
@@ -222,5 +224,107 @@ describe("direct archive downloads", () => {
     expect((await run()).success).toBe(false);
     expect((await run()).success).toBe(true);
     expect(fetchImage).toHaveBeenCalledTimes(3);
+  });
+
+  it("downloads ahead of a blocked disk but waits for writes before completing", async () => {
+    const { run, fetchImage, send } = await setup();
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const append = DownloadArchive.prototype.append;
+    vi.spyOn(DownloadArchive.prototype, "append").mockImplementation(
+      async function (this: DownloadArchive, name, data) {
+        if (name === "000001.webp") await gate;
+        await append.call(this, name, data);
+      },
+    );
+    let settled = false;
+    const running = run().then((result) => {
+      settled = true;
+      return result;
+    });
+    try {
+      await vi.waitFor(() => expect(fetchImage).toHaveBeenCalledTimes(2));
+      expect(settled).toBe(false);
+      expect(send).not.toHaveBeenCalledWith(
+        "download-progress",
+        expect.objectContaining({ status: "completed" }),
+      );
+    } finally {
+      release();
+      await running;
+    }
+    expect((await running).success).toBe(true);
+  });
+
+  it("reports queued disk errors and closes the partial archive before retry", async () => {
+    const { run, fetchImage, send } = await setup();
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const append = vi
+      .spyOn(DownloadArchive.prototype, "append")
+      .mockImplementationOnce(async () => {
+        await gate;
+        throw new Error("disk full");
+      });
+    const running = run();
+    try {
+      await vi.waitFor(() => expect(fetchImage).toHaveBeenCalledTimes(2));
+    } finally {
+      release();
+      await running;
+    }
+    expect(await running).toEqual({ success: false, error: "disk full" });
+    expect(send).not.toHaveBeenCalledWith(
+      "download-progress",
+      expect.objectContaining({ status: "completed" }),
+    );
+    expect(append).toHaveBeenCalledTimes(1);
+    append.mockRestore();
+    expect((await run()).success).toBe(true);
+  });
+
+  it("flushes received images before pausing and resumes from the saved page", async () => {
+    const { run, fetchImage } = await setup();
+    let release!: () => void;
+    let pauseReached!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const pausing = new Promise<void>((resolve) => {
+      pauseReached = resolve;
+    });
+    const append = DownloadArchive.prototype.append;
+    vi.spyOn(DownloadArchive.prototype, "append").mockImplementationOnce(
+      async function (this: DownloadArchive, name, data) {
+        await gate;
+        await append.call(this, name, data);
+      },
+    );
+    let settled = false;
+    const running = run(() => {
+      if (fetchImage.mock.calls.length === 1) {
+        pauseReached();
+        return true;
+      }
+      return false;
+    }).then((result) => {
+      settled = true;
+      return result;
+    });
+    try {
+      await pausing;
+      expect(settled).toBe(false);
+      expect(fetchImage).toHaveBeenCalledTimes(1);
+    } finally {
+      release();
+      await running;
+    }
+    expect(await running).toMatchObject({ paused: true });
+    expect((await run()).success).toBe(true);
+    expect(fetchImage).toHaveBeenCalledTimes(2);
   });
 });
