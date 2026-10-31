@@ -126,7 +126,7 @@ const backupDatabase = async () => {
   const result = await ipcRenderer.invoke("backup-database");
   if (result.success) {
     toast.success(
-      "데이터베이스와 설정 파일 백업이 완료되었습니다. 선택하신 폴더에 DB 파일과 config.json 파일이 함께 저장됩니다.",
+      "데이터베이스, 설정과 사용자 지정 표지를 백업했습니다. 선택하신 폴더의 DB 파일, config.json과 presentation-covers 폴더를 함께 보관하세요.",
     );
   } else {
     toast.error("데이터베이스 백업에 실패했습니다.", {
@@ -138,7 +138,7 @@ const backupDatabase = async () => {
 // 데이터베이스 복원
 const restoreDatabase = async () => {
   toast.info(
-    "데이터베이스와 설정 파일 복원을 시작합니다. DB 파일과 config.json 파일이 함께 있는 폴더를 선택해주세요. 앱이 재시작됩니다.",
+    "DB 파일, config.json과 사용자 지정 표지 폴더가 있는 백업 폴더를 선택해주세요. 표지 폴더가 없는 이전 백업도 복원할 수 있습니다. 앱이 재시작됩니다.",
   );
   const result = await ipcRenderer.invoke("restore-database");
   if (result.success) {

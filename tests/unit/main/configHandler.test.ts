@@ -1,16 +1,32 @@
 import crypto from "crypto";
+import path from "path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { mockBackupRaw, mockBackupDestroy } = vi.hoisted(() => ({
+const { mockBackupRaw, mockBackupDestroy, mockDbRaw } = vi.hoisted(() => ({
   mockBackupRaw: vi.fn(),
   mockBackupDestroy: vi.fn(),
+  mockDbRaw: vi.fn(),
 }));
 
 vi.mock("knex", () => ({
-  default: vi.fn(() => ({
-    raw: mockBackupRaw,
-    destroy: mockBackupDestroy,
-  })),
+  default: vi.fn(() =>
+    Object.assign(
+      vi.fn(() => ({
+        select: () => ({
+          where: () => ({
+            whereIn: async () => [
+              { name: "Book" },
+              { name: "knex_migrations" },
+            ],
+          }),
+        }),
+      })),
+      {
+        raw: mockBackupRaw,
+        destroy: mockBackupDestroy,
+      },
+    ),
+  ),
 }));
 
 // electron-store 모킹
@@ -57,7 +73,7 @@ vi.mock("electron", () => ({
 
 // DB 모킹
 vi.mock("../../../src/main/db/index.js", () => ({
-  default: vi.fn(),
+  default: Object.assign(vi.fn(), { raw: mockDbRaw }),
   closeDbConnection: vi.fn(),
 }));
 
@@ -68,6 +84,7 @@ vi.mock("fs", () => ({
 
 vi.mock("fs/promises", () => ({
   default: {
+    cp: vi.fn(),
     copyFile: vi.fn(),
     unlink: vi.fn(),
     rm: vi.fn(),
@@ -100,6 +117,7 @@ const {
   handleVerifyLockPassword,
   handleClearLockPassword,
   handleRestoreDatabase,
+  handleBackupDatabase,
   handleResetAllData,
   handleRemoveLibraryFolder,
   handleRestoreLibraryFolder,
@@ -117,10 +135,12 @@ describe("configHandler", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(fs.copyFile).mockResolvedValue();
+    vi.mocked(fs.cp).mockResolvedValue();
     vi.mocked(fs.rm).mockResolvedValue();
     vi.mocked(fs.rename).mockResolvedValue();
     vi.mocked(fs.unlink).mockResolvedValue();
     mockBackupRaw.mockResolvedValue([{ quick_check: "ok" }]);
+    mockDbRaw.mockResolvedValue(undefined);
     mockBackupDestroy.mockResolvedValue(undefined);
 
     // mockSet의 기본 동작 설정 (에러를 던지지 않도록)
@@ -402,6 +422,97 @@ describe("configHandler", () => {
   });
 
   describe("데이터 교체 실패 안전성", () => {
+    it("backs up custom covers alongside the database and config", async () => {
+      vi.mocked(dialog.showOpenDialog).mockResolvedValue({
+        canceled: false,
+        filePaths: ["/backup"],
+      });
+      vi.mocked(existsSync).mockReturnValue(true);
+      expect(
+        (
+          await handleBackupDatabase({
+            sender: {},
+          } as Electron.IpcMainInvokeEvent)
+        ).success,
+      ).toBe(true);
+      expect(fs.cp).toHaveBeenCalledWith(
+        path.join("/mock/user/data", "presentation-covers"),
+        path.join("/backup", "presentation-covers"),
+        { recursive: true },
+      );
+    });
+
+    it("merges restored covers before closing the database without overwriting existing covers", async () => {
+      vi.useFakeTimers();
+      vi.mocked(dialog.showOpenDialog).mockResolvedValue({
+        canceled: false,
+        filePaths: ["/backup"],
+      });
+      vi.mocked(existsSync).mockReturnValue(true);
+      expect(
+        (
+          await handleRestoreDatabase({
+            sender: {},
+          } as Electron.IpcMainInvokeEvent)
+        ).success,
+      ).toBe(true);
+      expect(fs.cp).toHaveBeenCalledWith(
+        path.join("/backup", "presentation-covers"),
+        path.join("/mock/user/data", "presentation-covers"),
+        { recursive: true, force: false, errorOnExist: false },
+      );
+      expect(vi.mocked(fs.cp).mock.invocationCallOrder[0]).toBeLessThan(
+        vi.mocked(closeDbConnection).mock.invocationCallOrder[0],
+      );
+      vi.runAllTimers();
+      vi.useRealTimers();
+    });
+
+    it("keeps older backups without a cover folder compatible", async () => {
+      vi.useFakeTimers();
+      vi.mocked(dialog.showOpenDialog).mockResolvedValue({
+        canceled: false,
+        filePaths: ["/backup"],
+      });
+      vi.mocked(existsSync).mockImplementation(
+        (file) => !String(file).endsWith("presentation-covers"),
+      );
+      expect(
+        (
+          await handleBackupDatabase({
+            sender: {},
+          } as Electron.IpcMainInvokeEvent)
+        ).success,
+      ).toBe(true);
+      expect(
+        (
+          await handleRestoreDatabase({
+            sender: {},
+          } as Electron.IpcMainInvokeEvent)
+        ).success,
+      ).toBe(true);
+      expect(fs.cp).not.toHaveBeenCalled();
+      vi.runAllTimers();
+      vi.useRealTimers();
+    });
+
+    it("leaves the current database open when copying restored covers fails", async () => {
+      vi.mocked(dialog.showOpenDialog).mockResolvedValue({
+        canceled: false,
+        filePaths: ["/backup"],
+      });
+      vi.mocked(existsSync).mockReturnValue(true);
+      vi.mocked(fs.cp).mockRejectedValueOnce(new Error("cover copy failed"));
+      expect(
+        (
+          await handleRestoreDatabase({
+            sender: {},
+          } as Electron.IpcMainInvokeEvent)
+        ).success,
+      ).toBe(false);
+      expect(closeDbConnection).not.toHaveBeenCalled();
+      expect(fs.rename).not.toHaveBeenCalled();
+    });
     it("백업 준비가 실패하면 열린 DB를 닫지 않음", async () => {
       vi.mocked(dialog.showOpenDialog).mockResolvedValue({
         canceled: false,

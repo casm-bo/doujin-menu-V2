@@ -521,6 +521,16 @@ export const handleBackupDatabase = async (
       await fs.copyFile(configPath, backupConfigPath);
     }
 
+    const coversPath = path.join(
+      app.getPath("userData"),
+      "presentation-covers",
+    );
+    if (existsSync(coversPath)) {
+      await fs.cp(coversPath, path.join(backupDir, "presentation-covers"), {
+        recursive: true,
+      });
+    }
+
     return { success: true };
   } catch (error) {
     console.error("[ConfigHandler] Failed to backup data:", error);
@@ -570,6 +580,16 @@ export const handleRestoreDatabase = async (
     if (existsSync(backupConfigPath)) {
       await fs.rm(stagedConfigPath, { force: true });
       await fs.copyFile(backupConfigPath, stagedConfigPath);
+    }
+
+    const backupCoversPath = path.join(backupDir, "presentation-covers");
+    if (existsSync(backupCoversPath)) {
+      // Cover filenames are content hashes; merge before swapping the DB without replacing existing files.
+      await fs.cp(
+        backupCoversPath,
+        path.join(app.getPath("userData"), "presentation-covers"),
+        { recursive: true, force: false, errorOnExist: false },
+      );
     }
 
     await closeDbConnection();
