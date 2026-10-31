@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useGalleryBorders } from "@/composable/useGalleryBorders";
 import { getThumbnailUrl } from "@/api";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -19,6 +20,7 @@ interface Props {
     description: string | null;
     cover_image: string | null;
     book_count?: number;
+    is_favorite?: boolean;
   };
 }
 
@@ -28,10 +30,12 @@ const emit = defineEmits<{
   delete: [];
   "toggle-select": [];
 }>();
+const { borderStyle } = useGalleryBorders();
 </script>
 
 <template>
   <div
+    :style="borderStyle(true, !!series.is_favorite)"
     class="group bg-card text-card-foreground relative cursor-pointer rounded-lg border shadow-sm transition-all hover:shadow-md"
     :class="{ 'ring-primary ring-2': selected }"
     @click="emit('click')"

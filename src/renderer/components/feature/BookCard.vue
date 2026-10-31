@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useGalleryBorders } from "@/composable/useGalleryBorders";
 import * as api from "@/api";
 import {
   AlertDialog,
@@ -268,14 +269,23 @@ const confirmDeleteBook = async () => {
     isDeleteDialogOpen.value = false;
   }
 };
+const { borderStyle } = useGalleryBorders();
 </script>
 
 <template>
   <ContextMenu>
     <ContextMenuTrigger>
       <LightCard
+        :style="
+          borderStyle(
+            !!book.series_collection_id,
+            !!(book.series_collection_id
+              ? book.series_is_favorite
+              : book.is_favorite),
+          )
+        "
         :data-book-id="book.id"
-        class="flex h-full cursor-pointer flex-col gap-0 overflow-hidden py-0 transition-all duration-150 hover:shadow-lg"
+        class="flex h-full cursor-pointer flex-col gap-0 overflow-hidden py-0 ring-0 transition-all duration-150 hover:shadow-lg"
         :class="{ 'ring-primary scale-[0.98] ring-2': selected }"
         @click="handleCardClick"
       >

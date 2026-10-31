@@ -23,6 +23,36 @@ import { useColorMode } from "@vueuse/core";
 import { AcceptableValue } from "reka-ui";
 import { onMounted, ref } from "vue";
 import { toast } from "vue-sonner";
+import { useGalleryBorders } from "@/composable/useGalleryBorders";
+import {
+  galleryBorderStyle,
+  type GalleryBorderKind,
+  type GalleryBorderStyle,
+} from "../../../../../types/galleryBorders";
+
+const { borders } = useGalleryBorders();
+const borderKinds = [
+  { kind: "normal", label: "일반 작품 테두리" },
+  { kind: "series", label: "시리즈 테두리" },
+  { kind: "favorite", label: "즐겨찾기 테두리" },
+] as const;
+const borderColors = [
+  "#6750a4",
+  "#b0a6bc",
+  "#1565c0",
+  "#008577",
+  "#c62828",
+  "#e6a000",
+  "#202020",
+];
+const saveBorder = (
+  kind: GalleryBorderKind,
+  patch: Partial<GalleryBorderStyle>,
+) =>
+  saveConfig("galleryBorders", {
+    ...borders.value,
+    [kind]: { ...borders.value[kind], ...patch },
+  });
 
 const queryClient = useQueryClient();
 const saveConfig = async (key: string, value: unknown) => {
@@ -122,6 +152,61 @@ const onColorThemeChange = async (newTheme: AcceptableValue) => {
           </SelectContent>
         </Select>
       </SettingItem>
+      <fieldset
+        v-for="{ kind, label } in borderKinds"
+        :key="kind"
+        class="space-y-3"
+      >
+        <legend class="font-medium">{{ label }}</legend>
+        <label :for="`border-width-${kind}`" class="block text-sm">
+          두께: {{ borders[kind].width }}px (0이면 테두리 끄기)
+        </label>
+        <input
+          :id="`border-width-${kind}`"
+          type="range"
+          min="0"
+          max="6"
+          step="1"
+          :value="borders[kind].width"
+          class="w-full"
+          @change="
+            saveBorder(kind, {
+              width: Number(($event.target as HTMLInputElement).value),
+            })
+          "
+        />
+        <div
+          class="flex flex-wrap gap-2"
+          role="group"
+          :aria-label="`${label} 색상`"
+        >
+          <button
+            v-for="color in borderColors"
+            :key="color"
+            type="button"
+            class="size-8 rounded-full border-2 focus-visible:outline-2 focus-visible:outline-offset-2"
+            :class="{
+              'ring-primary ring-2 ring-offset-2':
+                borders[kind].color === color,
+            }"
+            :style="{ backgroundColor: color }"
+            :aria-label="`${label} ${color}`"
+            :aria-pressed="borders[kind].color === color"
+            @click="saveBorder(kind, { color })"
+          />
+        </div>
+        <div
+          class="rounded-lg p-5"
+          :style="
+            galleryBorderStyle(borders, kind === 'series', kind === 'favorite')
+          "
+        >
+          미리보기
+        </div>
+      </fieldset>
+      <p class="text-muted-foreground text-sm">
+        즐겨찾기 테두리는 시리즈·일반 작품 테두리보다 우선 적용됩니다.
+      </p>
     </CardContent>
   </Card>
 </template>

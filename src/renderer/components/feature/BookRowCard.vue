@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useGalleryBorders } from "@/composable/useGalleryBorders";
 import * as api from "@/api";
 import {
   AlertDialog,
@@ -187,13 +188,22 @@ const confirmDeleteBook = async () => {
     isDeleteDialogOpen.value = false;
   }
 };
+const { borderStyle } = useGalleryBorders();
 </script>
 
 <template>
   <div
     :data-book-id="book.id"
+    :style="
+      borderStyle(
+        !!book.series_collection_id,
+        !!(book.series_collection_id
+          ? book.series_is_favorite
+          : book.is_favorite),
+      )
+    "
     class="hover:bg-muted/50 flex cursor-pointer items-center border-b p-2 transition-all duration-150"
-    :class="{ 'border-primary bg-accent/40 translate-x-1': selected }"
+    :class="{ 'ring-primary bg-accent/40 translate-x-1 ring-2': selected }"
     @click="handleCardClick"
   >
     <Checkbox

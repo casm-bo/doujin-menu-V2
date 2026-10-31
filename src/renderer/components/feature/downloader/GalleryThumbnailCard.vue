@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useGalleryBorders } from "@/composable/useGalleryBorders";
 import ProxiedImage from "@/components/common/ProxiedImage.vue";
 import {
   AlertDialog,
@@ -60,6 +61,7 @@ const {
   copyToClipboard,
   permanentDelete,
 } = useGalleryCard(props, emit);
+const { borderStyle } = useGalleryBorders();
 </script>
 
 <template>
@@ -70,7 +72,10 @@ const {
       'bg-red-50/50': isDownloadFailed,
       'ring-2 ring-blue-500': selected, // 선택 시 파란색 테두리 추가
     }"
-    :style="{ opacity: isInLibrary && !isDownloading ? 0.85 : undefined }"
+    :style="{
+      ...borderStyle(),
+      opacity: isInLibrary && !isDownloading ? 0.85 : undefined,
+    }"
     @click="emit('select-gallery', gallery)"
   >
     <div class="relative aspect-3/4 h-auto w-full overflow-hidden">

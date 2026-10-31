@@ -18,6 +18,11 @@ import {
 } from "./directoryHandler.js";
 import { handleGenerateThumbnail } from "./thumbnailHandler.js";
 import type { MetadataRescanMode } from "../../types/ipc.js";
+import {
+  DEFAULT_GALLERY_BORDERS,
+  isGalleryBorders,
+  type GalleryBorders,
+} from "../../types/galleryBorders.js";
 
 // 라이브러리 뷰 설정 타입
 export interface LibraryViewSettings {
@@ -44,6 +49,7 @@ export interface SeriesViewSettings {
 export interface Config {
   theme?: "light" | "dark" | "auto";
   colorTheme?: string; // 모든 tweakcn 테마 지원
+  galleryBorders?: GalleryBorders;
   autoLoadLibrary?: boolean;
   libraryFolders?: string[];
   archivedLibraryFolders?: { path: string; removedAt: string }[];
@@ -91,6 +97,7 @@ export interface Config {
 const defaults: Config = {
   theme: "auto",
   colorTheme: "cosmic-night",
+  galleryBorders: DEFAULT_GALLERY_BORDERS,
   autoLoadLibrary: true,
   libraryFolders: [],
   archivedLibraryFolders: [],
@@ -223,6 +230,9 @@ export const handleSetConfig = async <T extends keyof Config>({
   value: Config[T];
 }) => {
   try {
+    if (key === "galleryBorders" && !isGalleryBorders(value)) {
+      throw new Error("테두리는 두께 0~6과 올바른 색상이 필요합니다.");
+    }
     store.set(key, value);
     return { success: true };
   } catch (error) {
