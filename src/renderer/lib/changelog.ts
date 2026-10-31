@@ -15,7 +15,7 @@ export interface Changelog {
  */
 export const changelogData: Changelog[] = [
   {
-    version: "2.5.1",
+    version: "2.6.0",
     changes: [
       {
         type: "refactor",
@@ -26,6 +26,27 @@ export const changelogData: Changelog[] = [
           "HDD 모드 설정과 별도 임시폴더·파일 이동 단계를 제거하고 지정한 다운로드 폴더에 바로 저장합니다.",
         ],
       },
+      {
+        type: "etc",
+        title: "대용량 다운로드와 이전 임시파일 안내",
+        items: [
+          "RAM 대기열은 한 작품 단위입니다. 디스크 기록이 느리거나 작품 용량이 크면 메모리 사용량이 커질 수 있습니다.",
+          "이전 HDD 모드의 임시파일은 자동 삭제하지 않습니다. 필요한 파일의 저장 완료 여부를 확인한 뒤 정리하세요.",
+        ],
+      },
+      {
+        type: "fix",
+        title: "런타임과 의존성 보안 업데이트",
+        items: [
+          "Electron을 43.8.6으로 업데이트하고 네트워크 처리 및 관련 의존성의 보안 패치를 적용했습니다.",
+          "Vite와 Vitest를 업데이트하고 Windows 패키징 및 네이티브 모듈 호환성을 확인했습니다.",
+        ],
+      },
+    ],
+  },
+  {
+    version: "2.5.1",
+    changes: [
       {
         type: "etc",
         title: "설치 전 필독: 데이터 백업과 앱 전환",
