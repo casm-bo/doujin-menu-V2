@@ -17,6 +17,13 @@ const api = vi.hoisted(() => ({
   getBook: vi.fn(),
   send: vi.fn(),
 }));
+const downloads = vi.hoisted(() => ({
+  queue: [] as { gallery_id: number; status: string }[],
+  addToQueue: vi.fn(),
+}));
+vi.mock("@/store/downloadQueueStore", () => ({
+  useDownloadQueueStore: () => downloads,
+}));
 vi.mock("@/api", () => ({
   ipcRenderer: { invoke: api.invoke, send: api.send },
   getBook: api.getBook,
@@ -58,6 +65,7 @@ vi.mock("@/components/feature/MetadataField.vue", () => ({
 }));
 
 import PagePreview from "../../../src/renderer/components/feature/PagePreview.vue";
+import { toast } from "vue-sonner";
 import GalleryPreviewDialog from "../../../src/renderer/components/feature/downloader/GalleryPreviewDialog.vue";
 import PageFullscreenDialog from "../../../src/renderer/components/feature/PageFullscreenDialog.vue";
 
@@ -97,6 +105,8 @@ function mount(component: Component, props: Record<string, unknown>) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  downloads.queue = [];
+  downloads.addToQueue.mockReset();
   localStorage.clear();
   vi.stubGlobal(
     "IntersectionObserver",
@@ -113,6 +123,95 @@ afterEach(() => {
 });
 
 describe("preview loading", () => {
+  it.each([false, true])(
+    "recovers from download setup or queue failure (%s)",
+    async (hasPath) => {
+      api.invoke.mockImplementation(async (channel: string) =>
+        channel === "get-config-value"
+          ? hasPath
+            ? "D:/TestDownloads"
+            : ""
+          : { success: true, data: [] },
+      );
+      downloads.addToQueue.mockRejectedValueOnce(
+        new Error("Queue unavailable"),
+      );
+      const { host } = mount(GalleryPreviewDialog, {
+        open: true,
+        gallery: gallery(),
+      });
+      await flush();
+      const button = host.querySelector("button")!;
+      button.click();
+      await flush();
+      expect(button.disabled).toBe(false);
+      if (hasPath)
+        expect(toast.error).toHaveBeenCalledWith("큐 추가 실패", {
+          description: "Queue unavailable",
+        });
+      else {
+        expect(toast.error).toHaveBeenCalledWith(
+          "다운로드 폴더를 먼저 지정해주세요.",
+        );
+        expect(downloads.addToQueue).not.toHaveBeenCalled();
+      }
+    },
+  );
+  it("downloads from details without metadata editing and blocks repeated clicks", async () => {
+    api.invoke.mockImplementation(async (channel: string) => {
+      if (channel === "get-config-value") return "D:/TestDownloads";
+      if (channel === "check-book-exists-by-hitomi-id")
+        return { success: true, exists: false };
+      return { success: true, data: [] };
+    });
+    let finish!: () => void;
+    downloads.addToQueue.mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const { host } = mount(GalleryPreviewDialog, {
+      open: true,
+      gallery: gallery(),
+    });
+    await flush();
+    expect(host.textContent).not.toContain("메타데이터 편집");
+    const button = Array.from(host.querySelectorAll("button")).find((item) =>
+      item.textContent?.includes("다운로드하기"),
+    )!;
+    button.click();
+    button.click();
+    await flush();
+    expect(downloads.addToQueue).toHaveBeenCalledExactlyOnceWith({
+      galleryId: 42,
+      galleryTitle: "Example",
+      galleryArtist: undefined,
+      thumbnailUrl: "https://example.test/cover.jpg",
+      downloadPath: "D:/TestDownloads",
+    });
+    expect(button.disabled).toBe(true);
+    finish();
+    await flush();
+  });
+
+  it.each(["pending", "progress", "paused", "completed"])(
+    "blocks downloads in %s state",
+    async (downloadStatus) => {
+      api.invoke.mockResolvedValue({ success: true, data: [] });
+      const { host } = mount(GalleryPreviewDialog, {
+        open: true,
+        gallery: gallery(),
+        downloadStatus,
+      });
+      await flush();
+      const button = host.querySelector("button")!;
+      expect(button.disabled).toBe(true);
+      button.click();
+      expect(downloads.addToQueue).not.toHaveBeenCalled();
+    },
+  );
+
   it("lets detail previews grow through all pages instead of nesting a scrollbar", async () => {
     localStorage.setItem("preview-view-mode", "grid");
     const { host, state } = mount(PagePreview, {

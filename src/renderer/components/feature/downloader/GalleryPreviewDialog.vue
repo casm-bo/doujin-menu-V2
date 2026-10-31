@@ -14,8 +14,7 @@ import { useRouter } from "vue-router";
 import { toast } from "vue-sonner";
 import type { HitomiGalleryDetails } from "../../../../types/hitomi.js";
 import type { Book } from "../../../../types/ipc";
-import PresentationEditor from "../PresentationEditor.vue";
-import { galleryPresentation } from "../../../../types/presentationGallery";
+import { useDownloadQueueStore } from "@/store/downloadQueueStore";
 import MetadataField from "../MetadataField.vue";
 import PagePreview from "../PagePreview.vue";
 import PageFullscreenDialog from "../PageFullscreenDialog.vue";
@@ -23,16 +22,72 @@ import PageFullscreenDialog from "../PageFullscreenDialog.vue";
 const props = defineProps<{
   open: boolean;
   gallery: HitomiGalleryDetails | null;
+  downloadStatus?: string;
 }>();
 
 const emit = defineEmits<{
   "update:open": [value: boolean];
 }>();
 const router = useRouter();
-const metadataEditing = ref(false);
-const metadataSeed = computed(() =>
-  props.gallery ? galleryPresentation(props.gallery) : null,
+const downloadQueueStore = useDownloadQueueStore();
+const addingDownload = ref(false);
+const downloadState = computed(
+  () =>
+    downloadQueueStore.queue.find(
+      (item) => item.gallery_id === props.gallery?.id,
+    )?.status || props.downloadStatus,
 );
+const downloadBlocked = computed(
+  () =>
+    addingDownload.value ||
+    isLoadingImages.value ||
+    !!libraryBook.value ||
+    (!!downloadState.value &&
+      !["idle", "failed"].includes(downloadState.value)),
+);
+const downloadLabel = computed(() => {
+  if (libraryBook.value || downloadState.value === "completed")
+    return "다운로드 완료";
+  if (addingDownload.value) return "추가 중...";
+  if (downloadState.value === "failed") return "다시 다운로드";
+  if (downloadState.value === "paused") return "일시정지";
+  if (downloadState.value === "pending") return "대기 중";
+  if (downloadState.value && downloadState.value !== "idle")
+    return "다운로드 중...";
+  return "다운로드하기";
+});
+
+const downloadGallery = async () => {
+  const gallery = props.gallery;
+  if (!gallery || downloadBlocked.value) return;
+  addingDownload.value = true;
+  try {
+    const downloadPath = await ipcRenderer.invoke(
+      "get-config-value",
+      "downloadPath",
+    );
+    if (typeof downloadPath !== "string" || !downloadPath) {
+      toast.error("다운로드 폴더를 먼저 지정해주세요.");
+      return;
+    }
+    await downloadQueueStore.addToQueue({
+      galleryId: gallery.id,
+      galleryTitle: gallery.title.display,
+      galleryArtist: gallery.artists?.[0],
+      thumbnailUrl: gallery.thumbnailUrl,
+      downloadPath,
+    });
+    toast.success("다운로드 큐에 추가되었습니다.", {
+      description: gallery.title.display,
+    });
+  } catch (error) {
+    toast.error("큐 추가 실패", {
+      description: error instanceof Error ? error.message : String(error),
+    });
+  } finally {
+    addingDownload.value = false;
+  }
+};
 
 const dialogOpen = computed({
   get: () => props.open,
@@ -148,11 +203,10 @@ watch(
       <DialogHeader>
         <DialogTitle>다운로드 상세</DialogTitle>
         <Button
-          variant="outline"
           size="sm"
-          :disabled="!gallery"
-          @click="metadataEditing = true"
-          >메타데이터 편집</Button
+          :disabled="!gallery || downloadBlocked"
+          @click="downloadGallery"
+          >{{ downloadLabel }}</Button
         >
       </DialogHeader>
 
@@ -310,7 +364,6 @@ watch(
       </div>
     </DialogContent>
   </Dialog>
-  <PresentationEditor v-model:open="metadataEditing" :initial="metadataSeed" />
   <PageFullscreenDialog
     v-if="fullscreenPage !== null"
     :open="true"

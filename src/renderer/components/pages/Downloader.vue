@@ -231,6 +231,7 @@ let observer: IntersectionObserver | null = null;
 
 const handleSelectGallery = (gallery: HitomiGalleryDetails) => {
   selectedGallery.value = gallery;
+  isPreviewDialogOpen.value = true;
   if (activeSource.value === "subscription")
     void ipcRenderer.invoke("mark-subscription-read", {
       galleryId: gallery.id,
@@ -807,6 +808,9 @@ useSearchPersistence(searchQuery, "downloader-search-query");
   <GalleryPreviewDialog
     :open="isPreviewDialogOpen"
     :gallery="selectedGallery"
+    :download-status="
+      selectedGallery ? downloadStatuses[selectedGallery.id]?.status : undefined
+    "
     @update:open="isPreviewDialogOpen = $event"
   />
 </template>
