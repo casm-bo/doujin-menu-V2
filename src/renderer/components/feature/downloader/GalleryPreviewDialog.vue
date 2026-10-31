@@ -160,8 +160,10 @@ watch(
         v-if="gallery"
         class="min-h-0 flex-1 space-y-6 overflow-y-auto py-2 pr-2"
       >
-        <div class="flex gap-5">
-          <div class="h-56 w-40 shrink-0 overflow-hidden rounded-lg shadow">
+        <div
+          class="grid grid-cols-1 items-start gap-5 sm:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]"
+        >
+          <div class="aspect-[3/4] w-full overflow-hidden rounded-lg shadow">
             <img
               v-if="useLocalPreview"
               :src="previewImageUrls[0]"

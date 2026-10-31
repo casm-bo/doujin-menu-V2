@@ -233,13 +233,15 @@ const searchInDownloader = (text: string, prefix: string) => {
         v-if="book"
         class="min-h-0 flex-1 space-y-6 overflow-y-auto py-2 pr-2"
       >
-        <div class="flex gap-5">
+        <div
+          class="grid grid-cols-1 items-start gap-5 sm:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]"
+        >
           <img
             :src="getThumbnailUrl(book.cover_path)"
             alt="Book Cover"
-            class="h-56 w-40 shrink-0 rounded-lg object-cover shadow"
+            class="aspect-[3/4] w-full rounded-lg object-contain shadow"
           />
-          <div class="flex flex-1 flex-col gap-3">
+          <div class="flex min-w-0 flex-col gap-3">
             <div class="flex items-start justify-between gap-3">
               <div v-if="isEditing" class="relative flex-1">
                 <Input

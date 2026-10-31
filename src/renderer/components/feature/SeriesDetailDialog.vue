@@ -456,7 +456,9 @@ const excludeBookIds = computed(() => books.value.map((book) => book.id));
 
       <div class="min-h-0 flex-1 overflow-y-auto pr-2">
         <div class="space-y-6 pb-4">
-          <div class="flex gap-5">
+          <div
+            class="grid grid-cols-1 items-start gap-5 sm:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]"
+          >
             <img
               v-if="seriesDetail?.cover_image || firstBook"
               :src="
@@ -465,7 +467,7 @@ const excludeBookIds = computed(() => books.value.map((book) => book.id));
                 )
               "
               :alt="series?.name"
-              class="h-56 w-40 rounded-lg object-cover shadow"
+              class="aspect-[3/4] w-full rounded-lg object-contain shadow"
             />
             <div class="flex min-w-0 flex-1 flex-col gap-3">
               <div class="flex items-start justify-between gap-3">
