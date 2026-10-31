@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import {
   deleteDuplicateBooks,
+  dismissMissingIdBooks,
   getDuplicateGroups,
   getThumbnailUrl,
 } from "@/api";
@@ -40,6 +41,19 @@ const selectedIds = ref<Set<number>>(new Set());
 
 // 삭제 진행 중 여부
 const isDeleting = ref(false);
+const isReviewing = ref(false);
+const isBusy = computed(() => isDeleting.value || isReviewing.value);
+const canDismissSelection = computed(() => {
+  const missingIds = new Set(
+    groups.value
+      .filter((group) => group.matchType === "missing_id")
+      .flatMap((group) => group.books.map((book) => book.id)),
+  );
+  return (
+    selectedIds.value.size > 0 &&
+    [...selectedIds.value].every((id) => missingIds.has(id))
+  );
+});
 
 // 확인 다이얼로그 상태
 const isTrashDialogOpen = ref(false);
@@ -58,6 +72,7 @@ const getMatchTypeLabel = (matchType: DuplicateGroup["matchType"]) => {
 
 // 선택 토글 (오프라인 책은 호출되지 않음 — 체크박스 비활성화)
 const toggleSelect = (bookId: number) => {
+  if (isBusy.value) return;
   const next = new Set(selectedIds.value);
   if (next.has(bookId)) {
     next.delete(bookId);
@@ -74,6 +89,7 @@ const selectedCount = computed(() => selectedIds.value.size);
 
 // 그룹 전체가 선택되었는지 여부 (원본까지 전부 삭제 — 경고 대상)
 const isGroupFullySelected = (group: DuplicateGroup) => {
+  if (group.matchType === "missing_id") return false;
   return group.books.every((book) => selectedIds.value.has(book.id));
 };
 
@@ -86,6 +102,7 @@ const hasFullySelectedGroup = computed(() => {
 
 // 휴지통/영구 삭제 실행
 const performDelete = async (permanent: boolean) => {
+  if (isBusy.value) return;
   const bookIds = Array.from(selectedIds.value);
   if (bookIds.length === 0) {
     return;
@@ -125,6 +142,23 @@ const performDelete = async (permanent: boolean) => {
 
 const confirmTrash = () => performDelete(false);
 const confirmPermanent = () => performDelete(true);
+
+const dismissSelection = async () => {
+  if (isBusy.value || !canDismissSelection.value) return;
+  isReviewing.value = true;
+  try {
+    const count = await dismissMissingIdBooks([...selectedIds.value]);
+    toast.success(`${count}개를 중복 아님으로 처리했습니다.`);
+    selectedIds.value = new Set();
+    await queryClient.invalidateQueries({ queryKey: ["duplicateGroups"] });
+  } catch (error) {
+    toast.error(
+      error instanceof Error ? error.message : "검토 저장에 실패했습니다.",
+    );
+  } finally {
+    isReviewing.value = false;
+  }
+};
 </script>
 
 <template>
@@ -155,12 +189,16 @@ const confirmPermanent = () => performDelete(true);
           icon="solar:check-circle-bold-duotone"
           class="h-16 w-16 opacity-50"
         />
-        <p>중복된 책이 없습니다.</p>
+        <p>중복 후보와 ID 없음 검토 항목이 없습니다.</p>
       </div>
 
       <!-- 중복 그룹 목록 -->
       <div v-else class="space-y-4">
-        <Card v-for="group in groups" :key="group.key" class="p-4">
+        <Card
+          v-for="group in groups"
+          :key="`${group.matchType}:${group.key}`"
+          class="p-4"
+        >
           <!-- 그룹 헤더 (전체 선택 경고를 같은 줄에 표시해 본문 레이아웃 시프팅 방지) -->
           <div class="mb-3 flex items-center gap-2">
             <Badge
@@ -183,6 +221,15 @@ const confirmPermanent = () => performDelete(true);
             </span>
           </div>
 
+          <p
+            v-if="group.matchType === 'missing_id'"
+            class="text-muted-foreground mb-3 text-sm"
+          >
+            히토미 ID가 없어 확인이 필요한 작품입니다. 서로 중복이라는 뜻은
+            아닙니다. 보관할 작품을 선택하고 '중복 아님'을 누르면 이 목록에서
+            제외됩니다. ID·제목 일치 검사는 계속 적용됩니다.
+          </p>
+
           <!-- 그룹 내 책 목록 -->
           <div class="space-y-2">
             <div
@@ -200,7 +247,7 @@ const confirmPermanent = () => performDelete(true);
               <!-- 체크박스 (오프라인 책은 비활성화). 행 전체 클릭으로 토글되므로 체크박스 직접 클릭은 전파를 막아 이중 토글을 방지 -->
               <Checkbox
                 :model-value="isSelected(book.id)"
-                :disabled="book.is_offline"
+                :disabled="book.is_offline || isBusy"
                 @click.stop="!book.is_offline && toggleSelect(book.id)"
               />
 
@@ -277,7 +324,14 @@ const confirmPermanent = () => performDelete(true);
       <div class="flex items-center gap-2">
         <Button
           variant="outline"
-          :disabled="selectedCount === 0 || isDeleting"
+          :disabled="!canDismissSelection || isBusy"
+          @click="dismissSelection"
+        >
+          중복 아님
+        </Button>
+        <Button
+          variant="outline"
+          :disabled="selectedCount === 0 || isBusy"
           @click="isTrashDialogOpen = true"
         >
           <Icon icon="solar:trash-bin-trash-bold-duotone" class="h-5 w-5" />
@@ -285,7 +339,7 @@ const confirmPermanent = () => performDelete(true);
         </Button>
         <Button
           variant="destructive"
-          :disabled="selectedCount === 0 || isDeleting"
+          :disabled="selectedCount === 0 || isBusy"
           @click="isPermanentDialogOpen = true"
         >
           <Icon
