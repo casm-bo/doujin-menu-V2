@@ -219,7 +219,7 @@ export interface DuplicateBookInfo {
 // 중복 그룹 (hitomi_id 또는 제목 일치)
 export interface DuplicateGroup {
   key: string;
-  matchType: "uuid" | "hitomi_id" | "title";
+  matchType: "hitomi_id" | "title" | "missing_id";
   books: DuplicateBookInfo[];
 }
 
@@ -428,6 +428,10 @@ export interface IpcChannels {
   "delete-duplicate-books": {
     request: { bookIds: number[]; permanent: boolean };
     response: DeleteDuplicatesResult;
+  };
+  "dismiss-missing-id-books": {
+    request: number[];
+    response: { success: boolean; reviewedCount?: number; error?: string };
   };
 
   "get-library-size": {

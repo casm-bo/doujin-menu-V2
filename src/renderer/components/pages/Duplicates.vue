@@ -52,7 +52,7 @@ const getCoverUrl = (coverPath: string | null) => {
 
 // 매치 타입 라벨
 const getMatchTypeLabel = (matchType: DuplicateGroup["matchType"]) => {
-  if (matchType === "uuid") return "UUID 일치";
+  if (matchType === "missing_id") return "ID 없음";
   return matchType === "hitomi_id" ? "ID 일치" : "제목 일치";
 };
 

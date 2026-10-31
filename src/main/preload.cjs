@@ -17,6 +17,7 @@ const invokeChannels = new Set([
   "create-series-collection",
   "delete-book",
   "delete-duplicate-books",
+  "dismiss-missing-id-books",
   "delete-preset",
   "delete-series-collection",
   "download-temp-thumbnail",

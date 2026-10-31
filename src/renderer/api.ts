@@ -128,6 +128,14 @@ export async function getDuplicateGroups() {
   }
 }
 
+export async function dismissMissingIdBooks(bookIds: number[]) {
+  const result = await ipcRenderer.invoke("dismiss-missing-id-books", bookIds);
+  if (!result.success) {
+    throw new Error(result.error || "검토 결과 저장에 실패했습니다.");
+  }
+  return result.reviewedCount ?? 0;
+}
+
 // 선택한 중복 책 일괄 삭제 (부분 실패 허용 — 결과를 그대로 반환)
 // IPC 자체 오류(핸들러 미등록 등)는 throw되므로 호출부에서 try/catch 필요
 export async function deleteDuplicateBooks(

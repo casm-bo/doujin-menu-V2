@@ -44,11 +44,12 @@ vi.mock("../../../src/main/db/index.js", () => ({
 import {
   handleGetDuplicateGroups,
   handleDeleteDuplicateBooks,
+  handleDismissMissingIdBooks,
 } from "../../../src/main/handlers/duplicatesHandler.js";
 import {
   createTestDb,
   truncateAll,
-  seedBook,
+  seedBook as seedTestBook,
 } from "../../../src/main/db/test-utils.js";
 
 // trashItem mock 참조 (permanent: true 경로 검증용)
@@ -56,6 +57,9 @@ const mockTrashItem = vi.mocked(shell.trashItem);
 
 // 최상위 레벨에서 단일 DB 인스턴스 공유 (각 describe의 afterAll에서 destroy 방지)
 let db: Knex;
+let nextHitomiId = 100000;
+const seedBook = (database: Knex, values: Record<string, unknown> = {}) =>
+  seedTestBook(database, { hitomi_id: String(nextHitomiId++), ...values });
 
 beforeAll(async () => {
   db = await createTestDb();
@@ -72,6 +76,61 @@ afterAll(async () => {
 });
 
 describe("handleGetDuplicateGroups", () => {
+  it("does not use shared UUIDs as duplicate evidence", async () => {
+    for (const title of ["First", "Second"]) {
+      await seedBook(db, { title, sync_id: "shared-uuid" });
+    }
+    expect((await handleGetDuplicateGroups()).groups).toEqual([]);
+  });
+
+  it("lists NULL, empty and whitespace IDs for review without claiming an ID match", async () => {
+    for (const [index, hitomi_id] of [null, "", "   "].entries()) {
+      await seedBook(db, { title: `Local ${index}`, hitomi_id });
+    }
+    await seedBook(db, { title: "Offline", hitomi_id: null, is_offline: true });
+    const result = await handleGetDuplicateGroups();
+    expect(result.groups).toHaveLength(1);
+    expect(result.groups![0]).toMatchObject({ matchType: "missing_id" });
+    expect(result.groups![0].books).toHaveLength(3);
+  });
+
+  it("persists review decisions without deleting books or suppressing title and ID matches", async () => {
+    const local = await seedBook(db, { title: "Shared", hitomi_id: null });
+    const other = await seedBook(db, { title: "Shared", hitomi_id: "123" });
+    expect(await handleDismissMissingIdBooks([local.id, other.id])).toEqual({
+      success: true,
+      reviewedCount: 1,
+    });
+    expect(await db("Book").where("id", local.id).first()).toMatchObject({
+      missing_id_reviewed: 1,
+      hitomi_id: null,
+    });
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const groups = (await handleGetDuplicateGroups()).groups!;
+      expect(groups.map((group) => group.matchType)).toEqual(["title"]);
+    }
+    await db("Book").where("id", local.id).update({ hitomi_id: "123" });
+    expect((await handleGetDuplicateGroups()).groups![0].matchType).toBe(
+      "hitomi_id",
+    );
+  });
+
+  it("validates review IDs and leaves offline books untouched", async () => {
+    const book = await seedBook(db, { hitomi_id: "", is_offline: true });
+    expect(await handleDismissMissingIdBooks([book.id])).toMatchObject({
+      reviewedCount: 0,
+    });
+    expect(await handleDismissMissingIdBooks([])).toMatchObject({
+      success: true,
+      reviewedCount: 0,
+    });
+    for (const ids of [null, "1", ["1"], [0], [-1], [1.5]]) {
+      expect(await handleDismissMissingIdBooks(ids as number[])).toMatchObject({
+        success: false,
+      });
+    }
+  });
+
   it("제목이 같은 책 2권 → title 그룹 1개", async () => {
     // 같은 제목 2권 + 다른 제목 1권 시드
     await seedBook(db, { title: "중복 제목", path: "/lib/book-a" });
@@ -149,8 +208,8 @@ describe("handleGetDuplicateGroups", () => {
     const result = await handleGetDuplicateGroups();
 
     expect(result.success).toBe(true);
-    // hitomi_id 그룹 1개 + title 그룹 1개(3권) = 2개
-    expect(result.groups).toHaveLength(2);
+    // ID 중복, 제목 중복, ID 없는 책 검토 목록
+    expect(result.groups).toHaveLength(3);
     const hitomiGroup = result.groups!.find((g) => g.matchType === "hitomi_id");
     const titleGroup = result.groups!.find((g) => g.matchType === "title");
     expect(hitomiGroup).toBeDefined();

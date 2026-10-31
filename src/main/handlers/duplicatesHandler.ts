@@ -19,7 +19,6 @@ const BOOK_COLUMNS = [
   "current_page",
   "last_read_at",
   "hitomi_id",
-  "sync_id",
 ];
 
 interface BookRow {
@@ -33,7 +32,6 @@ interface BookRow {
   current_page: number | null;
   last_read_at: string | null;
   hitomi_id: string | null;
-  sync_id: string | null;
 }
 
 // DB 행을 응답용 사본 정보로 변환 (SQLite의 0/1을 boolean으로)
@@ -53,33 +51,8 @@ const toBookInfo = (row: BookRow): DuplicateBookInfo => ({
 export const handleGetDuplicateGroups = async () => {
   try {
     const groups: DuplicateGroup[] = [];
-    const uuidGroupedIds = new Set<number>();
     // hitomi_id 그룹에 포함된 book id 집합 (title 그룹 교차 중복 제거용)
     const hitomiGroupedIds = new Set<number>();
-
-    const uuidRows: BookRow[] = await db("Book")
-      .select(BOOK_COLUMNS)
-      .where("is_offline", false)
-      .whereIn(
-        "sync_id",
-        db("Book")
-          .select("sync_id")
-          .whereNotNull("sync_id")
-          .where("is_offline", false)
-          .groupBy("sync_id")
-          .having(db.raw("count(*) > 1")),
-      )
-      .orderBy("id");
-    const byUuid = new Map<string, BookRow[]>();
-    for (const row of uuidRows) {
-      const key = String(row.sync_id);
-      if (!byUuid.has(key)) byUuid.set(key, []);
-      byUuid.get(key)!.push(row);
-      uuidGroupedIds.add(row.id);
-    }
-    for (const [key, books] of byUuid) {
-      groups.push({ key, matchType: "uuid", books: books.map(toBookInfo) });
-    }
 
     // 1) hitomi_id 기준 중복 그룹 — 서브쿼리 1회로 중복 키와 행을 함께 가져옴
     const hitomiRows: BookRow[] = await db("Book")
@@ -90,6 +63,7 @@ export const handleGetDuplicateGroups = async () => {
         db("Book")
           .select("hitomi_id")
           .whereNotNull("hitomi_id")
+          .whereRaw("TRIM(hitomi_id) != ''")
           .where("is_offline", false)
           .groupBy("hitomi_id")
           .having(db.raw("count(*) > 1")),
@@ -105,12 +79,10 @@ export const handleGetDuplicateGroups = async () => {
         hitomiGroupedIds.add(row.id);
       }
       for (const [key, books] of byHitomiId) {
-        const remaining = books.filter((book) => !uuidGroupedIds.has(book.id));
-        if (remaining.length < 2) continue;
         groups.push({
           key,
           matchType: "hitomi_id",
-          books: remaining.map(toBookInfo),
+          books: books.map(toBookInfo),
         });
       }
     }
@@ -138,19 +110,32 @@ export const handleGetDuplicateGroups = async () => {
       }
       for (const [key, books] of byTitle) {
         // 모든 사본이 이미 hitomi_id 그룹에 포함되면 같은 묶음이므로 title 그룹 제외 (교차 중복 제거)
-        const remaining = books.filter((book) => !uuidGroupedIds.has(book.id));
         if (
-          remaining.length < 2 ||
-          remaining.every((book) => hitomiGroupedIds.has(book.id))
+          books.length < 2 ||
+          books.every((book) => hitomiGroupedIds.has(book.id))
         ) {
           continue;
         }
         groups.push({
           key,
           matchType: "title",
-          books: remaining.map(toBookInfo),
+          books: books.map(toBookInfo),
         });
       }
+    }
+
+    const missingIdBooks: BookRow[] = await db("Book")
+      .select(BOOK_COLUMNS)
+      .where("is_offline", false)
+      .where("missing_id_reviewed", false)
+      .whereRaw("TRIM(COALESCE(hitomi_id, '')) = ''")
+      .orderBy("id");
+    if (missingIdBooks.length > 0) {
+      groups.push({
+        key: "missing_id",
+        matchType: "missing_id",
+        books: missingIdBooks.map(toBookInfo),
+      });
     }
 
     return { success: true, groups };
@@ -160,6 +145,26 @@ export const handleGetDuplicateGroups = async () => {
       success: false,
       error: (error as Error).message || "알 수 없는 오류",
     };
+  }
+};
+
+export const handleDismissMissingIdBooks = async (bookIds: number[]) => {
+  if (
+    !Array.isArray(bookIds) ||
+    bookIds.some((id) => !Number.isSafeInteger(id) || id <= 0)
+  ) {
+    return { success: false, error: "올바른 책 ID가 필요합니다." };
+  }
+  try {
+    const reviewedCount = await db("Book")
+      .whereIn("id", bookIds)
+      .where("is_offline", false)
+      .whereRaw("TRIM(COALESCE(hitomi_id, '')) = ''")
+      .update({ missing_id_reviewed: true });
+    return { success: true, reviewedCount };
+  } catch (error) {
+    console.error("[Main] ID 없는 책 검토 저장 실패:", error);
+    return { success: false, error: (error as Error).message };
   }
 };
 
@@ -206,6 +211,9 @@ export const handleDeleteDuplicateBooks = async (
 };
 
 export function registerDuplicatesHandlers() {
+  ipcMain.handle("dismiss-missing-id-books", (_event, bookIds) =>
+    handleDismissMissingIdBooks(bookIds),
+  );
   ipcMain.handle("get-duplicate-groups", () => handleGetDuplicateGroups());
   ipcMain.handle(
     "delete-duplicate-books",
