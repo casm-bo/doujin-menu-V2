@@ -20,12 +20,9 @@ const props = defineProps<{
 const emit = defineEmits<{ updated: [] }>();
 const pickerOpen = ref(false);
 const busy = ref(false);
-watch(
-  () => [props.target.kind, props.target.id],
-  () => {
-    pickerOpen.value = false;
-  },
-);
+watch([() => props.target.kind, () => props.target.id], () => {
+  pickerOpen.value = false;
+});
 
 async function change(source: CoverRequest["source"]) {
   if (busy.value || props.disabled) return;
