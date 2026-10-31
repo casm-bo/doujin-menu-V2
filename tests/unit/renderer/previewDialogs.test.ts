@@ -11,6 +11,7 @@ import {
   type Component,
 } from "vue";
 import type { HitomiGalleryDetails } from "../../../src/types/hitomi";
+import { QueryClient, VueQueryPlugin } from "@tanstack/vue-query";
 
 const api = vi.hoisted(() => ({
   invoke: vi.fn(),
@@ -98,9 +99,13 @@ function mount(component: Component, props: Record<string, unknown>) {
   document.body.append(host);
   const state = reactive(props);
   const app = createApp({ render: () => h(component, state) });
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  app.use(VueQueryPlugin, { queryClient });
   apps.push(app);
   app.mount(host);
-  return { host, state };
+  return { host, state, queryClient };
 }
 
 beforeEach(() => {
@@ -123,6 +128,43 @@ afterEach(() => {
 });
 
 describe("preview loading", () => {
+  it.each([false, true])(
+    "uses the Korean title preference (%s) without changing download metadata",
+    async (prioritizeKoreanTitles) => {
+      const originalTitle = "Original Title | 한국어 제목";
+      api.invoke.mockImplementation(async (channel: string) => {
+        if (channel === "get-config") return { prioritizeKoreanTitles };
+        if (channel === "get-config-value") return "D:/TestDownloads";
+        return { success: true, data: [], exists: false };
+      });
+      const item = {
+        ...gallery(),
+        title: { display: originalTitle, japanese: null },
+      };
+      const { host, queryClient } = mount(GalleryPreviewDialog, {
+        open: true,
+        gallery: item,
+      });
+      await flush();
+      expect(host.textContent).toContain(
+        prioritizeKoreanTitles ? "한국어 제목" : originalTitle,
+      );
+      if (prioritizeKoreanTitles)
+        expect(host.textContent).not.toContain("Original Title");
+      Array.from(host.querySelectorAll("button"))
+        .find((button) => button.textContent?.includes("다운로드하기"))!
+        .click();
+      await flush();
+      expect(downloads.addToQueue).toHaveBeenCalledWith(
+        expect.objectContaining({ galleryTitle: originalTitle }),
+      );
+      expect(item.title.display).toBe(originalTitle);
+      queryClient.setQueryData(["config"], { prioritizeKoreanTitles: false });
+      await flush();
+      expect(host.textContent).toContain(originalTitle);
+    },
+  );
+
   it.each([false, true])(
     "recovers from download setup or queue failure (%s)",
     async (hasPath) => {
@@ -335,7 +377,8 @@ describe("preview loading", () => {
       gallery: gallery(),
     });
     await flush();
-    expect(api.invoke).toHaveBeenCalledTimes(1);
+    expect(api.invoke).toHaveBeenCalledTimes(2);
+    expect(api.invoke).toHaveBeenCalledWith("get-config");
     expect(api.invoke).toHaveBeenCalledWith(
       "check-book-exists-by-hitomi-id",
       42,

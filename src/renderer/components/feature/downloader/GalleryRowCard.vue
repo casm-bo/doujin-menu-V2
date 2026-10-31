@@ -52,6 +52,7 @@ const { getTagDisplayInfo } = useTagDisplay();
 
 // composable 사용
 const {
+  displayTitle,
   isDeleteDialogOpen,
   buttonText,
   isDownloading,
@@ -110,7 +111,7 @@ const { borderStyle } = useGalleryBorders();
         }}
         <template v-if="formattedDate"> | {{ formattedDate }} </template>
       </p>
-      <h3 class="text-lg font-bold">{{ props.gallery.title.display }}</h3>
+      <h3 class="text-lg font-bold">{{ displayTitle }}</h3>
       <!-- 작가/그룹/시리즈/캐릭터/페이지 -->
       <div class="text-muted-foreground flex flex-col gap-0.5 text-sm">
         <p>

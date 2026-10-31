@@ -17,6 +17,9 @@ import {
 import { store as configStore } from "./configHandler.js";
 import { getPresentationService } from "./presentationHandler.js";
 import { parsePresentationMutation } from "../../types/presentation.js";
+import { extractKoreanTitle } from "../../shared/title.js";
+
+export { extractKoreanTitle } from "../../shared/title.js";
 
 export interface ExcludeTerms {
   titleTerms: string[];
@@ -137,24 +140,12 @@ export function parseSearchQuery(searchQuery: string): ParsedSearchTerms {
   return result;
 }
 
-const createKoreanRegexp = () => /^.+\|\s?(.+)$/;
-
 function isPlaceholderCover(coverPath: string): boolean {
   try {
     return new URL(coverPath).hostname === "via.placeholder.com";
   } catch {
     return false;
   }
-}
-
-// 한국어 우선 제목 설정이 활성화된 경우 "영어 | 한글" 형식에서 한글 부분만 추출
-export function extractKoreanTitle(
-  title: string,
-  prioritizeKorean: boolean,
-): string {
-  if (!prioritizeKorean) return title;
-  const match = createKoreanRegexp().exec(title);
-  return match?.[1]?.trim() ?? title;
 }
 
 const withRelationAggregates = (query: Knex.QueryBuilder) =>

@@ -49,6 +49,7 @@ const formattedDate = computed(() =>
 
 // composable 사용
 const {
+  displayTitle,
   isDeleteDialogOpen,
   isDownloading,
   isDownloadCompleted,
@@ -103,7 +104,7 @@ const { borderStyle } = useGalleryBorders();
       class="absolute right-0 bottom-0 left-0 bg-gradient-to-t from-black/80 via-black/60 to-transparent p-3"
     >
       <p class="mb-2 line-clamp-2 text-sm font-bold text-white">
-        {{ props.gallery.title.display }}
+        {{ displayTitle }}
       </p>
       <div class="space-y-1 text-xs text-white/90">
         <!-- 작가 -->

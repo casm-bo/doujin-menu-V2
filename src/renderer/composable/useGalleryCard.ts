@@ -1,6 +1,7 @@
 import * as api from "@/api";
 import { ipcRenderer } from "@/api";
 import { usePermanentDelete } from "@/composable/usePermanentDelete";
+import { usePreferredTitle } from "@/composable/usePreferredTitle";
 import { useDownloadQueueStore } from "@/store/downloadQueueStore";
 import type { HitomiGalleryDetails } from "../../types/hitomi.js";
 import { computed, onMounted, ref, toRaw, watch } from "vue";
@@ -26,6 +27,7 @@ export function useGalleryCard(
   emit?: GalleryCardEmits,
 ) {
   const bookId = ref<number | null>(null);
+  const displayTitle = usePreferredTitle(() => props.gallery.title.display);
   const router = useRouter();
   const downloadQueueStore = useDownloadQueueStore();
   const isDeleteDialogOpen = ref(false);
@@ -226,6 +228,7 @@ export function useGalleryCard(
   );
 
   return {
+    displayTitle,
     bookId,
     isDeleteDialogOpen,
     permanentDelete,

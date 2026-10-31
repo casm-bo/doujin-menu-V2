@@ -9,6 +9,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { formatPublishDate } from "@/lib/formatDate";
+import { usePreferredTitle } from "@/composable/usePreferredTitle";
 import { computed, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import { toast } from "vue-sonner";
@@ -29,6 +30,9 @@ const emit = defineEmits<{
   "update:open": [value: boolean];
 }>();
 const router = useRouter();
+const displayTitle = usePreferredTitle(
+  () => props.gallery?.title.display || "",
+);
 const downloadQueueStore = useDownloadQueueStore();
 const addingDownload = ref(false);
 const downloadState = computed(
@@ -221,7 +225,7 @@ watch(
             <img
               v-if="useLocalPreview"
               :src="previewImageUrls[0]"
-              :alt="gallery.title.display"
+              :alt="displayTitle"
               class="h-full w-full object-contain"
             />
             <ProxiedImage
@@ -230,14 +234,14 @@ watch(
               :key="gallery.id"
               :url="gallery.thumbnailUrl"
               :referer="refererUrl"
-              :alt="gallery.title.display"
+              :alt="displayTitle"
               :lazy="false"
             />
           </div>
 
           <div class="flex min-w-0 flex-1 flex-col gap-3">
             <h2 class="text-2xl leading-tight font-bold">
-              {{ gallery.title.display || "N/A" }}
+              {{ displayTitle || "N/A" }}
             </h2>
             <p class="text-muted-foreground text-xs">
               메타데이터를 클릭하면 검색어 형식으로 복사합니다.
