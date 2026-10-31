@@ -18,6 +18,14 @@ export const changelogData: Changelog[] = [
     version: "2.5.1",
     changes: [
       {
+        type: "refactor",
+        title: "다운로드 직접 기록 및 HDD 모드 통합",
+        items: [
+          "이미지를 한 장씩 ZIP/CBZ에 직접 기록하고 중단된 위치에서 이어받습니다.",
+          "HDD 모드 설정과 별도 임시폴더·파일 이동 단계를 제거하고 지정한 다운로드 폴더에 바로 저장합니다.",
+        ],
+      },
+      {
         type: "etc",
         title: "설치 전 필독: 데이터 백업과 앱 전환",
         items: [

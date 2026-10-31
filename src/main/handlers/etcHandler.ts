@@ -11,10 +11,6 @@ import { sortImageFiles } from "../utils/imageFiles.js";
 import { getZipPageNames, readZipPage } from "../utils/zipPages.js";
 import { console } from "../main.js";
 import { store as configStore } from "./configHandler.js";
-import {
-  clearInactiveDownloadStaging,
-  getDownloadStagingRoot,
-} from "../utils/downloadStaging.js";
 
 const ALLOWED_EXTERNAL_HOSTS = new Set([
   "forms.gle",
@@ -93,28 +89,17 @@ const TEMP_FILE_LOCATIONS = [
   },
 ] as const;
 
-const HDD_DOWNLOAD_TEMP_LOCATION = {
-  key: "hdd_downloads",
-  label: "HDD 다운로드 임시 파일",
-  description: "HDD 모드 다운로드 작업 파일",
-} as const;
-
 export async function getTempFilesSummary(
   userDataPath = app.getPath("userData"),
-  tempPath = app.getPath("temp"),
 ) {
-  const locationDefinitions = [
-    ...TEMP_FILE_LOCATIONS.map(({ key, label, description }) => ({
+  const locationDefinitions = TEMP_FILE_LOCATIONS.map(
+    ({ key, label, description }) => ({
       key,
       label,
       description,
       path: path.join(userDataPath, key),
-    })),
-    {
-      ...HDD_DOWNLOAD_TEMP_LOCATION,
-      path: getDownloadStagingRoot(tempPath),
-    },
-  ];
+    }),
+  );
   const locations = await Promise.all(
     locationDefinitions.map(
       async ({ key, label, description, path: locationPath }) => {
@@ -136,19 +121,12 @@ export async function getTempFilesSummary(
   return { total: formatBytes(totalBytes), locations };
 }
 
-export async function clearTempFiles(
-  userDataPath = app.getPath("userData"),
-  tempPath = app.getPath("temp"),
-) {
-  const paths = [
-    ...TEMP_FILE_LOCATIONS.map(({ key }) => path.join(userDataPath, key)),
-  ];
-  await Promise.all([
-    clearInactiveDownloadStaging(tempPath),
-    ...paths.map((locationPath) =>
-      fs.rm(locationPath, { recursive: true, force: true }),
+export async function clearTempFiles(userDataPath = app.getPath("userData")) {
+  await Promise.all(
+    TEMP_FILE_LOCATIONS.map(({ key }) =>
+      fs.rm(path.join(userDataPath, key), { recursive: true, force: true }),
     ),
-  ]);
+  );
 }
 
 async function handleGenerateMissingInfoFiles(

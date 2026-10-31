@@ -24,7 +24,7 @@ import { Switch } from "@/components/ui/switch";
 import SettingItem from "@/components/feature/settings/SettingItem.vue";
 import LicenseViewDialog from "@/components/feature/settings/LicenseViewDialog.vue";
 import { Icon } from "@iconify/vue";
-import { computed, onMounted, ref } from "vue";
+import { onMounted, ref } from "vue";
 import { toast } from "vue-sonner";
 import { ipcRenderer } from "@/api";
 import { useQueryClient } from "@tanstack/vue-query";
@@ -40,7 +40,6 @@ const saveConfig = async (key: string, value: unknown) => {
 
 // 임시 파일 관리 상태
 const tempFilesSize = ref("0 Bytes");
-const hddDownloadMode = ref(false);
 const tempFileLocations = ref<
   {
     key: string;
@@ -50,12 +49,6 @@ const tempFileLocations = ref<
     size: string;
   }[]
 >([]);
-const visibleTempFileLocations = computed(() =>
-  tempFileLocations.value.filter(
-    (location) => location.key !== "hdd_downloads" || hddDownloadMode.value,
-  ),
-);
-
 // 보안(앱 잠금) 상태
 const useAppLock = ref(false);
 const newPassword = ref("");
@@ -67,7 +60,6 @@ const isLicenseViewDialogOpen = ref(false);
 onMounted(async () => {
   const config = await ipcRenderer.invoke("get-config");
   useAppLock.value = config.useAppLock === true;
-  hddDownloadMode.value = config.hddDownloadMode === true;
   await getTempFilesSize();
 });
 
@@ -213,7 +205,7 @@ const resetAllData = async () => {
         </SettingItem>
         <div class="mt-4 space-y-3 border-t pt-4">
           <div
-            v-for="location in visibleTempFileLocations"
+            v-for="location in tempFileLocations"
             :key="location.key"
             class="flex items-start justify-between gap-4 text-sm"
           >

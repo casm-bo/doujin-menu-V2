@@ -7,6 +7,8 @@ const state = vi.hoisted(() => ({
   row: null as Record<string, unknown> | null,
   tempPath: "",
   deleteRow: vi.fn(async () => 1),
+  whereIn: vi.fn(),
+  update: vi.fn(async () => 1),
 }));
 
 vi.mock("electron", () => ({
@@ -21,6 +23,9 @@ vi.mock("../../../src/main/db/index.js", () => ({
   default: vi.fn(() => {
     const query: Record<string, unknown> = {};
     query.where = vi.fn(() => query);
+    query.whereIn = state.whereIn.mockImplementation(() => query);
+    query.orderBy = vi.fn(() => query);
+    query.update = state.update;
     query.first = vi.fn(async () => state.row);
     query.delete = state.deleteRow;
     return query;
@@ -35,20 +40,24 @@ vi.mock("../../../src/main/handlers/configHandler.js", () => ({
   store: { get: vi.fn() },
 }));
 vi.mock("../../../src/main/handlers/downloaderHandler.js", () => ({
-  finalizeDownloadTransfer: vi.fn(),
   handleDownloadGallery: vi.fn(),
 }));
 vi.mock("../../../src/main/services/companion/companionSyncSignal.js", () => ({
   notifyCompanionLibraryChanged: vi.fn(),
 }));
 
-import { handleRemoveFromDownloadQueue } from "../../../src/main/handlers/downloadQueueHandler.js";
+import {
+  handleRemoveFromDownloadQueue,
+  initializeDownloadQueue,
+} from "../../../src/main/handlers/downloadQueueHandler.js";
 
 const tempRoots: string[] = [];
 
 afterEach(async () => {
   state.row = null;
   state.deleteRow.mockClear();
+  state.whereIn.mockClear();
+  state.update.mockClear();
   getGallery.mockClear();
   await Promise.all(
     tempRoots
@@ -58,6 +67,14 @@ afterEach(async () => {
 });
 
 describe("download queue removal", () => {
+  it("recovers retired transfer states as pending downloads", async () => {
+    await initializeDownloadQueue();
+    expect(state.whereIn).toHaveBeenCalledWith("status", [
+      "downloading",
+      "transferring",
+    ]);
+    expect(state.update).toHaveBeenCalledWith({ status: "pending" });
+  });
   it("uses the stored path and removes empty nested parents", async () => {
     const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "queue-remove-"));
     tempRoots.push(tempRoot);

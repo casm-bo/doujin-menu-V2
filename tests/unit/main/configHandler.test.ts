@@ -452,3 +452,9 @@ describe("configHandler", () => {
     });
   });
 });
+
+it("removes the obsolete HDD mode preference on startup", async () => {
+  vi.resetModules();
+  await import("../../../src/main/handlers/configHandler.js");
+  expect(mockDelete).toHaveBeenCalledWith("hddDownloadMode");
+});

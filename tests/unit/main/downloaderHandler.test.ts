@@ -29,10 +29,7 @@ vi.mock("../../../src/main/db/index.js", () => ({
   })),
 }));
 
-import {
-  finalizeDownloadTransfer,
-  handleDownloadGallery,
-} from "../../../src/main/handlers/downloaderHandler.js";
+import { handleDownloadGallery } from "../../../src/main/handlers/downloaderHandler.js";
 import { hitomiService } from "../../../src/main/services/hitomi/hitomiService.js";
 import { store } from "../../../src/main/handlers/configHandler.js";
 import {
@@ -107,83 +104,10 @@ describe("safe download archive", () => {
       bookId: 42,
     });
   });
-
-  it("stages an HDD-mode archive before publishing it", async () => {
-    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "download-hdd-mode-"));
-    createdDirs.push(dir);
-    const tempPath = path.join(dir, "temp");
-    const downloadPath = path.join(dir, "library");
-    await fs.mkdir(downloadPath);
-    const finalPath = path.join(downloadPath, "Circle", "3713171.cbz");
-    await fs.mkdir(path.dirname(finalPath), { recursive: true });
-    await fs.writeFile(`${finalPath}.part`, "active transfer");
-
-    vi.mocked(app.getPath).mockReturnValue(tempPath);
-    vi.mocked(hitomiService.getGallery).mockResolvedValue({
-      id: 3713171,
-      title: { display: "Staged" },
-      artists: [],
-      groups: [{ name: "Circle" }],
-      series: [],
-      characters: [],
-      tags: [],
-      type: "doujinshi",
-      language: { name: "korean" },
-      files: [],
-    } as never);
-    vi.mocked(store.get).mockImplementation(((
-      key: string,
-      fallback: unknown,
-    ) => {
-      const values: Record<string, unknown> = {
-        compressDownload: true,
-        compressFormat: "cbz",
-        hddDownloadMode: true,
-        libraryFolders: [],
-        downloadPattern: "%groups%\\%id%",
-        createInfoTxtFile: true,
-      };
-      return values[key] ?? fallback;
-    }) as typeof store.get);
-    const send = vi.fn();
-
-    const result = await handleDownloadGallery({ sender: { send } } as never, {
-      galleryId: 3713171,
-      downloadPath,
-      queueId: 77,
-    });
-
-    expect(result.success).toBe(true);
-    expect("transfer" in result && result.transfer?.finalPath).toBe(finalPath);
-    expect(updateQueue).toHaveBeenCalledWith({
-      total_files: 0,
-      resolved_path: path.join(downloadPath, "Circle", "3713171"),
-    });
-    expect(await fs.readFile(`${finalPath}.part`, "utf8")).toBe(
-      "active transfer",
-    );
-    if (!("transfer" in result) || !result.transfer) {
-      throw new Error("Expected a prepared transfer");
-    }
-
-    await finalizeDownloadTransfer({ send } as never, result.transfer);
-
-    expect((await fs.stat(finalPath)).size).toBeGreaterThan(0);
-    await expect(fs.stat(result.transfer.stagingJobPath)).rejects.toMatchObject(
-      {
-        code: "ENOENT",
-      },
-    );
-    expect(send).toHaveBeenLastCalledWith("download-progress", {
-      galleryId: 3713171,
-      status: "completed",
-      bookId: null,
-    });
-  });
 });
 
 describe("direct archive downloads", () => {
-  async function setup(hdd = false, format = "cbz") {
+  async function setup(format = "cbz") {
     const dir = await fs.mkdtemp(path.join(os.tmpdir(), "direct-download-"));
     createdDirs.push(dir);
     vi.mocked(app.getPath).mockReturnValue(path.join(dir, "temp"));
@@ -207,7 +131,6 @@ describe("direct archive downloads", () => {
           ({
             compressDownload: true,
             compressFormat: format,
-            hddDownloadMode: hdd,
             libraryFolders: [],
             downloadPattern: "%id%",
             createInfoTxtFile: true,
@@ -226,28 +149,12 @@ describe("direct archive downloads", () => {
     return { dir, run, fetchImage, send };
   }
 
-  it.each([
-    [false, "cbz"],
-    [false, "zip"],
-    [true, "cbz"],
-  ])(
-    "writes directly without image folders (HDD=%s, %s)",
-    async (hdd, format) => {
-      const { dir, run, fetchImage } = await setup(
-        hdd as boolean,
-        format as string,
-      );
+  it.each(["cbz", "zip"])(
+    "writes directly without image folders (%s)",
+    async (format) => {
+      const { dir, run, fetchImage } = await setup(format);
       const result = await run();
       expect(result.success).toBe(true);
-      if ("transfer" in result && result.transfer) {
-        await expect(
-          fs.stat(path.join(path.dirname(result.transfer.stagedPath), "123")),
-        ).rejects.toMatchObject({ code: "ENOENT" });
-        await finalizeDownloadTransfer(
-          { send: vi.fn() } as never,
-          result.transfer,
-        );
-      }
       const { getZipPageNames, readZipPage } =
         await import("../../../src/main/utils/zipPages.js");
       const file = path.join(dir, `123.${format}`);
