@@ -1,6 +1,6 @@
-import archiver from "archiver";
+import PQueue from "p-queue";
+import { DownloadArchive } from "../utils/downloadArchive.js";
 import { app, ipcMain } from "electron";
-import { createWriteStream } from "fs";
 import fs from "fs/promises";
 import path from "path";
 import { console } from "../main.js";
@@ -13,10 +13,6 @@ import {
   DEFAULT_DOWNLOAD_PATTERN,
 } from "../utils/index.js";
 import { isPathWithinLibraryRoot } from "../utils/libraryPath.js";
-import {
-  getDownloadStagingJobPath,
-  publishStagedDownload,
-} from "../utils/downloadStaging.js";
 import { normalizeTagName } from "../utils/tagName.js";
 import { getPresentationService } from "./presentationHandler.js";
 import { applyGalleryPresentation } from "../../types/presentationGallery.js";
@@ -28,122 +24,6 @@ import {
 import { parseInfoTxt, type ParsedMetadata } from "../parsers/infoTxtParser.js";
 
 const QUEUE_BROADCAST_INTERVAL_MS = 200;
-
-export interface PreparedDownloadTransfer {
-  galleryId: number;
-  stagedPath: string;
-  finalPath: string;
-  stagingJobPath: string;
-  libraryFolders: string[];
-  downloadedMetadata: ParsedMetadata;
-}
-
-async function completeDownloadedBook(
-  webContents: Electron.WebContents,
-  transfer: Omit<PreparedDownloadTransfer, "stagedPath" | "stagingJobPath">,
-): Promise<number | null> {
-  const scanStats = await fs.stat(transfer.finalPath);
-  if (scanStats.isFile() && scanStats.size === 0) {
-    throw new Error("생성된 압축 파일이 비어 있습니다.");
-  }
-  if (
-    scanStats.isDirectory() &&
-    (await fs.readdir(transfer.finalPath)).length === 0
-  ) {
-    throw new Error("생성된 책 폴더가 비어 있습니다.");
-  }
-
-  const isDownloadedToLibrary = transfer.libraryFolders.some((folder) =>
-    isPathWithinLibraryRoot(transfer.finalPath, folder),
-  );
-  let bookId: number | null = null;
-  if (isDownloadedToLibrary) {
-    bookId = await scanFile(
-      transfer.finalPath,
-      undefined,
-      "soft",
-      transfer.downloadedMetadata,
-    );
-    if (!bookId) {
-      throw new Error(
-        "파일 다운로드는 완료됐지만 라이브러리 등록에 실패했습니다.",
-      );
-    }
-  }
-
-  webContents.send("download-progress", {
-    galleryId: transfer.galleryId,
-    status: "completed",
-    bookId,
-  });
-  return bookId;
-}
-
-export async function finalizeDownloadTransfer(
-  webContents: Electron.WebContents,
-  transfer: PreparedDownloadTransfer,
-): Promise<number | null> {
-  try {
-    webContents.send("download-progress", {
-      galleryId: transfer.galleryId,
-      status: "transferring",
-      progress: 100,
-    });
-    await publishStagedDownload(transfer.stagedPath, transfer.finalPath);
-    await fs.rm(transfer.stagingJobPath, { recursive: true, force: true });
-    return await completeDownloadedBook(webContents, transfer);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    webContents.send("download-progress", {
-      galleryId: transfer.galleryId,
-      status: "failed",
-      error: message,
-    });
-    throw error;
-  }
-}
-
-export async function createDownloadArchive(
-  sourcePath: string,
-  finalPath: string,
-): Promise<void> {
-  const pendingPath = `${finalPath}.part`;
-  await fs.rm(pendingPath, { force: true });
-
-  const existing = await fs
-    .stat(finalPath)
-    .catch((error: NodeJS.ErrnoException) => {
-      if (error.code === "ENOENT") return null;
-      throw error;
-    });
-  if (existing) {
-    throw new Error(`같은 이름의 다운로드 파일이 이미 있습니다: ${finalPath}`);
-  }
-
-  const output = createWriteStream(pendingPath, { flags: "wx" });
-  const archive = archiver("zip", { zlib: { level: 0 } });
-
-  try {
-    await new Promise<void>((resolve, reject) => {
-      output.once("close", resolve);
-      output.once("error", reject);
-      archive.once("error", reject);
-      archive.once("warning", reject);
-      archive.pipe(output);
-      archive.directory(sourcePath, false);
-      void archive.finalize().catch(reject);
-    });
-
-    const stats = await fs.stat(pendingPath);
-    if (stats.size === 0) throw new Error("생성된 압축 파일이 비어 있습니다.");
-    await fs.rename(pendingPath, finalPath);
-  } catch (error) {
-    archive.abort();
-    output.destroy();
-    await fs.rm(pendingPath, { force: true }).catch(() => undefined);
-    throw error;
-  }
-}
 
 export const handleSearchGalleries = async (params: SearchGalleriesParams) => {
   try {
@@ -204,6 +84,25 @@ export const handleDownloadGallery = async (
   },
 ) => {
   const webContents = event.sender;
+  let downloadArchive: DownloadArchive | undefined;
+  const writes = new PQueue({ concurrency: 1 });
+  let writeError: Error | undefined;
+  const enqueueWrite = (write: () => Promise<void>) => {
+    if (writeError) throw writeError;
+    void writes.add(async () => {
+      try {
+        await write();
+      } catch (error) {
+        writeError ??=
+          error instanceof Error ? error : new Error(String(error));
+        writes.clear();
+      }
+    });
+  };
+  const finishWrites = async () => {
+    await writes.onIdle();
+    if (writeError) throw writeError;
+  };
   try {
     webContents.send("download-progress", {
       galleryId,
@@ -213,7 +112,6 @@ export const handleDownloadGallery = async (
     const gallery = await hitomiService.getGallery(galleryId);
     const compressDownload = configStore.get("compressDownload", false);
     const compressFormat = configStore.get("compressFormat", "cbz");
-    const hddDownloadMode = configStore.get("hddDownloadMode", false);
     const libraryFolders = configStore.get("libraryFolders", []);
     const downloadedMetadata: ParsedMetadata = {
       hitomi_id: String(gallery.id),
@@ -238,52 +136,41 @@ export const handleDownloadGallery = async (
       DEFAULT_DOWNLOAD_PATTERN,
     );
     const capitalizeNames = configStore.get("capitalizeNames", false);
-    const finalGalleryPath = buildGalleryDownloadPath(
+    const galleryDownloadPath = buildGalleryDownloadPath(
       downloadPath,
       gallery,
       downloadPattern,
       { capitalizeNames },
     );
 
-    const stagingJobPath = hddDownloadMode
-      ? getDownloadStagingJobPath(app.getPath("temp"), gallery.id)
-      : null;
-    const galleryDownloadPath = stagingJobPath
-      ? path.join(stagingJobPath, path.relative(downloadPath, finalGalleryPath))
-      : finalGalleryPath;
-
     const archiveFilePath = `${galleryDownloadPath}.${compressFormat}`;
-    const finalArchiveFilePath = `${finalGalleryPath}.${compressFormat}`;
     if (compressDownload) {
-      if (!stagingJobPath) {
-        await fs.rm(`${finalArchiveFilePath}.part`, { force: true });
-      }
       const existingArchive = await fs
-        .stat(finalArchiveFilePath)
+        .stat(archiveFilePath)
         .catch((error: NodeJS.ErrnoException) => {
           if (error.code === "ENOENT") return null;
           throw error;
         });
       if (existingArchive) {
         const { infoTxt, imageCount } =
-          await extractInfoTxtAndImageCountFromZip(finalArchiveFilePath);
+          await extractInfoTxtAndImageCountFromZip(archiveFilePath);
         const existingHitomiId = infoTxt
           ? parseInfoTxt(infoTxt).hitomi_id?.trim()
           : null;
         if (existingHitomiId !== String(gallery.id) || imageCount === 0) {
           throw new Error(
-            `같은 이름의 다른 파일이 이미 있습니다. 덮어쓰지 않았습니다: ${finalArchiveFilePath}`,
+            `같은 이름의 다른 파일이 이미 있습니다. 덮어쓰지 않았습니다: ${archiveFilePath}`,
           );
         }
 
         let bookId: number | null = null;
         if (
           libraryFolders.some((folder) =>
-            isPathWithinLibraryRoot(finalArchiveFilePath, folder),
+            isPathWithinLibraryRoot(archiveFilePath, folder),
           )
         ) {
           bookId = await scanFile(
-            finalArchiveFilePath,
+            archiveFilePath,
             undefined,
             "soft",
             downloadedMetadata,
@@ -302,82 +189,13 @@ export const handleDownloadGallery = async (
         });
         return { success: true, bookId };
       }
-
-      const existingStagedArchive = stagingJobPath
-        ? await fs
-            .stat(archiveFilePath)
-            .catch((error: NodeJS.ErrnoException) => {
-              if (error.code === "ENOENT") return null;
-              throw error;
-            })
-        : null;
-      if (existingStagedArchive && stagingJobPath) {
-        const { infoTxt, imageCount } =
-          await extractInfoTxtAndImageCountFromZip(archiveFilePath);
-        const stagedHitomiId = infoTxt
-          ? parseInfoTxt(infoTxt).hitomi_id?.trim()
-          : null;
-        if (
-          imageCount === 0 ||
-          (stagedHitomiId && stagedHitomiId !== String(gallery.id))
-        ) {
-          throw new Error(
-            `임시 압축 파일이 올바르지 않습니다: ${archiveFilePath}`,
-          );
-        }
-        webContents.send("download-progress", {
-          galleryId,
-          status: "transferring",
-          progress: 100,
-        });
-        return {
-          success: true,
-          transfer: {
-            galleryId,
-            stagedPath: archiveFilePath,
-            finalPath: finalArchiveFilePath,
-            stagingJobPath,
-            libraryFolders,
-            downloadedMetadata,
-          } satisfies PreparedDownloadTransfer,
-        };
-      }
     }
 
-    if (!compressDownload && stagingJobPath) {
-      const existingFinalFolder = await fs
-        .stat(finalGalleryPath)
-        .catch((error: NodeJS.ErrnoException) => {
-          if (error.code === "ENOENT") return null;
-          throw error;
-        });
-      if (existingFinalFolder) {
-        if (!existingFinalFolder.isDirectory()) {
-          throw new Error(
-            `같은 이름의 파일이 이미 있습니다: ${finalGalleryPath}`,
-          );
-        }
-        const entries = await fs.readdir(finalGalleryPath);
-        const imageCount = entries.filter((file) =>
-          /\.(avif|webp|jpe?g|png|gif|bmp)$/i.test(file),
-        ).length;
-        if (gallery.files.length > 0 && imageCount !== gallery.files.length) {
-          throw new Error(
-            `같은 이름의 다른 폴더가 이미 있습니다: ${finalGalleryPath}`,
-          );
-        }
-
-        const bookId = await completeDownloadedBook(webContents, {
-          galleryId,
-          finalPath: finalGalleryPath,
-          libraryFolders,
-          downloadedMetadata,
-        });
-        return { success: true, bookId };
-      }
+    if (compressDownload) {
+      downloadArchive = await DownloadArchive.open(archiveFilePath);
+    } else {
+      await fs.mkdir(galleryDownloadPath, { recursive: true });
     }
-
-    await fs.mkdir(galleryDownloadPath, { recursive: true });
 
     const totalFiles = gallery.files.length;
 
@@ -386,7 +204,7 @@ export const handleDownloadGallery = async (
       const db = (await import("../db/index.js")).default;
       await db("DownloadQueue").where("id", queueId).update({
         total_files: totalFiles,
-        resolved_path: finalGalleryPath,
+        resolved_path: galleryDownloadPath,
       });
     }
 
@@ -418,8 +236,11 @@ export const handleDownloadGallery = async (
     };
 
     for (let i = 0; i < totalFiles; i++) {
+      if (writeError) throw writeError;
       // 취소 확인
       if (shouldCancel && shouldCancel()) {
+        await finishWrites();
+        await downloadArchive?.close();
         return {
           success: false,
           error: "다운로드가 일시정지되었습니다.",
@@ -432,15 +253,22 @@ export const handleDownloadGallery = async (
       const fileName = `${String(i + 1).padStart(6, "0")}.${fileExt}`;
       const filePath = path.join(galleryDownloadPath, fileName);
 
-      // 파일이 이미 존재하면 건너뛰기 (이어받기)
+      // Reuse completed ZIP entries or image files from older downloads.
+      let existingImage = false;
       try {
         await fs.access(filePath);
-
-        await reportProgress(i, i === totalFiles - 1);
-
-        continue; // 다음 파일로
-      } catch {
-        // 파일이 없으면 다운로드 진행
+        existingImage = true;
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      }
+      if (downloadArchive?.names.has(fileName) || existingImage) {
+        enqueueWrite(async () => {
+          if (downloadArchive && !downloadArchive.names.has(fileName)) {
+            await downloadArchive.append(fileName, await fs.readFile(filePath));
+          }
+          await reportProgress(i, i === totalFiles - 1);
+        });
+        continue;
       }
 
       let success = false;
@@ -449,8 +277,11 @@ export const handleDownloadGallery = async (
       let lastFailure = "알 수 없는 오류";
 
       while (!success && attempt < MAX_DOWNLOAD_ATTEMPTS) {
+        if (writeError) throw writeError;
         // 재시도 루프 내에서도 취소 확인
         if (shouldCancel && shouldCancel()) {
+          await finishWrites();
+          await downloadArchive?.close();
           return {
             success: false,
             error: "다운로드가 일시정지되었습니다.",
@@ -529,7 +360,15 @@ export const handleDownloadGallery = async (
           await wait(delayMs);
           continue;
         }
-        await fs.writeFile(filePath, imageBuffer);
+        // Queue only this gallery; the caller cannot start the next one until all writes finish.
+        enqueueWrite(async () => {
+          if (downloadArchive) {
+            await downloadArchive.append(fileName, imageBuffer);
+          } else {
+            await fs.writeFile(filePath, imageBuffer);
+          }
+          await reportProgress(i, i === totalFiles - 1);
+        });
         success = true;
       }
 
@@ -541,9 +380,9 @@ export const handleDownloadGallery = async (
 
       // 연속 요청으로 이미지 CDN의 일시 제한에 걸리지 않도록 간격을 둡니다.
       await wait(INTER_FILE_DELAY_MS);
-
-      await reportProgress(i, i === totalFiles - 1);
     }
+
+    await finishWrites();
 
     // info.txt 파일 생성 (설정에 따라)
     const createInfoTxtFile = configStore.get("createInfoTxtFile", true);
@@ -561,52 +400,36 @@ export const handleDownloadGallery = async (
         `\n언어: ${gallery.language?.name || "N/A"}`,
       ].join("\n");
 
-      await fs.writeFile(infoFilePath, infoContent);
+      if (downloadArchive) {
+        await downloadArchive.append("info.txt", infoContent);
+      } else {
+        await fs.writeFile(infoFilePath, infoContent);
+      }
     }
 
-    if (compressDownload) {
+    if (downloadArchive) {
       webContents.send("download-progress", {
         galleryId,
         status: "compressing",
         progress: 100,
       });
-      await createDownloadArchive(galleryDownloadPath, archiveFilePath);
+      await downloadArchive.close(true);
 
-      // 원본 폴더 삭제
+      // Remove only the legacy image folder after its archive has been published.
       await fs.rm(galleryDownloadPath, { recursive: true, force: true });
     }
 
-    if (!stagingJobPath) {
-      webContents.send("download-progress", {
-        galleryId,
-        status: "finalizing",
-        progress: 100,
-      });
-    }
+    webContents.send("download-progress", {
+      galleryId,
+      status: "finalizing",
+      progress: 100,
+    });
 
     // 다운로드된 폴더/파일이 라이브러리 폴더에 포함되는지 확인
     // 압축된 경우 압축 파일 경로로, 아닌 경우 폴더 경로로 스캔
     const scanPath = compressDownload
       ? `${galleryDownloadPath}.${compressFormat}`
       : galleryDownloadPath;
-    if (stagingJobPath) {
-      webContents.send("download-progress", {
-        galleryId,
-        status: "transferring",
-        progress: 100,
-      });
-      return {
-        success: true,
-        transfer: {
-          galleryId,
-          stagedPath: scanPath,
-          finalPath: compressDownload ? finalArchiveFilePath : finalGalleryPath,
-          stagingJobPath,
-          libraryFolders,
-          downloadedMetadata,
-        } satisfies PreparedDownloadTransfer,
-      };
-    }
     const scanStats = await fs.stat(scanPath);
     if (scanStats.isFile() && scanStats.size === 0) {
       throw new Error("생성된 압축 파일이 비어 있습니다.");
@@ -634,7 +457,15 @@ export const handleDownloadGallery = async (
 
     return { success: true, bookId };
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    await writes.onIdle();
+    const failure = writeError ?? error;
+    const message =
+      failure instanceof Error ? failure.message : String(failure);
+    try {
+      await downloadArchive?.close();
+    } catch (closeError) {
+      console.error("Error closing download archive:", closeError);
+    }
     console.error(`Error downloading gallery ${galleryId}:`, error);
     webContents.send("download-progress", {
       galleryId,

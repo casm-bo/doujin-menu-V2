@@ -1,0 +1,252 @@
+import path from "path";
+import { describe, expect, it } from "vitest";
+import { filenamifyPath } from "filenamify";
+import {
+  buildGalleryDownloadPath,
+  DEFAULT_DOWNLOAD_PATTERN,
+  formatDownloadFolderName,
+  MAX_SAFE_PATH_LENGTH,
+} from "../../../src/main/utils/index.js";
+import type { HitomiGallery } from "../../../src/types/hitomi.js";
+
+describe("formatDownloadFolderName", () => {
+  // 기본 갤러리 템플릿
+  const createGallery = (
+    overrides: Partial<HitomiGallery> = {},
+  ): HitomiGallery => ({
+    id: 123,
+    title: { display: "Test Title", japanese: null },
+    type: "manga",
+    languageName: { english: null, local: null },
+    artists: [],
+    groups: [],
+    series: [],
+    characters: [],
+    tags: [],
+    files: [],
+    publishedDate: null,
+    translations: [],
+    relatedIds: [],
+    ...overrides,
+  });
+
+  describe("기본 변수 치환", () => {
+    it("기본 패턴은 ID를 제목 앞에 둔다", () => {
+      const gallery = createGallery({
+        id: 3713170,
+        artists: ["ArtistA"],
+        title: { display: "A".repeat(200), japanese: null },
+      });
+      expect(
+        formatDownloadFolderName(gallery, DEFAULT_DOWNLOAD_PATTERN),
+      ).toMatch(/^\[ArtistA\]\[3713170\] /);
+    });
+
+    it("긴 제목이 잘려도 서로 다른 ID는 같은 경로가 되지 않는다", () => {
+      const title = { display: "Same Long Title ".repeat(20), japanese: null };
+      const name = (id: number) =>
+        filenamifyPath(
+          formatDownloadFolderName(
+            createGallery({ id, artists: ["ArtistA"], title }),
+            DEFAULT_DOWNLOAD_PATTERN,
+          ),
+          { maxLength: 100 },
+        );
+
+      expect(name(3713170)).not.toBe(name(2994679));
+      expect(name(3713170)).toContain("3713170");
+      expect(name(2994679)).toContain("2994679");
+    });
+
+    it("artist가 있으면 artist 사용", () => {
+      const gallery = createGallery({ artists: ["ArtistA"] });
+      expect(formatDownloadFolderName(gallery, "%artist% - %title%")).toBe(
+        "ArtistA - Test Title",
+      );
+    });
+
+    it("artist가 없으면 N/A 사용", () => {
+      const gallery = createGallery();
+      // N/A의 /는 전자 문자로 변환됨
+      expect(formatDownloadFolderName(gallery, "%artist% - %title%")).toBe(
+        "N／A - Test Title",
+      );
+    });
+
+    it("groups가 있으면 groups 사용", () => {
+      const gallery = createGallery({ groups: ["GroupA", "GroupB"] });
+      expect(formatDownloadFolderName(gallery, "%groups% - %title%")).toBe(
+        "GroupA, GroupB - Test Title",
+      );
+    });
+
+    it("id 치환", () => {
+      const gallery = createGallery();
+      expect(formatDownloadFolderName(gallery, "%id% - %title%")).toBe(
+        "123 - Test Title",
+      );
+    });
+
+    it("language 치환", () => {
+      const gallery = createGallery({
+        languageName: { english: "Korean", local: null },
+      });
+      expect(formatDownloadFolderName(gallery, "%language% - %title%")).toBe(
+        "Korean - Test Title",
+      );
+    });
+
+    it("series 치환", () => {
+      const gallery = createGallery({ series: ["SeriesA"] });
+      expect(formatDownloadFolderName(gallery, "%series% - %title%")).toBe(
+        "SeriesA - Test Title",
+      );
+    });
+
+    it("character 치환", () => {
+      const gallery = createGallery({ characters: ["CharacterA"] });
+      expect(formatDownloadFolderName(gallery, "%character% - %title%")).toBe(
+        "CharacterA - Test Title",
+      );
+    });
+
+    it("type 치환", () => {
+      const gallery = createGallery({ type: "manga" });
+      expect(formatDownloadFolderName(gallery, "%type% - %title%")).toBe(
+        "manga - Test Title",
+      );
+    });
+  });
+
+  describe("Fallback 문법", () => {
+    it("artist가 있으면 artist 사용 (fallback 없음)", () => {
+      const gallery = createGallery({ artists: ["ArtistA"] });
+      expect(
+        formatDownloadFolderName(gallery, "%artist|groups% - %title%"),
+      ).toBe("ArtistA - Test Title");
+    });
+
+    it("artist가 없으면 groups 사용", () => {
+      const gallery = createGallery({ groups: ["GroupA"] });
+      expect(
+        formatDownloadFolderName(gallery, "%artist|groups% - %title%"),
+      ).toBe("GroupA - Test Title");
+    });
+
+    it("artist와 groups 둘 다 없으면 N/A", () => {
+      const gallery = createGallery();
+      // N/A의 /는 전자 문자로 변환됨
+      expect(
+        formatDownloadFolderName(gallery, "%artist|groups% - %title%"),
+      ).toBe("N／A - Test Title");
+    });
+
+    it("3단계 fallback: artist → groups → series", () => {
+      const gallery = createGallery({ series: ["SeriesA"] });
+      expect(
+        formatDownloadFolderName(gallery, "%artist|groups|series% - %title%"),
+      ).toBe("SeriesA - Test Title");
+    });
+
+    it("우선순위 변경: groups가 artist보다 우선", () => {
+      const gallery = createGallery({
+        artists: ["ArtistA"],
+        groups: ["GroupA"],
+      });
+      expect(
+        formatDownloadFolderName(gallery, "%groups|artist% - %title%"),
+      ).toBe("GroupA - Test Title");
+    });
+
+    it("여러 fallback 패턴 동시 사용", () => {
+      const gallery = createGallery({
+        groups: ["GroupA"],
+        series: ["SeriesA"],
+      });
+      expect(
+        formatDownloadFolderName(
+          gallery,
+          "%artist|groups% - %character|series% - %title%",
+        ),
+      ).toBe("GroupA - SeriesA - Test Title");
+    });
+  });
+
+  describe("Windows 호환성", () => {
+    it("파이프(|) 문자를 전자 문자로 변환", () => {
+      const gallery = createGallery({ artists: ["Artist|A"] });
+      expect(formatDownloadFolderName(gallery, "%artist%")).toBe("Artist｜A");
+    });
+
+    it("슬래시(/) 문자를 전자 문자로 변환", () => {
+      const gallery = createGallery({ artists: ["Artist/A"] });
+      expect(formatDownloadFolderName(gallery, "%artist%")).toBe("Artist／A");
+    });
+
+    it("Windows 예약 문자 제거", () => {
+      const gallery = createGallery({ artists: ['Artist<>"\\:*?A'] });
+      expect(formatDownloadFolderName(gallery, "%artist%")).toBe("ArtistA");
+    });
+
+    it("여러 공백을 하나로 축소", () => {
+      const gallery = createGallery({ artists: ["Artist   A"] });
+      expect(formatDownloadFolderName(gallery, "%artist%")).toBe("Artist A");
+    });
+
+    it("앞뒤 공백 제거", () => {
+      const gallery = createGallery({ artists: ["  Artist A  "] });
+      expect(formatDownloadFolderName(gallery, "%artist%")).toBe("Artist A");
+    });
+  });
+
+  describe("nested paths", () => {
+    it("creates sanitized child folders from either separator", () => {
+      const gallery = createGallery({
+        artists: ["Artist/A"],
+        groups: ["GroupA"],
+      });
+      const expected = path.join("GroupA", "Artist／A");
+      expect(formatDownloadFolderName(gallery, "%groups%\\%artist%")).toBe(
+        expected,
+      );
+      expect(formatDownloadFolderName(gallery, "%groups%/%artist%")).toBe(
+        expected,
+      );
+    });
+
+    it("drops traversal and empty pattern segments", () => {
+      const gallery = createGallery({ artists: ["ArtistA"] });
+      expect(formatDownloadFolderName(gallery, "..\\\\%artist%")).toBe(
+        "ArtistA",
+      );
+    });
+
+    it("capitalizes names without changing titles or acronyms", () => {
+      const gallery = createGallery({
+        artists: ["hitomi SDF"],
+        title: { display: "lower title", japanese: null },
+      });
+      expect(
+        formatDownloadFolderName(gallery, "%artist%\\%title%", {
+          capitalizeNames: true,
+        }),
+      ).toBe(path.join("Hitomi SDF", "lower title"));
+    });
+
+    it("truncates only the final segment within the path budget", () => {
+      const gallery = createGallery({
+        groups: ["GroupA"],
+        title: { display: "A".repeat(300), japanese: null },
+      });
+      const result = buildGalleryDownloadPath(
+        "C:\\dl",
+        gallery,
+        "%groups%\\%title%",
+      );
+
+      expect(result.length).toBeLessThanOrEqual(MAX_SAFE_PATH_LENGTH);
+      expect(result.startsWith(path.join("C:\\dl", "GroupA"))).toBe(true);
+      expect(result.endsWith("... (123)")).toBe(true);
+    });
+  });
+});

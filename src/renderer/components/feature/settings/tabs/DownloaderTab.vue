@@ -40,7 +40,6 @@ const downloadPattern = ref("[%artist%][%id%] %title%");
 const compressDownload = ref(false);
 const compressFormat = ref<"cbz" | "zip">("cbz");
 const downloadPath = ref("");
-const hddDownloadMode = ref(false);
 const capitalizeNames = ref(false);
 const blacklistTags = ref<string[]>([]);
 const newTagType = ref("tag");
@@ -56,7 +55,6 @@ onMounted(async () => {
   compressDownload.value = config.compressDownload === true;
   compressFormat.value = (config.compressFormat as "cbz" | "zip") || "cbz";
   downloadPath.value = (config.downloadPath as string) || "";
-  hddDownloadMode.value = config.hddDownloadMode === true;
   capitalizeNames.value = config.capitalizeNames === true;
   blacklistTags.value = (config.downloaderBlacklistTags as string[]) || [];
 });
@@ -120,11 +118,6 @@ const onCompressFormatChange = (value: AcceptableValue) => {
   saveConfig("compressFormat", value);
 };
 
-const onHddDownloadModeChange = (value: boolean) => {
-  hddDownloadMode.value = value;
-  saveConfig("hddDownloadMode", value);
-};
-
 const onCapitalizeNamesChange = (value: boolean) => {
   capitalizeNames.value = value;
   saveConfig("capitalizeNames", value);
@@ -158,18 +151,6 @@ const onCapitalizeNamesChange = (value: boolean) => {
             열기
           </Button>
         </div>
-      </SettingItem>
-      <SettingItem
-        label-for="hdd-download-mode"
-        title="HDD 모드"
-        subtitle="다운로드 폴더가 HDD일 때 사용합니다. SSD에서 다운로드와 압축을 처리해 HDD 부하를 줄이고 성능을 높인 뒤 완성된 파일만 HDD로 옮깁니다."
-      >
-        <Switch
-          id="hdd-download-mode"
-          :model-value="hddDownloadMode"
-          class="justify-self-end"
-          @update:model-value="onHddDownloadModeChange"
-        />
       </SettingItem>
       <SettingItem
         label-for="create-info-txt-file"

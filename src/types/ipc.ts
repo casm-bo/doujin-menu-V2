@@ -128,7 +128,6 @@ export interface SeriesCollectionWithBooks extends SeriesCollection {
 export type DownloadQueueStatus =
   | "pending"
   | "downloading"
-  | "transferring"
   | "completed"
   | "failed"
   | "paused";

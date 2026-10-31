@@ -61,7 +61,6 @@ export interface Config {
   downloaderPopularity?: "" | "day" | "week" | "month" | "year";
   subscriptionEnabled?: boolean;
   capitalizeNames?: boolean;
-  hddDownloadMode?: boolean;
   libraryViewSettings?: LibraryViewSettings;
   seriesDetectionSettings?: SeriesDetectionSettings;
   seriesViewSettings?: SeriesViewSettings;
@@ -110,7 +109,6 @@ const defaults: Config = {
   downloaderPopularity: "",
   subscriptionEnabled: true,
   capitalizeNames: false,
-  hddDownloadMode: false,
   libraryViewSettings: {
     sortBy: "added_at",
     sortOrder: "desc",
@@ -156,6 +154,7 @@ const legacyStore = store as unknown as {
   get: (key: string, defaultValue: string) => string;
   delete: (key: string) => void;
 };
+legacyStore.delete("hddDownloadMode");
 const legacyPath = legacyStore.get("externalProgramPath", "");
 if (legacyPath) {
   store.set("externalImageViewerPath", legacyPath);

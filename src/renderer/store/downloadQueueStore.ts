@@ -13,9 +13,7 @@ export const useDownloadQueueStore = defineStore("downloadQueue", () => {
   // 계산된 속성
   const queueCount = computed(() => queue.value.length);
   const activeDownloads = computed(() =>
-    queue.value.filter(
-      (item) => item.status === "downloading" || item.status === "transferring",
-    ),
+    queue.value.filter((item) => item.status === "downloading"),
   );
   const pendingDownloads = computed(() =>
     queue.value.filter((item) => item.status === "pending"),
