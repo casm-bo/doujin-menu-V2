@@ -113,6 +113,21 @@ afterEach(() => {
 });
 
 describe("preview loading", () => {
+  it("lets detail previews grow through all pages instead of nesting a scrollbar", async () => {
+    localStorage.setItem("preview-view-mode", "grid");
+    const { host, state } = mount(PagePreview, {
+      pages: Array.from({ length: 60 }, (_, index) => `/${index}.jpg`),
+      expandGrid: true,
+    });
+    await flush();
+    const grid = host.querySelector(".grid")!;
+    expect(grid).not.toBeNull();
+    expect(grid.classList.contains("overflow-y-auto")).toBe(false);
+    expect(grid.querySelectorAll("button")).toHaveLength(60);
+    state.expandGrid = false;
+    await flush();
+    expect(grid.classList.contains("overflow-y-auto")).toBe(true);
+  });
   it("opens the clicked local page in fullscreen and returns to the details", async () => {
     api.invoke.mockImplementation(async (channel: string) =>
       channel === "is-fullscreen-window" ? false : { success: true, bookId: 7 },

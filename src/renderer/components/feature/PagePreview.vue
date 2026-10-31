@@ -14,6 +14,7 @@ const props = withDefaults(
     error?: string | null;
     interactive?: boolean;
     selectLabel?: string;
+    expandGrid?: boolean;
   }>(),
   {
     referer: "",
@@ -21,6 +22,7 @@ const props = withDefaults(
     error: null,
     interactive: true,
     selectLabel: "페이지부터 읽기",
+    expandGrid: false,
   },
 );
 
@@ -164,7 +166,10 @@ onBeforeUnmount(() => observer?.disconnect());
     </div>
     <div
       v-else
-      class="grid max-h-[var(--page-preview-height,20rem)] grid-cols-3 gap-2 overflow-y-auto rounded-md border p-2 sm:grid-cols-5"
+      class="grid grid-cols-3 gap-2 rounded-md border p-2 sm:grid-cols-5"
+      :class="{
+        'max-h-[var(--page-preview-height,20rem)] overflow-y-auto': !expandGrid,
+      }"
     >
       <button
         v-for="(page, index) in pages"

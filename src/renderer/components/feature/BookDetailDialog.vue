@@ -224,7 +224,7 @@ const searchInDownloader = (text: string, prefix: string) => {
 <template>
   <Dialog v-model:open="open">
     <DialogContent
-      class="flex max-h-[90vh] w-[calc(100vw-2rem)] flex-col overflow-hidden sm:max-w-[900px]"
+      class="flex h-[90dvh] max-h-[90dvh] w-[calc(100vw-2rem)] flex-col overflow-hidden sm:max-w-[900px]"
     >
       <DialogHeader>
         <DialogTitle>책 상세</DialogTitle>
@@ -431,6 +431,7 @@ const searchInDownloader = (text: string, prefix: string) => {
 
         <PagePreview
           :pages="previewPages"
+          expand-grid
           @select-page="openReader($event + 1)"
         />
       </div>
