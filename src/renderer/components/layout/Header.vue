@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ipcRenderer } from "@/api";
+import { APP_TITLE } from "@/lib/appTitle";
 import DownloadQueuePopover from "@/components/feature/downloader/DownloadQueuePopover.vue";
 import { Icon } from "@iconify/vue";
 import { onMounted, onUnmounted, ref } from "vue";
@@ -37,7 +38,7 @@ onUnmounted(() => {
   >
     <div class="flex items-center gap-2">
       <img src="@/assets/logo.png" alt="" class="size-5 rounded-sm" />
-      <h1 class="text-foreground text-sm font-semibold">동인집</h1>
+      <h1 class="text-foreground text-sm font-semibold">{{ APP_TITLE }}</h1>
     </div>
 
     <div class="flex h-full items-center">

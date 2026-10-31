@@ -1,0 +1,7 @@
+{
+  "extends": "./electron-builder.json",
+  "productName": "동인집 DEBUG",
+  "portable": {
+    "artifactName": "doujinzip-debug-${version}.${ext}"
+  }
+}

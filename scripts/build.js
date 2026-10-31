@@ -18,7 +18,7 @@ execFileSync(
 function buildRenderer() {
   return build({
     configFile: join(import.meta.dirname, "..", "vite.config.js"),
-    mode: "production",
+    mode: process.argv.includes("--debug") ? "debug" : "production",
   });
 }
 

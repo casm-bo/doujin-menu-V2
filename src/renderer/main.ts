@@ -10,6 +10,9 @@ import { createApp } from "vue";
 import { ipcRenderer } from "./api";
 import App from "./App.vue";
 import { router } from "./router";
+import { APP_TITLE } from "./lib/appTitle";
+
+document.title = APP_TITLE;
 
 const pinia = createPinia();
 const app = createApp(App);

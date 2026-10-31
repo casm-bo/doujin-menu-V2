@@ -24,7 +24,7 @@
     "build:port": "vue-tsc --noEmit && node scripts/build.js && electron-builder --win portable --publish=never",
     "build:fast": "node scripts/build.js && electron-builder --win --publish=never",
     "build:port:fast": "node scripts/build.js && electron-builder --win portable --publish=never",
-    "build:debug": "node scripts/build.js && DEBUG=electron-builder electron-builder --win portable --publish=never",
+    "build:debug": "node scripts/build.js --debug && electron-builder --config electron-builder.debug.json --win portable --publish=never",
     "build:win": "vue-tsc --noEmit && node scripts/build.js && electron-builder --win --publish=never",
     "build:port:win": "vue-tsc --noEmit && node scripts/build.js && electron-builder --win portable --publish=never",
     "prepare": "husky",
