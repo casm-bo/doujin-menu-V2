@@ -65,12 +65,12 @@ const saveConfig = async (key: string, value: unknown) => {
 
 const theme = useColorMode();
 const { setTheme } = useTheme();
-const colorTheme = ref<ColorTheme>("cosmic-night");
+const colorTheme = ref<ColorTheme>("android-default");
 
 onMounted(async () => {
   const config = await ipcRenderer.invoke("get-config");
   theme.value = (config.theme as "light" | "dark" | "auto") || "auto";
-  colorTheme.value = (config.colorTheme as ColorTheme) || "cosmic-night";
+  colorTheme.value = (config.colorTheme as ColorTheme) || "android-default";
 });
 
 const onThemeChange = (newTheme: AcceptableValue) => {

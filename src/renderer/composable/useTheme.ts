@@ -3,7 +3,7 @@ import { ipcRenderer } from "../api";
 import type { ColorTheme } from "../types/themes";
 
 // 현재 적용된 테마
-const currentTheme = ref<ColorTheme>("cosmic-night");
+const currentTheme = ref<ColorTheme>("android-default");
 
 // 테마 CSS 파일을 동적으로 로드하는 함수
 const loadThemeCSS = (theme: ColorTheme) => {
@@ -33,13 +33,13 @@ export const useTheme = () => {
   const initializeTheme = async () => {
     try {
       const config = await ipcRenderer.invoke("get-config");
-      const savedTheme = (config.colorTheme as ColorTheme) || "cosmic-night";
+      const savedTheme = (config.colorTheme as ColorTheme) || "android-default";
       currentTheme.value = savedTheme;
       loadThemeCSS(savedTheme);
     } catch (error) {
       console.error("테마 초기화 실패:", error);
       // 기본 테마 적용
-      loadThemeCSS("cosmic-night");
+      loadThemeCSS("android-default");
     }
   };
 

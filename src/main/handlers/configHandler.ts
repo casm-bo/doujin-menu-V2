@@ -96,7 +96,7 @@ export interface Config {
 
 const defaults: Config = {
   theme: "auto",
-  colorTheme: "cosmic-night",
+  colorTheme: "android-default",
   galleryBorders: DEFAULT_GALLERY_BORDERS,
   autoLoadLibrary: true,
   libraryFolders: [],

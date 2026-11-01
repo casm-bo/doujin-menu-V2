@@ -1,6 +1,7 @@
 // 테마 목록과 표시 이름 매핑
 export const themeList = [
-  { value: "cosmic-night", label: "Cosmic Night (기본)" },
+  { value: "android-default", label: "안드로이드 기본" },
+  { value: "cosmic-night", label: "Cosmic Night" },
   { value: "amber-minimal", label: "Amber Minimal" },
   { value: "amethyst-haze", label: "Amethyst Haze" },
   { value: "bold-tech", label: "Bold Tech" },

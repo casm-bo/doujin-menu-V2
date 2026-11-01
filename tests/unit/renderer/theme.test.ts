@@ -1,0 +1,34 @@
+// @vitest-environment jsdom
+import { beforeEach, describe, expect, it, vi } from "vitest";
+const invoke = vi.hoisted(() => vi.fn());
+vi.mock("@/api", () => ({ ipcRenderer: { invoke } }));
+import { useTheme } from "../../../src/renderer/composable/useTheme";
+
+describe("desktop theme loading", () => {
+  beforeEach(() => {
+    document.head.innerHTML = "";
+    invoke.mockReset();
+  });
+  it("loads Android by default without overwriting settings", async () => {
+    invoke.mockResolvedValue({});
+    const theme = useTheme();
+    await theme.initializeTheme();
+    expect(theme.currentTheme.value).toBe("android-default");
+    expect(document.querySelector("link")?.getAttribute("href")).toBe(
+      "/assets/themes/android-default.css",
+    );
+    expect(invoke).toHaveBeenCalledTimes(1);
+  });
+  it("preserves saved themes and replaces only the theme stylesheet", async () => {
+    invoke.mockResolvedValue({ colorTheme: "catppuccin" });
+    const theme = useTheme();
+    await theme.initializeTheme();
+    expect(theme.currentTheme.value).toBe("catppuccin");
+    await theme.setTheme("android-default");
+    expect(document.querySelectorAll("#theme-css")).toHaveLength(1);
+    expect(invoke).toHaveBeenLastCalledWith("set-config", {
+      key: "colorTheme",
+      value: "android-default",
+    });
+  });
+});
