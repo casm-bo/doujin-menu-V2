@@ -22,7 +22,7 @@ it("cycles series states, clears selection only on changes and preserves other c
       }),
   });
   app.mount(host);
-  const [all, series] = host.querySelectorAll("button");
+  const [all, series] = Array.from(host.querySelectorAll("button"));
   all.click();
   await nextTick();
   expect(fetch).not.toHaveBeenCalled();
