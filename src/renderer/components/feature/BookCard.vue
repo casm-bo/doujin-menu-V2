@@ -284,6 +284,7 @@ const { borderStyle } = useGalleryBorders();
           )
         "
         :data-book-id="book.id"
+        :data-series-id="book.series_collection_id || undefined"
         class="flex h-full cursor-pointer flex-col gap-0 overflow-hidden rounded-xl py-0 ring-0 transition-colors duration-150"
         :class="{ 'bg-selected-card ring-primary ring-2': selected }"
         @click="handleCardClick"
@@ -366,6 +367,7 @@ const { borderStyle } = useGalleryBorders();
         <CardFooter class="flex-grow flex-col items-start gap-1 p-2">
           <button
             type="button"
+            data-detail-trigger
             class="line-clamp-2 min-h-10 w-full text-left text-sm font-semibold"
             :title="displayTitle"
             @click.stop="handleCardClick"

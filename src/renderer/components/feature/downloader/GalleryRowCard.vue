@@ -71,6 +71,7 @@ const { borderStyle } = useGalleryBorders();
 
 <template>
   <div
+    :data-gallery-id="gallery.id"
     class="bg-card text-card-foreground flex min-w-0 cursor-pointer items-start gap-3 rounded-xl border p-3 transition-colors"
     :class="{
       'border-destructive': isDownloadFailed,
@@ -111,6 +112,7 @@ const { borderStyle } = useGalleryBorders();
       </p>
       <button
         type="button"
+        data-detail-trigger
         class="order-first line-clamp-2 min-h-10 text-left text-sm font-semibold"
         @click.stop="emit('preview-gallery', gallery)"
       >

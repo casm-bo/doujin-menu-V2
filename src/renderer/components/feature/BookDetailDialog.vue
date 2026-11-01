@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useDetailReturnFocus } from "@/composable/useDetailReturnFocus";
 import {
   getPresentation,
   getBook,
@@ -29,6 +30,10 @@ const props = defineProps<{
   suspendWhileViewing?: boolean;
 }>();
 
+const restoreFocus = useDetailReturnFocus(
+  () => props.modelValue,
+  () => `[data-book-id="${props.book?.id}"]`,
+);
 const emit = defineEmits<{
   "update:modelValue": [value: boolean];
   updated: [];
@@ -241,7 +246,8 @@ const searchInDownloader = (text: string, prefix: string) => {
 <template>
   <Dialog v-model:open="open">
     <DialogContent
-      class="flex h-[90dvh] max-h-[90dvh] w-[calc(100vw-2rem)] flex-col overflow-hidden sm:max-w-[900px]"
+      class="bg-card flex h-[90dvh] max-h-[90dvh] w-[calc(100vw-2rem)] flex-col overflow-hidden rounded-[20px] sm:max-w-[900px]"
+      @close-auto-focus="restoreFocus"
     >
       <DialogHeader>
         <DialogTitle>책 상세</DialogTitle>
@@ -257,7 +263,7 @@ const searchInDownloader = (text: string, prefix: string) => {
             <img
               :src="getThumbnailUrl(book.cover_path)"
               alt="Book Cover"
-              class="aspect-[3/4] w-full rounded-lg object-contain shadow"
+              class="aspect-[3/4] w-full rounded-xl object-contain"
             />
             <CoverActions
               :target="{ kind: 'book', id: book.id }"
@@ -267,7 +273,7 @@ const searchInDownloader = (text: string, prefix: string) => {
             />
           </div>
           <div class="flex min-w-0 flex-col gap-3">
-            <div class="flex items-start justify-between gap-3">
+            <div class="flex flex-wrap items-start justify-between gap-3">
               <div v-if="isEditing" class="relative flex-1">
                 <Input
                   v-model="draft.title"
@@ -283,7 +289,10 @@ const searchInDownloader = (text: string, prefix: string) => {
                   <Icon icon="solar:close-circle-bold" class="size-4" />
                 </button>
               </div>
-              <h3 v-else class="text-2xl leading-tight font-bold">
+              <h3
+                v-else
+                class="text-2xl leading-tight font-semibold break-words"
+              >
                 {{ book.title || "N/A" }}
               </h3>
               <div class="flex shrink-0 gap-2">
@@ -409,7 +418,7 @@ const searchInDownloader = (text: string, prefix: string) => {
 
         <div class="space-y-2">
           <h4 class="font-semibold">상세정보</h4>
-          <div class="bg-muted/50 space-y-2 rounded-lg p-4">
+          <div class="bg-toolbar space-y-2 rounded-xl p-4">
             <div class="flex items-center justify-between text-sm">
               <span class="text-muted-foreground">페이지 수</span>
               <span class="font-medium">{{ book.page_count || "N/A" }}</span>

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useDetailReturnFocus } from "@/composable/useDetailReturnFocus";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -48,6 +49,10 @@ interface Props {
 }
 
 const props = defineProps<Props>();
+const restoreFocus = useDetailReturnFocus(
+  () => props.open,
+  () => `[data-series-id="${props.series?.id}"]`,
+);
 const emit = defineEmits<{
   "update:open": [value: boolean];
   updated: [];
@@ -460,7 +465,8 @@ const excludeBookIds = computed(() => books.value.map((book) => book.id));
 <template>
   <Dialog :open="dialogOpen" @update:open="updateDialogOpen">
     <DialogContent
-      class="flex max-h-[90vh] w-[calc(100vw-2rem)] flex-col overflow-hidden sm:max-w-[900px]"
+      class="bg-card flex max-h-[90vh] w-[calc(100vw-2rem)] flex-col overflow-hidden rounded-[20px] sm:max-w-[900px]"
+      @close-auto-focus="restoreFocus"
     >
       <DialogHeader>
         <DialogTitle>시리즈 상세</DialogTitle>
@@ -480,7 +486,7 @@ const excludeBookIds = computed(() => books.value.map((book) => book.id));
                   )
                 "
                 :alt="series?.name"
-                class="aspect-[3/4] w-full rounded-lg object-contain shadow"
+                class="aspect-[3/4] w-full rounded-xl object-contain"
               />
               <CoverActions
                 v-if="series"
@@ -491,7 +497,7 @@ const excludeBookIds = computed(() => books.value.map((book) => book.id));
               />
             </div>
             <div class="flex min-w-0 flex-1 flex-col gap-3">
-              <div class="flex items-start justify-between gap-3">
+              <div class="flex flex-wrap items-start justify-between gap-3">
                 <Input
                   v-if="isEditing"
                   v-model="editName"

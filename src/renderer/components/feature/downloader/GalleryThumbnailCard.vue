@@ -70,6 +70,7 @@ const { getTagDisplayInfo } = useTagDisplay();
 
 <template>
   <article
+    :data-gallery-id="gallery.id"
     class="bg-card text-card-foreground flex h-full min-w-0 cursor-pointer flex-col overflow-hidden rounded-xl border"
     :class="{ 'bg-selected-card ring-primary ring-2': selected }"
     :style="borderStyle()"
@@ -101,6 +102,7 @@ const { getTagDisplayInfo } = useTagDisplay();
     <div class="flex min-w-0 flex-1 flex-col gap-1 p-3">
       <button
         type="button"
+        data-detail-trigger
         class="line-clamp-2 min-h-10 text-left text-sm font-semibold"
         :title="displayTitle"
         @click.stop="emit('preview-gallery', gallery)"

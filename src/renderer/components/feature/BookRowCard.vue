@@ -199,6 +199,7 @@ const { borderStyle } = useGalleryBorders();
 <template>
   <div
     :data-book-id="book.id"
+    :data-series-id="book.series_collection_id || undefined"
     :style="
       borderStyle(
         !!book.series_collection_id,
@@ -249,6 +250,7 @@ const { borderStyle } = useGalleryBorders();
       <!-- 제목 -->
       <button
         type="button"
+        data-detail-trigger
         class="line-clamp-2 min-h-10 text-left text-sm font-semibold"
         @click.stop="handleCardClick"
       >

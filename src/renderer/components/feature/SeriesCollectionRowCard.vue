@@ -35,6 +35,7 @@ const { borderStyle } = useGalleryBorders();
 
 <template>
   <div
+    :data-series-id="series.id"
     :style="borderStyle(true, !!series.is_favorite)"
     class="bg-card hover:bg-accent/50 flex cursor-pointer items-center gap-4 rounded-xl border p-3 transition-colors"
     :class="{ 'bg-selected-card ring-primary ring-2': selected }"
@@ -70,6 +71,7 @@ const { borderStyle } = useGalleryBorders();
       <div class="flex items-center gap-2">
         <button
           type="button"
+          data-detail-trigger
           class="line-clamp-2 min-h-10 text-left text-sm font-semibold"
           :title="series.name"
           @click.stop="emit('click')"

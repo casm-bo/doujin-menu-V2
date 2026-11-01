@@ -31,37 +31,37 @@ const getStatusInfo = (status: DownloadQueueItem["status"]) => {
     case "pending":
       return {
         label: "대기 중",
-        color: "text-blue-500",
+        color: "text-primary",
         icon: "solar:clock-circle-bold-duotone",
       };
     case "downloading":
       return {
         label: "다운로드 중",
-        color: "text-green-500",
+        color: "text-primary",
         icon: "solar:download-minimalistic-bold-duotone",
       };
     case "completed":
       return {
         label: "완료",
-        color: "text-green-600",
+        color: "text-primary",
         icon: "solar:check-circle-bold-duotone",
       };
     case "failed":
       return {
         label: "실패",
-        color: "text-red-500",
+        color: "text-destructive",
         icon: "solar:close-circle-bold-duotone",
       };
     case "paused":
       return {
         label: "일시정지",
-        color: "text-yellow-500",
+        color: "text-muted-foreground",
         icon: "solar:pause-circle-bold-duotone",
       };
     default:
       return {
         label: "알 수 없음",
-        color: "text-gray-500",
+        color: "text-muted-foreground",
         icon: "solar:question-circle-bold-duotone",
       };
   }
@@ -139,23 +139,23 @@ const sortedQueue = computed(() => {
 <template>
   <Popover>
     <PopoverTrigger as-child>
-      <Button variant="outline" size="sm" class="relative">
+      <Button variant="outline" size="sm" class="relative min-h-8 rounded-full">
         <Icon icon="solar:download-square-bold-duotone" class="h-5 w-5" />
         <span>다운로드 큐</span>
         <Badge
           v-if="activeQueueCount > 0"
-          class="absolute -top-2 -right-2 flex h-5 min-w-5 items-center justify-center rounded-full bg-blue-500 px-1.5 text-xs text-white"
+          class="bg-primary text-primary-foreground absolute -top-2 -right-2 flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-xs"
           >{{ activeQueueCount }}</Badge
         >
       </Button>
     </PopoverTrigger>
     <PopoverContent
-      class="flex max-h-[600px] w-[600px] flex-col overflow-hidden p-0"
+      class="bg-card flex max-h-[min(600px,85dvh)] w-[min(600px,calc(100vw-2rem))] flex-col overflow-hidden rounded-xl p-0"
       align="end"
     >
-      <div class="bg-background flex-shrink-0 border-b p-4">
-        <div class="flex items-center justify-between">
-          <h3 class="flex items-center gap-2 text-lg font-semibold">
+      <div class="bg-toolbar flex-shrink-0 border-b p-4">
+        <div class="flex flex-wrap items-center justify-between gap-2">
+          <h3 class="flex items-center gap-2 text-xl font-semibold">
             <Icon icon="solar:download-square-bold-duotone" class="h-5 w-5" />
             다운로드 큐
             <Badge variant="secondary">{{ queue.length }}개</Badge>
@@ -193,7 +193,7 @@ const sortedQueue = computed(() => {
             class="mx-auto mb-4 h-16 w-16 opacity-50"
           />
           <p>다운로드 큐가 비어있습니다.</p>
-          <p class="mt-2 text-sm">다운로더에서 작품을 다운로드하세요.</p>
+          <p class="mt-2 text-sm">검색에서 작품을 다운로드하세요.</p>
         </div>
 
         <div v-else class="divide-y">
@@ -204,7 +204,7 @@ const sortedQueue = computed(() => {
           >
             <!-- 썸네일 -->
             <div
-              class="bg-muted relative h-28 w-20 flex-shrink-0 overflow-hidden rounded-md"
+              class="bg-muted relative h-24 w-[68px] flex-shrink-0 overflow-hidden rounded-xl"
             >
               <ProxiedImage
                 v-if="item.thumbnail_url"
@@ -225,7 +225,7 @@ const sortedQueue = computed(() => {
             <!-- 정보 -->
             <div class="min-w-0 flex-1">
               <h4
-                class="truncate text-sm font-medium"
+                class="line-clamp-2 text-sm font-semibold"
                 :title="item.gallery_title"
               >
                 {{ item.gallery_title }}
@@ -274,7 +274,7 @@ const sortedQueue = computed(() => {
                 class="bg-muted mt-2 h-1.5 w-full rounded-full"
               >
                 <div
-                  class="h-1.5 rounded-full bg-blue-500 transition-all"
+                  class="bg-primary h-1.5 rounded-full transition-all"
                   :style="{ width: `${item.progress}%` }"
                 ></div>
               </div>
@@ -282,7 +282,7 @@ const sortedQueue = computed(() => {
               <!-- 에러 메시지 -->
               <p
                 v-if="item.error_message"
-                class="mt-1 truncate text-xs text-red-500"
+                class="text-destructive mt-1 line-clamp-2 text-xs"
                 :title="item.error_message"
               >
                 {{ item.error_message }}
@@ -296,7 +296,9 @@ const sortedQueue = computed(() => {
                 v-if="item.status === 'downloading'"
                 variant="ghost"
                 size="icon"
-                class="h-7 w-7"
+                class="size-9 rounded-full"
+                aria-label="일시정지"
+                title="일시정지"
                 @click="handlePause(item.id)"
               >
                 <Icon icon="solar:pause-bold-duotone" class="h-4 w-4" />
@@ -307,7 +309,9 @@ const sortedQueue = computed(() => {
                 v-if="item.status === 'paused'"
                 variant="ghost"
                 size="icon"
-                class="h-7 w-7"
+                class="size-9 rounded-full"
+                aria-label="재개"
+                title="재개"
                 @click="handleResume(item.id)"
               >
                 <Icon icon="solar:play-bold-duotone" class="h-4 w-4" />
@@ -318,7 +322,9 @@ const sortedQueue = computed(() => {
                 v-if="item.status === 'failed'"
                 variant="ghost"
                 size="icon"
-                class="h-7 w-7"
+                class="size-9 rounded-full"
+                aria-label="재시도"
+                title="재시도"
                 @click="handleRetry(item.id)"
               >
                 <Icon icon="solar:restart-bold-duotone" class="h-4 w-4" />
@@ -329,7 +335,9 @@ const sortedQueue = computed(() => {
                 v-if="item.status !== 'downloading'"
                 variant="ghost"
                 size="icon"
-                class="text-destructive h-7 w-7"
+                class="text-destructive size-9 rounded-full"
+                aria-label="큐에서 제거"
+                title="큐에서 제거"
                 @click="handleRemove(item.id)"
               >
                 <Icon

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useDetailReturnFocus } from "@/composable/useDetailReturnFocus";
 import { getBook, ipcRenderer } from "@/api";
 import ProxiedImage from "@/components/common/ProxiedImage.vue";
 import { Button } from "@/components/ui/button";
@@ -26,6 +27,10 @@ const props = defineProps<{
   downloadStatus?: string;
 }>();
 
+const restoreFocus = useDetailReturnFocus(
+  () => props.open,
+  () => `[data-gallery-id="${props.gallery?.id}"]`,
+);
 const emit = defineEmits<{
   "update:open": [value: boolean];
 }>();
@@ -201,13 +206,14 @@ watch(
 <template>
   <Dialog v-model:open="dialogOpen">
     <DialogContent
-      class="flex h-[90dvh] max-h-[90dvh] w-[calc(100vw-2rem)] flex-col overflow-hidden sm:max-w-[900px]"
-      @close-auto-focus.prevent
+      class="bg-card flex h-[90dvh] max-h-[90dvh] w-[calc(100vw-2rem)] flex-col overflow-hidden rounded-[20px] sm:max-w-[900px]"
+      @close-auto-focus="restoreFocus"
     >
-      <DialogHeader>
+      <DialogHeader class="flex-row flex-wrap items-center gap-3 pr-6">
         <DialogTitle>다운로드 상세</DialogTitle>
         <Button
           size="sm"
+          class="ml-auto min-h-9 rounded-full"
           :disabled="!gallery || downloadBlocked"
           @click="downloadGallery"
           >{{ downloadLabel }}</Button
@@ -221,7 +227,7 @@ watch(
         <div
           class="grid grid-cols-1 items-start gap-5 sm:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]"
         >
-          <div class="aspect-[3/4] w-full overflow-hidden rounded-lg shadow">
+          <div class="bg-muted aspect-[3/4] w-full overflow-hidden rounded-xl">
             <img
               v-if="useLocalPreview"
               :src="previewImageUrls[0]"
@@ -236,11 +242,12 @@ watch(
               :referer="refererUrl"
               :alt="displayTitle"
               :lazy="false"
+              fit="contain"
             />
           </div>
 
           <div class="flex min-w-0 flex-1 flex-col gap-3">
-            <h2 class="text-2xl leading-tight font-bold">
+            <h2 class="text-2xl leading-tight font-semibold break-words">
               {{ displayTitle || "N/A" }}
             </h2>
             <p class="text-muted-foreground text-xs">
@@ -318,7 +325,7 @@ watch(
 
         <div class="space-y-2">
           <h4 class="font-semibold">상세정보</h4>
-          <div class="bg-muted/50 space-y-2 rounded-lg p-4">
+          <div class="bg-toolbar space-y-2 rounded-xl p-4">
             <div class="flex items-center justify-between text-sm">
               <span class="text-muted-foreground">페이지 수</span>
               <span class="font-medium">{{ gallery.files.length }}</span>
