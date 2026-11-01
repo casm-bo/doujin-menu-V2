@@ -138,7 +138,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="proxied-image-wrapper h-full w-full min-w-40">
+  <div class="proxied-image-wrapper h-full w-full min-w-0">
     <!-- 로딩 중 스켈레톤 UI -->
     <div
       v-if="(isLoading && !localSrc) || isRetrying"

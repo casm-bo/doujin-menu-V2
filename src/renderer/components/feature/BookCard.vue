@@ -11,7 +11,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Badge, LightBadge } from "@/components/ui/badge";
+import { Badge } from "@/components/ui/badge";
 import { CardContent, CardFooter, LightCard } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
@@ -147,7 +147,6 @@ const toggleCardFavorite = async () => {
 const thumbnailKey = ref(0);
 
 // 태그 영역 펼침 상태
-const isTagsExpanded = ref(false);
 
 const coverUrl = computed(() => {
   return api.getThumbnailUrl(
@@ -285,16 +284,29 @@ const { borderStyle } = useGalleryBorders();
           )
         "
         :data-book-id="book.id"
-        class="flex h-full cursor-pointer flex-col gap-0 overflow-hidden py-0 ring-0 transition-all duration-150 hover:shadow-lg"
-        :class="{ 'ring-primary scale-[0.98] ring-2': selected }"
+        class="flex h-full cursor-pointer flex-col gap-0 overflow-hidden rounded-xl py-0 ring-0 transition-colors duration-150"
+        :class="{ 'bg-selected-card ring-primary ring-2': selected }"
         @click="handleCardClick"
       >
         <CardContent class="relative p-0">
+          <span
+            v-if="selected"
+            class="bg-selected-cover pointer-events-none absolute inset-0 z-[1]"
+          />
           <img
             :src="coverUrl"
             :alt="displayTitle"
-            class="aspect-[2/3] h-auto w-full object-cover"
+            class="bg-muted aspect-[0.72] h-auto w-full object-cover"
             :class="{ 'opacity-50 grayscale': isOffline }"
+            @load="
+              (event) =>
+                ((event.target as HTMLImageElement).style.visibility =
+                  'visible')
+            "
+            @error="
+              (event) =>
+                ((event.target as HTMLImageElement).style.visibility = 'hidden')
+            "
           />
           <Badge
             v-if="isOffline"
@@ -352,12 +364,14 @@ const { borderStyle } = useGalleryBorders();
           </button>
         </CardContent>
         <CardFooter class="flex-grow flex-col items-start gap-1 p-2">
-          <p
-            class="w-full truncate text-sm font-semibold"
+          <button
+            type="button"
+            class="line-clamp-2 min-h-10 w-full text-left text-sm font-semibold"
             :title="displayTitle"
+            @click.stop="handleCardClick"
           >
             {{ displayTitle }}
-          </p>
+          </button>
           <!-- 작가/그룹 정보 -->
           <p
             v-if="!hasCreatorInfo"
@@ -367,11 +381,11 @@ const { borderStyle } = useGalleryBorders();
           </p>
           <div
             v-if="hasCreatorInfo"
-            class="text-muted-foreground flex w-full items-center gap-2 text-xs"
+            class="text-primary flex w-full min-w-0 items-center gap-2 text-xs"
           >
             <div
               v-if="validArtists.length > 0"
-              class="flex min-w-0 shrink-0 items-center gap-1"
+              class="flex min-w-0 items-center gap-1"
             >
               <Icon
                 icon="solar:user-bold-duotone"
@@ -402,46 +416,37 @@ const { borderStyle } = useGalleryBorders();
               </span>
             </div>
           </div>
-          <!-- 태그 영역: 기본 한 줄 (overflow hidden), + 버튼으로 펼치기 -->
+          <p class="text-muted-foreground w-full truncate text-xs">
+            {{ book.type }} ·
+            {{ book.language_name_local || book.language_name_english }} ·
+            {{ book.page_count }} 페이지
+          </p>
           <div
-            v-if="!hideTags && book.tags?.length"
-            class="flex w-full items-start gap-1"
-            :class="
-              isTagsExpanded ? 'flex-wrap' : 'flex-nowrap overflow-hidden'
-            "
+            v-if="!hideTags"
+            class="flex max-h-[5.25rem] min-h-[5.25rem] w-full flex-wrap content-start gap-1 overflow-hidden"
           >
-            <div
-              class="flex min-w-0 flex-1 items-center gap-1"
-              :class="
-                isTagsExpanded ? 'flex-wrap' : 'flex-nowrap overflow-hidden'
-              "
-            >
-              <LightBadge
-                v-for="tag in book.tags"
-                :key="tag.name"
-                :class="getTagDisplayInfo(tag).className"
-                class="flex-shrink-0"
-                @click.prevent.stop="handleTagClick(tag)"
-                @contextmenu.prevent.stop="emit('excludeTag', tag.name)"
-              >
-                {{ getTagDisplayInfo(tag).displayText }}
-              </LightBadge>
-            </div>
             <button
-              v-if="book.tags.length > 1"
-              class="text-muted-foreground hover:text-foreground flex-shrink-0 transition-colors"
-              @click.prevent.stop="isTagsExpanded = !isTagsExpanded"
+              v-for="tag in book.tags"
+              :key="tag.name"
+              type="button"
+              :class="getTagDisplayInfo(tag).className"
+              class="max-w-full truncate rounded-full"
+              @click.stop="handleTagClick(tag)"
+              @contextmenu.prevent.stop="emit('excludeTag', tag.name)"
             >
-              <Icon
-                :icon="
-                  isTagsExpanded
-                    ? 'solar:minus-circle-bold-duotone'
-                    : 'solar:add-circle-bold-duotone'
-                "
-                class="h-[22px] w-[22px]"
-              />
+              {{ getTagDisplayInfo(tag).displayText }}
             </button>
           </div>
+          <p
+            v-if="book.series_collection_id && book.series_book_count != null"
+            class="text-muted-foreground text-xs"
+          >
+            시리즈 {{ book.series_book_count }}권<span
+              v-if="book.series_read_count != null"
+            >
+              · {{ book.series_read_count }}권 읽음</span
+            >
+          </p>
         </CardFooter>
       </LightCard>
     </ContextMenuTrigger>

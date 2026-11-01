@@ -1,4 +1,9 @@
 <script setup lang="ts">
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { useGalleryBorders } from "@/composable/useGalleryBorders";
 import * as api from "@/api";
 import {
@@ -202,8 +207,8 @@ const { borderStyle } = useGalleryBorders();
           : book.is_favorite),
       )
     "
-    class="hover:bg-muted/50 flex cursor-pointer items-center border-b p-2 transition-all duration-150"
-    :class="{ 'ring-primary bg-accent/40 translate-x-1 ring-2': selected }"
+    class="bg-card text-card-foreground flex min-w-0 cursor-pointer items-start gap-3 rounded-xl border p-3 transition-colors duration-150"
+    :class="{ 'bg-selected-card ring-primary ring-2': selected }"
     @click="handleCardClick"
   >
     <Checkbox
@@ -212,12 +217,18 @@ const { borderStyle } = useGalleryBorders();
       class="mr-3"
       @click.stop="emit('toggle-select', $event)"
     />
-    <div class="relative mr-4 h-64 w-48 flex-shrink-0 overflow-hidden">
+    <div
+      class="bg-muted relative aspect-[0.72] w-[104px] shrink-0 overflow-hidden rounded-lg"
+    >
       <img
         :src="coverUrl"
         :alt="displayTitle"
-        class="h-full w-full rounded-md object-cover transition-transform duration-300 hover:scale-110"
+        class="h-full w-full object-cover"
         :class="{ 'opacity-50 grayscale': isOffline }"
+        @load="
+          (event) =>
+            ((event.target as HTMLImageElement).style.visibility = 'visible')
+        "
       />
       <Badge
         v-if="isOffline"
@@ -234,11 +245,19 @@ const { borderStyle } = useGalleryBorders();
         <Icon icon="solar:heart-bold" class="h-5 w-5" />
       </div>
     </div>
-    <div class="flex flex-1 flex-col gap-2">
+    <div class="flex min-w-0 flex-1 flex-col gap-1">
       <!-- 제목 -->
-      <h3 class="text-lg font-bold">{{ displayTitle }}</h3>
+      <button
+        type="button"
+        class="line-clamp-2 min-h-10 text-left text-sm font-semibold"
+        @click.stop="handleCardClick"
+      >
+        {{ displayTitle }}
+      </button>
       <!-- 작가/그룹/시리즈/캐릭터/페이지 -->
-      <div class="text-muted-foreground flex flex-col gap-0.5 text-sm">
+      <div
+        class="text-muted-foreground [&>p:first-child]:text-primary line-clamp-3 text-xs"
+      >
         <p>
           <Icon
             icon="solar:pen-new-round-linear"
@@ -324,7 +343,10 @@ const { borderStyle } = useGalleryBorders();
         </p>
       </div>
       <!-- 태그 -->
-      <div v-if="!hideTags" class="flex flex-wrap gap-1">
+      <div
+        v-if="!hideTags"
+        class="flex max-h-14 flex-wrap gap-1 overflow-hidden"
+      >
         <Badge
           v-for="tag in book.tags"
           :key="tag.name"
@@ -336,63 +358,78 @@ const { borderStyle } = useGalleryBorders();
         </Badge>
       </div>
     </div>
-    <div class="flex flex-col gap-2">
-      <Button size="sm" variant="outline" @click.stop="toggleFavorite">
-        <Icon
-          :icon="
-            book.is_favorite
-              ? 'solar:heart-broken-bold-duotone'
-              : 'solar:heart-bold-duotone'
-          "
-          class="h-4 w-4"
-        />
-        {{ book.is_favorite ? "즐겨찾기 해제" : "즐겨찾기" }}
-      </Button>
-      <Button
-        size="sm"
-        variant="outline"
-        @click.stop="emit('show-details', book)"
+    <DropdownMenu>
+      <DropdownMenuTrigger as-child
+        ><Button
+          variant="ghost"
+          size="icon"
+          aria-label="작품 관리"
+          title="작품 관리"
+          @click.stop
+          ><Icon icon="solar:menu-dots-linear" class="size-5" /></Button
+      ></DropdownMenuTrigger>
+      <DropdownMenuContent
+        align="end"
+        class="flex w-48 flex-col gap-1 rounded-xl"
+        @click.stop
       >
-        <Icon icon="solar:info-circle-bold-duotone" class="h-4 w-4" />
-        상세 정보
-      </Button>
-      <Button
-        size="sm"
-        variant="outline"
-        @click.stop="emit('show-preview', book)"
-      >
-        <Icon icon="solar:eye-bold-duotone" class="h-4 w-4" />
-        미리보기
-      </Button>
-      <Button size="sm" variant="outline" @click.stop="openInNewWindow">
-        <Icon icon="solar:square-top-down-bold-duotone" class="h-4 w-4" />
-        새 창으로 열기
-      </Button>
-      <Button size="sm" variant="outline" @click.stop="openBookFolder">
-        <Icon icon="solar:folder-open-bold-duotone" class="h-4 w-4" />
-        폴더 열기
-      </Button>
-      <Button
-        size="sm"
-        variant="outline"
-        :disabled="isRescanning"
-        @click.stop="handleRescanMetadata"
-      >
-        <Icon
-          icon="solar:refresh-bold-duotone"
-          class="h-4 w-4"
-          :class="{ 'animate-spin': isRescanning }"
-        />
-        재스캔
-      </Button>
-      <Button size="sm" variant="destructive" @click.stop="handleDeleteBook">
-        <Icon
-          icon="solar:trash-bin-minimalistic-bold-duotone"
-          class="h-4 w-4"
-        />
-        삭제
-      </Button>
-    </div>
+        <Button size="sm" variant="outline" @click.stop="toggleFavorite">
+          <Icon
+            :icon="
+              book.is_favorite
+                ? 'solar:heart-broken-bold-duotone'
+                : 'solar:heart-bold-duotone'
+            "
+            class="h-4 w-4"
+          />
+          {{ book.is_favorite ? "즐겨찾기 해제" : "즐겨찾기" }}
+        </Button>
+        <Button
+          size="sm"
+          variant="outline"
+          @click.stop="emit('show-details', book)"
+        >
+          <Icon icon="solar:info-circle-bold-duotone" class="h-4 w-4" />
+          상세 정보
+        </Button>
+        <Button
+          size="sm"
+          variant="outline"
+          @click.stop="emit('show-preview', book)"
+        >
+          <Icon icon="solar:eye-bold-duotone" class="h-4 w-4" />
+          미리보기
+        </Button>
+        <Button size="sm" variant="outline" @click.stop="openInNewWindow">
+          <Icon icon="solar:square-top-down-bold-duotone" class="h-4 w-4" />
+          새 창으로 열기
+        </Button>
+        <Button size="sm" variant="outline" @click.stop="openBookFolder">
+          <Icon icon="solar:folder-open-bold-duotone" class="h-4 w-4" />
+          폴더 열기
+        </Button>
+        <Button
+          size="sm"
+          variant="outline"
+          :disabled="isRescanning"
+          @click.stop="handleRescanMetadata"
+        >
+          <Icon
+            icon="solar:refresh-bold-duotone"
+            class="h-4 w-4"
+            :class="{ 'animate-spin': isRescanning }"
+          />
+          재스캔
+        </Button>
+        <Button size="sm" variant="destructive" @click.stop="handleDeleteBook">
+          <Icon
+            icon="solar:trash-bin-minimalistic-bold-duotone"
+            class="h-4 w-4"
+          />
+          삭제
+        </Button>
+      </DropdownMenuContent>
+    </DropdownMenu>
   </div>
 
   <!-- 삭제 확인 다이얼로그 -->

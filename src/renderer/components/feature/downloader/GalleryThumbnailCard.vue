@@ -14,6 +14,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
+import { useTagDisplay } from "@/composable/useTagDisplay";
 import { useGalleryCard } from "@/composable/useGalleryCard";
 import { formatPublishDate } from "@/lib/formatDate";
 import { Icon } from "@iconify/vue";
@@ -50,6 +51,7 @@ const formattedDate = computed(() =>
 // composable 사용
 const {
   displayTitle,
+  buttonText,
   isDeleteDialogOpen,
   isDownloading,
   isDownloadCompleted,
@@ -63,197 +65,124 @@ const {
   permanentDelete,
 } = useGalleryCard(props, emit);
 const { borderStyle } = useGalleryBorders();
+const { getTagDisplayInfo } = useTagDisplay();
 </script>
 
 <template>
-  <div
-    class="group relative cursor-pointer overflow-hidden rounded-lg border"
-    :class="{
-      'opacity-50': isDownloading,
-      'bg-red-50/50': isDownloadFailed,
-      'ring-2 ring-blue-500': selected, // 선택 시 파란색 테두리 추가
-    }"
-    :style="{
-      ...borderStyle(),
-      opacity: isInLibrary && !isDownloading ? 0.85 : undefined,
-    }"
+  <article
+    class="bg-card text-card-foreground flex h-full min-w-0 cursor-pointer flex-col overflow-hidden rounded-xl border"
+    :class="{ 'bg-selected-card ring-primary ring-2': selected }"
+    :style="borderStyle()"
     @click="emit('select-gallery', gallery)"
   >
-    <div class="relative aspect-3/4 h-auto w-full overflow-hidden">
+    <button
+      type="button"
+      class="bg-muted relative block aspect-[0.72] w-full overflow-hidden"
+      :aria-label="`${displayTitle} 상세 보기`"
+      @click.stop="emit('preview-gallery', gallery)"
+    >
       <ProxiedImage
-        :id="props.gallery.id"
-        :url="props.gallery.thumbnailUrl"
-        :referer="`https://hitomi.la/reader/${props.gallery.id}.html`"
-        alt="Thumbnail"
-        class="h-full w-full object-contain transition-transform duration-300 group-hover:scale-110"
+        :id="gallery.id"
+        :url="gallery.thumbnailUrl"
+        :referer="`https://hitomi.la/reader/${gallery.id}.html`"
+        :alt="displayTitle"
+        fit="cover"
       />
-      <div
-        v-if="isDownloadCompleted"
-        class="absolute top-2 right-2 flex h-[27px] w-[35px] items-center justify-center rounded-md bg-black/80 text-white"
-      >
-        <Icon icon="solar:cloud-linear" class="h-[18px] w-[18px]" />
-      </div>
-    </div>
-    <!-- 호버 시 배경 dim (투명 -> 불투명) -->
-    <div
-      class="absolute inset-0 bg-black/0 transition-colors group-hover:bg-black/50"
-    ></div>
-
-    <!-- 하단 정보 영역 (항상 표시) -->
-    <div
-      class="absolute right-0 bottom-0 left-0 bg-gradient-to-t from-black/80 via-black/60 to-transparent p-3"
-    >
-      <p class="mb-2 line-clamp-2 text-sm font-bold text-white">
-        {{ displayTitle }}
-      </p>
-      <div class="space-y-1 text-xs text-white/90">
-        <!-- 작가 -->
-        <p class="truncate">
-          <Icon
-            icon="solar:pen-new-round-linear"
-            class="mr-1 inline-block h-3 w-3"
-          />
-          <template
-            v-if="props.gallery.artists && props.gallery.artists.length > 0"
-          >
-            <template
-              v-for="(artist, index) in props.gallery.artists"
-              :key="artist"
-            >
-              <button
-                class="m-0 inline-block cursor-pointer border-none bg-transparent p-0 text-left text-current hover:underline"
-                @click.stop="copyToClipboard(`artist:${artist}`)"
-              >
-                {{ artist }}
-              </button>
-              <span v-if="index < props.gallery.artists.length - 1">, </span>
-            </template>
-          </template>
-          <template v-else> 알 수 없음 </template>
-        </p>
-        <!-- 그룹 -->
-        <p
-          v-if="props.gallery.groups && props.gallery.groups.length > 0"
-          class="truncate"
-        >
-          <Icon
-            icon="solar:users-group-rounded-linear"
-            class="mr-1 inline-block h-3 w-3"
-          />
-          <template v-for="(group, index) in props.gallery.groups" :key="group">
-            <button
-              class="m-0 inline-block cursor-pointer border-none bg-transparent p-0 text-left text-current hover:underline"
-              @click.stop="copyToClipboard(`group:${group}`)"
-            >
-              {{ group }}
-            </button>
-            <span v-if="index < props.gallery.groups.length - 1">, </span>
-          </template>
-        </p>
-        <!-- 시리즈 -->
-        <p
-          v-if="props.gallery.series && props.gallery.series.length > 0"
-          class="truncate"
-        >
-          <Icon
-            icon="solar:bookmark-linear"
-            class="mr-1 inline-block h-3 w-3"
-          />
-          <template
-            v-for="(series, index) in props.gallery.series"
-            :key="series"
-          >
-            <button
-              class="m-0 inline-block cursor-pointer border-none bg-transparent p-0 text-left text-current hover:underline"
-              @click.stop="copyToClipboard(`series:${series}`)"
-            >
-              {{ series }}
-            </button>
-            <span v-if="index < props.gallery.series.length - 1">, </span>
-          </template>
-        </p>
-        <!-- 캐릭터 -->
-        <p
-          v-if="props.gallery.characters && props.gallery.characters.length > 0"
-          class="truncate"
-        >
-          <Icon icon="solar:user-linear" class="mr-1 inline-block h-3 w-3" />
-          <template
-            v-for="(character, index) in props.gallery.characters"
-            :key="character"
-          >
-            <button
-              class="m-0 inline-block cursor-pointer border-none bg-transparent p-0 text-left text-current hover:underline"
-              @click.stop="copyToClipboard(`character:${character}`)"
-            >
-              {{ character }}
-            </button>
-            <span v-if="index < props.gallery.characters.length - 1">, </span>
-          </template>
-        </p>
-        <!-- 업로드 날짜 -->
-        <p v-if="formattedDate">
-          <Icon
-            icon="solar:calendar-linear"
-            class="mr-1 inline-block h-3 w-3"
-          />
-          {{ formattedDate }}
-        </p>
-        <!-- 페이지 -->
-        <p>
-          <Icon
-            icon="solar:document-text-linear"
-            class="mr-1 inline-block h-3 w-3"
-          />
-          {{ props.gallery.files?.length || 0 }} 페이지
-        </p>
-      </div>
-    </div>
-
-    <!-- 버튼 영역 (호버 시 표시) -->
-    <div
-      class="absolute inset-0 flex cursor-zoom-in items-center justify-center gap-2 opacity-0 transition-opacity group-hover:opacity-100"
-      @click="emit('preview-gallery', gallery)"
-    >
-      <Button
-        size="icon"
-        variant="secondary"
+      <span
+        v-if="selected"
+        class="bg-selected-cover pointer-events-none absolute inset-0"
+      />
+      <span
+        v-if="selected"
+        class="bg-primary text-primary-foreground absolute top-2 left-2 rounded-full p-1"
+        ><Icon icon="solar:check-read-linear" class="size-4"
+      /></span>
+    </button>
+    <div class="flex min-w-0 flex-1 flex-col gap-1 p-3">
+      <button
+        type="button"
+        class="line-clamp-2 min-h-10 text-left text-sm font-semibold"
+        :title="displayTitle"
         @click.stop="emit('preview-gallery', gallery)"
       >
-        <Icon icon="solar:eye-bold-duotone" class="h-5 w-5" />
-      </Button>
-      <Button
-        size="sm"
-        :disabled="isDownloading || isDownloadCompleted"
-        @click.stop="handleDownload"
+        {{ displayTitle }}
+      </button>
+      <p class="text-primary truncate text-xs">
+        <template v-for="(artist, index) in gallery.artists" :key="artist"
+          ><button
+            type="button"
+            @click.stop="copyToClipboard(`artist:${artist}`)"
+          >
+            {{ artist }}</button
+          >{{ index < gallery.artists.length - 1 ? ", " : "" }}</template
+        >
+        <template v-if="!gallery.artists?.length">작가 정보 없음</template>
+      </p>
+      <p class="text-muted-foreground truncate text-xs">
+        {{ gallery.type }} ·
+        {{ gallery.languageName?.local || gallery.languageName?.english }} ·
+        {{ gallery.files?.length || 0 }} 페이지
+      </p>
+      <div
+        class="flex max-h-[5.25rem] min-h-[5.25rem] flex-wrap content-start gap-1 overflow-hidden"
       >
-        <Icon icon="solar:download-bold-duotone" class="h-4 w-4" />
+        <button
+          v-for="tag in gallery.tags"
+          :key="`${tag.type}:${tag.name}`"
+          type="button"
+          :class="getTagDisplayInfo(tag).className"
+          class="max-w-full truncate rounded-full"
+          @click.stop="
+            copyToClipboard(
+              `${tag.type === 'male' || tag.type === 'female' ? tag.type : 'tag'}:${tag.name}`,
+            )
+          "
+          @contextmenu.prevent.stop="
+            copyToClipboard(
+              `-${tag.type === 'male' || tag.type === 'female' ? tag.type : 'tag'}:${tag.name}`,
+            )
+          "
+        >
+          {{ getTagDisplayInfo(tag).displayText }}
+        </button>
+      </div>
+      <p
+        class="text-muted-foreground truncate text-xs"
+        :class="{ 'text-destructive': isDownloadFailed }"
+      >
         {{
-          isDownloading
-            ? "다운로드 중..."
+          isInLibrary
+            ? "보유"
             : isDownloadCompleted
-              ? "완료"
-              : "다운로드"
+              ? "다운로드 완료"
+              : isDownloading || isDownloadFailed
+                ? buttonText
+                : formattedDate || "다운로드 가능"
         }}
-      </Button>
-      <Button v-if="isInLibrary" size="sm" @click.stop="handleOpenBook">
-        <Icon icon="solar:book-bold-duotone" class="h-5 w-5" />
-        열기
-      </Button>
-      <Button
-        v-if="isInLibrary"
-        size="sm"
-        variant="destructive"
-        @click.stop="handleDeleteGallery"
-      >
-        <Icon
-          icon="solar:trash-bin-minimalistic-bold-duotone"
-          class="h-5 w-5"
-        />
-        삭제
-      </Button>
+      </p>
+      <div class="mt-auto flex flex-wrap gap-1 pt-2" @click.stop>
+        <Button
+          size="sm"
+          variant="outline"
+          :disabled="isDownloading || !!isDownloadCompleted"
+          @click.stop="handleDownload"
+          ><Icon icon="solar:download-linear" class="size-4" />{{
+            buttonText
+          }}</Button
+        >
+        <Button v-if="isInLibrary" size="sm" @click.stop="handleOpenBook"
+          >열기</Button
+        >
+        <Button
+          v-if="isInLibrary"
+          size="sm"
+          variant="ghost"
+          @click.stop="handleDeleteGallery"
+          >삭제</Button
+        >
+      </div>
     </div>
-  </div>
+  </article>
 
   <!-- 삭제 확인 다이얼로그 -->
   <AlertDialog

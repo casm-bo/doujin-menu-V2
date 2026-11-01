@@ -36,12 +36,12 @@ const { borderStyle } = useGalleryBorders();
 <template>
   <div
     :style="borderStyle(true, !!series.is_favorite)"
-    class="group bg-card text-card-foreground relative cursor-pointer rounded-lg border shadow-sm transition-all hover:shadow-md"
-    :class="{ 'ring-primary ring-2': selected }"
+    class="group bg-card text-card-foreground relative cursor-pointer overflow-hidden rounded-xl border transition-colors"
+    :class="{ 'bg-selected-card ring-primary ring-2': selected }"
     @click="emit('click')"
   >
     <!-- 커버 이미지 영역 -->
-    <div class="bg-muted relative aspect-[3/4] overflow-hidden rounded-t-lg">
+    <div class="bg-muted relative aspect-[0.72] overflow-hidden rounded-t-xl">
       <img
         v-if="series.cover_image"
         :src="getThumbnailUrl(series.cover_image)"
@@ -61,15 +61,14 @@ const { borderStyle } = useGalleryBorders();
 
       <!-- 권수 뱃지 -->
       <div
+        v-if="series.book_count != null"
         class="absolute top-2 right-2 rounded bg-black/60 px-2 py-1 text-xs font-semibold text-white backdrop-blur-sm"
       >
-        {{ series.book_count || 0 }}권
+        {{ series.book_count }}권
       </div>
 
       <!-- 옵션 메뉴 -->
-      <div
-        class="absolute top-2 left-11 opacity-0 transition-opacity group-hover:opacity-100"
-      >
+      <div class="absolute top-2 left-11">
         <DropdownMenu>
           <DropdownMenuTrigger as-child @click.stop>
             <Button
@@ -110,9 +109,14 @@ const { borderStyle } = useGalleryBorders();
     <!-- 정보 영역 -->
     <div class="space-y-2 p-4">
       <div class="flex items-start justify-between gap-2">
-        <h3 class="line-clamp-2 flex-1 font-semibold" :title="series.name">
+        <button
+          type="button"
+          class="line-clamp-2 min-h-10 flex-1 text-left text-sm font-semibold"
+          :title="series.name"
+          @click.stop="emit('click')"
+        >
           {{ series.display_title || series.name }}
-        </h3>
+        </button>
       </div>
 
       <!-- 설명 -->

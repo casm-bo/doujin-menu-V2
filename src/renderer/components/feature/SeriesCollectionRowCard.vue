@@ -36,8 +36,8 @@ const { borderStyle } = useGalleryBorders();
 <template>
   <div
     :style="borderStyle(true, !!series.is_favorite)"
-    class="bg-card hover:bg-accent/50 flex cursor-pointer items-center gap-4 rounded-lg border p-3 transition-colors"
-    :class="{ 'ring-primary bg-accent/40 ring-2': selected }"
+    class="bg-card hover:bg-accent/50 flex cursor-pointer items-center gap-4 rounded-xl border p-3 transition-colors"
+    :class="{ 'bg-selected-card ring-primary ring-2': selected }"
     @click="emit('click')"
   >
     <Checkbox
@@ -47,7 +47,9 @@ const { borderStyle } = useGalleryBorders();
     />
 
     <!-- 썸네일 -->
-    <div class="bg-muted h-20 w-14 flex-shrink-0 overflow-hidden rounded">
+    <div
+      class="bg-muted aspect-[0.72] w-[104px] flex-shrink-0 overflow-hidden rounded"
+    >
       <img
         v-if="series.cover_image"
         :src="getThumbnailUrl(series.cover_image)"
@@ -66,9 +68,14 @@ const { borderStyle } = useGalleryBorders();
     <!-- 정보 -->
     <div class="min-w-0 flex-1">
       <div class="flex items-center gap-2">
-        <h3 class="truncate font-semibold" :title="series.name">
+        <button
+          type="button"
+          class="line-clamp-2 min-h-10 text-left text-sm font-semibold"
+          :title="series.name"
+          @click.stop="emit('click')"
+        >
           {{ series.display_title || series.name }}
-        </h3>
+        </button>
       </div>
       <p
         v-if="series.description"
@@ -76,8 +83,11 @@ const { borderStyle } = useGalleryBorders();
       >
         {{ series.description }}
       </p>
-      <div class="text-muted-foreground mt-1 text-xs">
-        {{ series.book_count || 0 }}권
+      <div
+        v-if="series.book_count != null"
+        class="text-muted-foreground mt-1 text-xs"
+      >
+        {{ series.book_count }}권
       </div>
     </div>
 

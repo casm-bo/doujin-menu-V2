@@ -71,20 +71,18 @@ const { borderStyle } = useGalleryBorders();
 
 <template>
   <div
-    class="hover:bg-muted/50 flex cursor-pointer items-center border-b p-2 transition-colors"
+    class="bg-card text-card-foreground flex min-w-0 cursor-pointer items-start gap-3 rounded-xl border p-3 transition-colors"
     :class="{
-      'opacity-50': isDownloading,
-      'bg-red-50/50': isDownloadFailed,
-      'ring-2 ring-blue-500': selected, // 선택 시 파란색 테두리 추가
+      'border-destructive': isDownloadFailed,
+      'bg-selected-card ring-primary ring-2': selected,
     }"
     :style="{
       ...borderStyle(),
-      opacity: isInLibrary && !isDownloading ? 0.85 : undefined,
     }"
     @click="emit('select-gallery', gallery)"
   >
     <div
-      class="relative mr-4 h-64 w-48 flex-shrink-0 cursor-zoom-in overflow-hidden"
+      class="bg-muted relative aspect-[0.72] w-[104px] shrink-0 cursor-zoom-in overflow-hidden rounded-lg"
       @click.stop="emit('preview-gallery', gallery)"
     >
       <ProxiedImage
@@ -92,7 +90,7 @@ const { borderStyle } = useGalleryBorders();
         :url="props.gallery.thumbnailUrl"
         :referer="`https://hitomi.la/reader/${props.gallery.id}.html`"
         alt="Thumbnail"
-        class="h-full w-full rounded-md object-cover transition-transform duration-300 hover:scale-110"
+        class="h-full w-full object-cover"
       />
       <div
         v-if="isDownloadCompleted"
@@ -101,7 +99,7 @@ const { borderStyle } = useGalleryBorders();
         <Icon icon="solar:cloud-linear" class="h-[18px] w-[18px]" />
       </div>
     </div>
-    <div class="flex flex-1 flex-col gap-2">
+    <div class="flex min-w-0 flex-1 flex-col gap-1">
       <!-- 제목 -->
       <p class="text-muted-foreground text-xs">
         {{ props.gallery.type }} |
@@ -111,9 +109,17 @@ const { borderStyle } = useGalleryBorders();
         }}
         <template v-if="formattedDate"> | {{ formattedDate }} </template>
       </p>
-      <h3 class="text-lg font-bold">{{ displayTitle }}</h3>
+      <button
+        type="button"
+        class="order-first line-clamp-2 min-h-10 text-left text-sm font-semibold"
+        @click.stop="emit('preview-gallery', gallery)"
+      >
+        {{ displayTitle }}
+      </button>
       <!-- 작가/그룹/시리즈/캐릭터/페이지 -->
-      <div class="text-muted-foreground flex flex-col gap-0.5 text-sm">
+      <div
+        class="text-muted-foreground [&>p:first-child]:text-primary line-clamp-3 text-xs"
+      >
         <p>
           <Icon
             icon="solar:pen-new-round-linear"
@@ -206,7 +212,7 @@ const { borderStyle } = useGalleryBorders();
         </p>
       </div>
       <!-- 태그 -->
-      <div class="flex flex-wrap gap-1">
+      <div class="flex max-h-14 flex-wrap gap-1 overflow-hidden">
         <Badge
           v-for="tag in props.gallery.tags"
           :key="`${tag.type}:${tag.name}`"
@@ -226,7 +232,7 @@ const { borderStyle } = useGalleryBorders();
         >
       </div>
     </div>
-    <div class="flex flex-col gap-2">
+    <div class="flex shrink-0 flex-col gap-2 max-[1000px]:max-w-24">
       <Button
         size="sm"
         variant="outline"
