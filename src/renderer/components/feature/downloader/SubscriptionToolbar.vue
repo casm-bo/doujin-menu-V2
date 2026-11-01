@@ -277,10 +277,15 @@ const handleRefresh = async () => {
 
 onMounted(load);
 watch(() => subscriptionStore.revision, load);
+defineExpose({
+  openManager: () => {
+    isOpen.value = true;
+  },
+});
 </script>
 
 <template>
-  <div class="flex min-w-0 flex-1 items-center gap-2">
+  <div class="flex min-w-0 flex-wrap items-center gap-2">
     <Button
       variant="outline"
       size="sm"
@@ -314,7 +319,7 @@ watch(() => subscriptionStore.revision, load);
             class="flex-1"
             placeholder="예: artist:작가명 female:sole_female"
             :show-actions="false"
-            @keyup.enter="handleEnter"
+            @submit="handleEnter"
           />
           <Button
             size="sm"

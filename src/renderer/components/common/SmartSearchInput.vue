@@ -16,7 +16,7 @@ const props = defineProps({
   placeholder: { type: String, default: "" },
 });
 
-const emit = defineEmits(["update:modelValue"]);
+const emit = defineEmits(["update:modelValue", "submit"]);
 
 const clearInput = () => {
   emit("update:modelValue", "");
@@ -297,6 +297,18 @@ const showAllPrefixSuggestions = () => {
 };
 
 const handleKeyDown = (event: KeyboardEvent) => {
+  if (event.isComposing || event.keyCode === 229) return;
+  if (event.key === "Escape" && suggestions.value.length > 0) {
+    suggestions.value = [];
+    event.preventDefault();
+    event.stopPropagation();
+    return;
+  }
+  if (event.key === "Enter" && !isSuggestionOpen.value) {
+    event.preventDefault();
+    emit("submit");
+    return;
+  }
   if (event.ctrlKey && event.key === " ") {
     event.preventDefault();
     manualSuggestTrigger.value = true;
@@ -363,14 +375,18 @@ defineExpose({ focus });
         >
           <button
             type="button"
-            class="text-muted-foreground hover:text-foreground p-1 transition-colors"
+            class="text-muted-foreground hover:text-foreground flex size-9 items-center justify-center rounded-full transition-colors"
+            aria-label="검색어 지우기"
+            title="검색어 지우기"
             @click="clearInput"
           >
             <Icon icon="solar:close-circle-bold-duotone" class="h-5 w-5" />
           </button>
           <button
             type="button"
-            class="text-muted-foreground hover:text-foreground p-1 transition-colors"
+            class="text-muted-foreground hover:text-foreground flex size-9 items-center justify-center rounded-full transition-colors"
+            aria-label="검색어 복사"
+            title="검색어 복사"
             @click="copyToClipboard"
           >
             <Icon icon="solar:copy-bold-duotone" class="h-5 w-5" />
@@ -382,7 +398,9 @@ defineExpose({ focus });
         >
           <button
             type="button"
-            class="text-muted-foreground hover:text-foreground p-1 transition-colors"
+            class="text-muted-foreground hover:text-foreground flex size-9 items-center justify-center rounded-full transition-colors"
+            aria-label="검색어 붙여넣기"
+            title="검색어 붙여넣기"
             @click="pasteFromClipboard"
           >
             <Icon icon="solar:clipboard-text-bold-duotone" class="h-5 w-5" />

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import {
   getPresentation,
+  addSubscription,
   enterSubscriptionTab,
   ipcRenderer,
   refreshSubscriptions,
@@ -8,7 +9,13 @@ import {
 import HelpDialog from "@/components/common/HelpDialog.vue"; // HelpDialog 임포트
 import SmartSearchInput from "@/components/common/SmartSearchInput.vue";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+} from "@/components/ui/dropdown-menu";
+import { withLanguage } from "@/lib/subscriptionQuery";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -25,7 +32,6 @@ import { useDownloadQueueStore } from "@/store/downloadQueueStore";
 import { useSubscriptionStore } from "@/store/subscriptionStore";
 import { useUiStore } from "@/store/uiStore";
 import { Icon } from "@iconify/vue";
-import PageHeader from "../layout/PageHeader.vue";
 import { applyGalleryPresentation } from "../../../types/presentationGallery";
 import { useInfiniteQuery, useQueryClient } from "@tanstack/vue-query";
 import type { HitomiGalleryDetails } from "../../../types/hitomi.js";
@@ -149,6 +155,26 @@ const searchKey = ref(0); // 검색 트리거를 위한 키
 const subscriptionKey = ref(1);
 const activeSource = ref<"search" | "subscription">("search");
 const blacklistCount = ref(0);
+const conditionPanel = ref<"language" | "tags" | null>(null);
+const subscriptionToolbar = ref<InstanceType<
+  typeof SubscriptionToolbar
+> | null>(null);
+const isSubscribing = ref(false);
+const subscribeCurrentSearch = async () => {
+  if (isSubscribing.value || !searchQuery.value.trim()) return;
+  isSubscribing.value = true;
+  try {
+    await addSubscription({
+      query: withLanguage(downloaderLanguage.value, searchQuery.value),
+    });
+    await handleSubscriptionsChanged();
+    toast.success("현재 검색을 구독했습니다.");
+  } catch (error) {
+    toast.error(error instanceof Error ? error.message : "구독 추가 실패");
+  } finally {
+    isSubscribing.value = false;
+  }
+};
 const sourceKey = computed(() =>
   activeSource.value === "subscription"
     ? subscriptionKey.value
@@ -405,10 +431,13 @@ watch(observerTarget, (newTarget) => {
 
 const handleSearch = async () => {
   activeSource.value = "search";
+  resetScroll();
   searchKey.value++;
 };
 
 const changeSource = async (source: "search" | "subscription") => {
+  if (activeSource.value === source) return;
+  conditionPanel.value = null;
   activeSource.value = source;
   selectedGallery.value = null;
   if (source !== "subscription") return;
@@ -466,223 +495,261 @@ const goToSettings = () => {
 };
 
 // 스크롤 위치 복원 (다운로더는 flex-1 사용)
-useScrollRestoration("[data-result-scroll]");
+const { resetScroll } = useScrollRestoration(
+  "[data-result-scroll]",
+  activeSource,
+);
 
 // 검색어 저장/복원
 useSearchPersistence(searchQuery, "downloader-search-query");
 </script>
 
 <template>
-  <div class="flex h-full min-h-0 min-w-0 flex-col gap-6">
-    <PageHeader icon="solar:download-square-bold-duotone" title="검색">
-      <template #help>
-        <HelpDialog
-          title="다운로더 도움말"
-          description="다운로더 사용법 및 검색 팁"
-        >
-          <template #trigger>
-            <Button variant="ghost" size="icon">
-              <Icon icon="solar:question-circle-bold-duotone" class="h-6 w-6" />
-            </Button>
-          </template>
-          <div class="text-muted-foreground space-y-4 text-sm">
-            <p>
-              이 화면에서는 Hitomi.la에서 작품을 검색하고 다운로드할 수
-              있습니다.
-            </p>
-            <h3 class="text-foreground text-base font-semibold">검색 팁</h3>
-            <ul class="list-inside list-disc">
-              <li>
+  <div class="flex h-full min-h-0 min-w-0 flex-col gap-3">
+    <h1 class="sr-only">검색</h1>
+    <div class="flex min-h-0 flex-1 flex-col gap-3">
+      <div class="flex shrink-0 flex-col gap-3">
+        <div v-if="activeSource === 'search'" class="flex items-center gap-2">
+          <SmartSearchInput
+            id="search-input"
+            v-model="searchQuery"
+            class="min-w-0 flex-1"
+            placeholder="작품·작가·태그 검색"
+            @submit="handleSearch"
+          />
+          <Button class="min-h-9 rounded-full" @click="handleSearch"
+            ><Icon icon="solar:magnifer-linear" class="size-5" />검색</Button
+          >
+          <Button
+            variant="ghost"
+            size="icon"
+            class="relative"
+            aria-label="구독 신작"
+            title="구독 신작"
+            @click="changeSource('subscription')"
+            ><Icon icon="solar:bell-linear" class="size-5" /><span
+              v-if="subscriptionStore.hasUnseen"
+              class="bg-destructive absolute top-1 right-1 size-2 rounded-full"
+          /></Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger as-child
+              ><Button
+                variant="ghost"
+                size="icon"
+                aria-label="검색 더보기"
+                title="더보기"
+                ><Icon icon="solar:menu-dots-linear" class="size-5" /></Button
+            ></DropdownMenuTrigger>
+            <DropdownMenuContent align="end" class="w-52 rounded-xl">
+              <DropdownMenuItem
+                :disabled="!searchQuery.trim() || isSubscribing"
+                @select="subscribeCurrentSearch"
+                >현재 검색 구독</DropdownMenuItem
+              >
+              <DropdownMenuItem @select="subscriptionToolbar?.openManager()"
+                >구독 관리</DropdownMenuItem
+              >
+              <DropdownMenuItem @select="handleSearch"
+                >새로고침</DropdownMenuItem
+              >
+              <DropdownMenuItem @select="searchQuery = ''"
+                >검색어 지우기</DropdownMenuItem
+              >
+              <DropdownMenuItem @select="goToSettings"
+                >차단 태그·다운로드 설정</DropdownMenuItem
+              >
+            </DropdownMenuContent>
+          </DropdownMenu>
+          <HelpDialog
+            title="다운로더 도움말"
+            description="다운로더 사용법 및 검색 팁"
+          >
+            <template #trigger>
+              <Button variant="ghost" size="icon">
                 <Icon
-                  icon="solar:global-bold-duotone"
-                  class="inline-block h-4 w-4 align-text-bottom"
+                  icon="solar:question-circle-bold-duotone"
+                  class="h-6 w-6"
                 />
-                언어 설정을 통해 검색할 작품의 언어를 지정할 수 있습니다.
-              </li>
-              <li>
-                <Icon
-                  icon="solar:bookmark-bold-duotone"
-                  class="inline-block h-4 w-4 align-text-bottom"
-                />
-                버튼을 클릭하여 저장된 프리셋 검색어를 사용할 수 있습니다.
-              </li>
-              <li><code>id:12345</code>: 특정 갤러리 ID로 검색합니다.</li>
-              <li>
-                <code>artist:작가명</code>: 특정 작가의 작품을 검색합니다.
-              </li>
-              <li>
-                <code>태그명</code>: 특정 태그가 포함된 작품을 검색합니다. (예:
-                <code>female:very_long_hair</code>)
-              </li>
-              <li>
-                <code>-태그명</code>: 특정 태그를 제외하고 검색합니다. (예:
-                <code>-female:guro</code>)
-              </li>
-              <li>여러 검색어를 공백으로 구분하여 조합할 수 있습니다.</li>
-            </ul>
-            <h3 class="text-foreground text-base font-semibold">
-              다운로드 관리
-            </h3>
-            <ul class="list-inside list-disc">
-              <li>
-                검색 결과에서 작품을 클릭하여 상세 정보를 확인하고 다운로드할 수
+              </Button>
+            </template>
+            <div class="text-muted-foreground space-y-4 text-sm">
+              <p>
+                이 화면에서는 Hitomi.la에서 작품을 검색하고 다운로드할 수
                 있습니다.
-              </li>
-              <li>다운로드 경로는 설정에서 변경할 수 있습니다.</li>
-              <li>다운로드 진행 상황은 각 작품 카드에서 확인할 수 있습니다.</li>
-            </ul>
-            <h3 class="text-foreground text-base font-semibold">미리보기</h3>
-            <ul class="list-inside list-disc">
-              <li>
-                검색 결과에서 작품을 선택한 후 <kbd>V</kbd> 키를 눌러 미리보기
-                다이얼로그를 열 수 있습니다.
-              </li>
-            </ul>
-            <h3 class="text-foreground text-base font-semibold">폴더명 패턴</h3>
-            <ul class="list-inside list-disc">
-              <li>
-                <code>%artist|groups%</code>와 같이 Fallback 문법을 사용할 수
-                있습니다. (artist가 없으면 groups 사용)
-              </li>
-            </ul>
-          </div>
-        </HelpDialog>
-      </template>
-      <template #actions>
-        <Button variant="secondary" size="icon" @click="goToSettings">
-          <Icon icon="solar:settings-bold-duotone" class="h-6 w-6" />
-        </Button>
-      </template>
-    </PageHeader>
-
-    <div class="flex min-h-0 flex-1 flex-col gap-6">
-      <!-- Left Column: Search & Settings -->
-      <div class="flex flex-col gap-6">
-        <Card>
-          <CardHeader>
-            <CardTitle class="flex items-center justify-between">
-              <span>{{
-                activeSource === "search" ? "작품 검색" : "구독 신작"
-              }}</span>
-              <div class="flex gap-2">
-                <Button
-                  size="sm"
-                  :variant="activeSource === 'search' ? 'default' : 'outline'"
-                  @click="changeSource('search')"
-                >
-                  검색
-                </Button>
-                <Button
-                  size="sm"
-                  :variant="
-                    activeSource === 'subscription' ? 'default' : 'outline'
-                  "
-                  @click="changeSource('subscription')"
-                >
-                  구독
-                  <span
-                    v-if="subscriptionStore.hasUnseen"
-                    class="bg-destructive ml-1 h-2 w-2 rounded-full"
-                  />
-                </Button>
-              </div>
-            </CardTitle>
-          </CardHeader>
-          <CardContent v-if="activeSource === 'search'" class="space-y-4">
-            <div class="space-y-1.5">
-              <Label for="search-input">검색어</Label>
-              <SmartSearchInput
-                id="search-input"
-                v-model="searchQuery"
-                placeholder="예: artist:작가명 tag:태그명"
-                @keyup.enter="handleSearch"
-              />
-            </div>
-            <div
-              class="grid grid-cols-1 items-end gap-3 sm:grid-cols-[minmax(260px,2fr)_minmax(120px,0.65fr)_minmax(120px,0.65fr)_minmax(100px,0.5fr)]"
-            >
-              <div class="flex flex-col space-y-1.5">
-                <Label>프리셋</Label>
-                <PresetDropdown
-                  v-model="searchQuery"
-                  @apply-preset="handleSearch"
-                />
-              </div>
-              <div class="flex flex-col space-y-1.5">
-                <Label for="popularity-select">정렬</Label>
-                <Select
-                  :model-value="downloaderPopularity"
-                  @update:model-value="handlePopularityChange"
-                >
-                  <SelectTrigger id="popularity-select" class="w-full">
-                    <SelectValue placeholder="정렬 선택" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem
-                      v-for="option in popularityOptions"
-                      :key="option.value"
-                      :value="option.value"
-                    >
-                      {{ option.label }}
-                    </SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div class="flex flex-col space-y-1.5">
-                <Label for="language-select">언어</Label>
-                <Select
-                  :model-value="downloaderLanguage"
-                  @update:model-value="handleLanguageChange"
-                >
-                  <SelectTrigger id="language-select" class="w-full">
-                    <SelectValue placeholder="언어를 선택하세요" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem
-                      v-for="lang in languageOptions"
-                      :key="lang.value"
-                      :value="lang.value"
-                    >
-                      {{ lang.label }}
-                    </SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div class="flex flex-col space-y-1.5">
-                <Label>&nbsp;</Label>
-                <Button @click="handleSearch">
+              </p>
+              <h3 class="text-foreground text-base font-semibold">검색 팁</h3>
+              <ul class="list-inside list-disc">
+                <li>
                   <Icon
-                    icon="solar:magnifer-bold-duotone"
-                    class="h-5 w-5"
-                  />검색
-                </Button>
-              </div>
+                    icon="solar:global-bold-duotone"
+                    class="inline-block h-4 w-4 align-text-bottom"
+                  />
+                  언어 설정을 통해 검색할 작품의 언어를 지정할 수 있습니다.
+                </li>
+                <li>
+                  <Icon
+                    icon="solar:bookmark-bold-duotone"
+                    class="inline-block h-4 w-4 align-text-bottom"
+                  />
+                  버튼을 클릭하여 저장된 프리셋 검색어를 사용할 수 있습니다.
+                </li>
+                <li><code>id:12345</code>: 특정 갤러리 ID로 검색합니다.</li>
+                <li>
+                  <code>artist:작가명</code>: 특정 작가의 작품을 검색합니다.
+                </li>
+                <li>
+                  <code>태그명</code>: 특정 태그가 포함된 작품을 검색합니다.
+                  (예: <code>female:very_long_hair</code>)
+                </li>
+                <li>
+                  <code>-태그명</code>: 특정 태그를 제외하고 검색합니다. (예:
+                  <code>-female:guro</code>)
+                </li>
+                <li>여러 검색어를 공백으로 구분하여 조합할 수 있습니다.</li>
+              </ul>
+              <h3 class="text-foreground text-base font-semibold">
+                다운로드 관리
+              </h3>
+              <ul class="list-inside list-disc">
+                <li>
+                  검색 결과에서 작품을 클릭하여 상세 정보를 확인하고 다운로드할
+                  수 있습니다.
+                </li>
+                <li>다운로드 경로는 설정에서 변경할 수 있습니다.</li>
+                <li>
+                  다운로드 진행 상황은 각 작품 카드에서 확인할 수 있습니다.
+                </li>
+              </ul>
+              <h3 class="text-foreground text-base font-semibold">미리보기</h3>
+              <ul class="list-inside list-disc">
+                <li>
+                  검색 결과에서 작품을 선택한 후 <kbd>V</kbd> 키를 눌러 미리보기
+                  다이얼로그를 열 수 있습니다.
+                </li>
+              </ul>
+              <h3 class="text-foreground text-base font-semibold">
+                폴더명 패턴
+              </h3>
+              <ul class="list-inside list-disc">
+                <li>
+                  <code>%artist|groups%</code>와 같이 Fallback 문법을 사용할 수
+                  있습니다. (artist가 없으면 groups 사용)
+                </li>
+              </ul>
             </div>
-            <p class="text-muted-foreground pt-2 text-xs">
-              검색은 히토미 검색과 동일한 문법을 지원합니다. (예:
-              <code class="font-mono"
-                >female:sole_female female:very_long_hair -female:guro</code
-              >)
-            </p>
-          </CardContent>
-          <CardContent v-else>
-            <SubscriptionToolbar
-              :new-count="subscriptionStore.newCount"
-              :last-checked-at="subscriptionStore.lastCheckedAt"
-              :language="downloaderLanguage"
-              :blacklist-count="blacklistCount"
-              @changed="handleSubscriptionsChanged"
-              @refresh="refreshSubscriptionFeed"
+          </HelpDialog>
+        </div>
+        <div v-else class="flex flex-wrap items-center gap-2">
+          <Button
+            variant="outline"
+            class="rounded-full"
+            @click="changeSource('search')"
+            >검색으로 돌아가기</Button
+          ><span class="text-sm font-semibold">구독 신작</span>
+        </div>
+        <div class="flex flex-wrap items-center gap-2">
+          <template v-if="activeSource === 'search'">
+            <Button
+              variant="outline"
+              class="rounded-full"
+              :aria-expanded="conditionPanel === 'language'"
+              @click="
+                conditionPanel =
+                  conditionPanel === 'language' ? null : 'language'
+              "
+              >언어:
+              {{
+                languageOptions.find(
+                  (option) => option.value === downloaderLanguage,
+                )?.label || downloaderLanguage
+              }}</Button
+            >
+            <Button
+              variant="outline"
+              class="rounded-full"
+              :aria-expanded="conditionPanel === 'tags'"
+              @click="
+                conditionPanel = conditionPanel === 'tags' ? null : 'tags'
+              "
+              >태그 필터</Button
+            >
+            <PresetDropdown
+              v-model="searchQuery"
+              @apply-preset="handleSearch"
             />
-          </CardContent>
-        </Card>
+            <Select
+              :model-value="downloaderPopularity"
+              @update:model-value="handlePopularityChange"
+              ><SelectTrigger
+                aria-label="검색 정렬"
+                class="w-auto min-w-28 rounded-full"
+                ><SelectValue /></SelectTrigger
+              ><SelectContent
+                ><SelectItem
+                  v-for="option in popularityOptions"
+                  :key="option.value"
+                  :value="option.value"
+                  >{{ option.label }}</SelectItem
+                ></SelectContent
+              ></Select
+            >
+          </template>
+          <SubscriptionToolbar
+            ref="subscriptionToolbar"
+            :new-count="subscriptionStore.newCount"
+            :last-checked-at="subscriptionStore.lastCheckedAt"
+            :language="downloaderLanguage"
+            :blacklist-count="blacklistCount"
+            @changed="handleSubscriptionsChanged"
+            @refresh="refreshSubscriptionFeed"
+          />
+        </div>
+        <div
+          v-if="activeSource === 'search' && conditionPanel"
+          class="bg-toolbar space-y-2 rounded-xl p-3"
+          @keydown.esc.stop="conditionPanel = null"
+        >
+          <template v-if="conditionPanel === 'language'">
+            <Label for="language-select">검색 언어</Label>
+            <Select
+              :model-value="downloaderLanguage"
+              @update:model-value="handleLanguageChange"
+              ><SelectTrigger id="language-select" class="w-48"
+                ><SelectValue /></SelectTrigger
+              ><SelectContent
+                ><SelectItem
+                  v-for="lang in languageOptions"
+                  :key="lang.value"
+                  :value="lang.value"
+                  >{{ lang.label }}</SelectItem
+                ></SelectContent
+              ></Select
+            >
+          </template>
+          <template v-else>
+            <Label>포함·제외 검색 조건</Label>
+            <SmartSearchInput
+              v-model="searchQuery"
+              placeholder="female:sole_female -female:guro"
+              @submit="handleSearch"
+            />
+            <p class="text-muted-foreground text-xs">
+              기존 검색 문법으로 조건을 편집합니다. 제외할 태그 앞에는 -를
+              붙이세요.
+            </p>
+            <Button variant="outline" size="sm" @click="goToSettings"
+              >차단 태그 설정</Button
+            >
+          </template>
+        </div>
       </div>
 
       <!-- Right Column: Search Results -->
       <div class="flex min-h-0 flex-1 flex-col gap-4">
         <div class="flex items-center justify-between">
-          <h2 class="text-lg font-semibold">
-            {{ activeSource === "search" ? "검색 결과" : "구독 피드" }}
+          <h2 class="text-muted-foreground text-xs font-normal" role="status">
+            {{ activeSource === "search" ? "검색 결과" : "구독 피드" }} · 현재
+            {{ allGalleries.length }}개 표시
           </h2>
           <div class="flex items-center gap-2">
             <!-- 썸네일 줌 조절 -->
@@ -747,7 +814,7 @@ useSearchPersistence(searchQuery, "downloader-search-query");
           <div v-else-if="allGalleries.length > 0">
             <div
               v-if="viewMode === 'grid'"
-              class="grid gap-4"
+              class="grid gap-3"
               :style="downloaderGridStyle"
               @wheel="handleGridWheel"
             >
@@ -758,12 +825,7 @@ useSearchPersistence(searchQuery, "downloader-search-query");
                 :download-status="downloadStatuses[item.id]"
                 :selected="selectedGallery?.id === item.id"
                 @select-gallery="handleSelectGallery"
-                @preview-gallery="
-                  (gallery) => {
-                    handleSelectGallery(gallery);
-                    isPreviewDialogOpen = true;
-                  }
-                "
+                @preview-gallery="handleSelectGallery"
                 @book-deleted="handleBookDeleted"
               />
             </div>
@@ -775,12 +837,7 @@ useSearchPersistence(searchQuery, "downloader-search-query");
                 :download-status="downloadStatuses[item.id]"
                 :selected="selectedGallery?.id === item.id"
                 @select-gallery="handleSelectGallery"
-                @preview-gallery="
-                  (gallery) => {
-                    handleSelectGallery(gallery);
-                    isPreviewDialogOpen = true;
-                  }
-                "
+                @preview-gallery="handleSelectGallery"
                 @book-deleted="handleBookDeleted"
               />
             </div>
@@ -799,7 +856,9 @@ useSearchPersistence(searchQuery, "downloader-search-query");
             <p class="text-muted-foreground">
               {{
                 activeSource === "search"
-                  ? "검색 결과가 없습니다."
+                  ? searchKey === 0
+                    ? "검색어를 입력해 작품을 찾아보세요"
+                    : "검색 결과가 없습니다."
                   : "구독한 작품이 없습니다."
               }}
             </p>

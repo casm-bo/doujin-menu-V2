@@ -458,9 +458,7 @@ const clearSelection = () => {
 };
 watch(queryKey, () => {
   clearSelection();
-  document
-    .querySelector<HTMLElement>("[data-result-scroll]")
-    ?.scrollTo({ top: 0 });
+  resetScroll();
 });
 
 const deleteMutation = useMutation({
@@ -770,7 +768,16 @@ const gridStyle = computed(() => ({
 }));
 
 // 스크롤 위치 복원
-useScrollRestoration("[data-result-scroll]");
+const { restoreScroll, resetScroll } = useScrollRestoration(
+  "[data-result-scroll]",
+);
+watch(
+  [viewMode, books],
+  () => {
+    void restoreScroll();
+  },
+  { flush: "post" },
+);
 </script>
 
 <template>
