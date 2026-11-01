@@ -318,7 +318,7 @@ const { borderStyle } = useGalleryBorders();
             오프라인
           </Badge>
           <div
-            class="absolute top-2 left-2 z-10 flex size-8 items-center justify-center rounded-md transition-colors hover:bg-black/70 hover:text-white"
+            class="bg-card/90 absolute top-2 left-2 z-10 flex size-9 items-center justify-center rounded-full transition-colors"
             @click.stop="emit('toggle-select', $event)"
           >
             <Checkbox
@@ -364,7 +364,9 @@ const { borderStyle } = useGalleryBorders();
             />
           </button>
         </CardContent>
-        <CardFooter class="flex-grow flex-col items-start gap-1 p-2">
+        <CardFooter
+          class="flex-grow flex-col items-start gap-1 border-t-0 bg-transparent p-3"
+        >
           <button
             type="button"
             data-detail-trigger
@@ -425,7 +427,7 @@ const { borderStyle } = useGalleryBorders();
           </p>
           <div
             v-if="!hideTags"
-            class="flex max-h-[5.25rem] min-h-[5.25rem] w-full flex-wrap content-start gap-1 overflow-hidden"
+            class="flex max-h-[4.25rem] min-h-[4.25rem] w-full flex-wrap content-start gap-1 overflow-hidden"
           >
             <button
               v-for="tag in book.tags"
@@ -439,15 +441,16 @@ const { borderStyle } = useGalleryBorders();
               {{ getTagDisplayInfo(tag).displayText }}
             </button>
           </div>
-          <p
-            v-if="book.series_collection_id && book.series_book_count != null"
-            class="text-muted-foreground text-xs"
-          >
-            시리즈 {{ book.series_book_count }}권<span
-              v-if="book.series_read_count != null"
+          <p class="text-muted-foreground min-h-4 text-xs">
+            <template
+              v-if="book.series_collection_id && book.series_book_count != null"
+              >시리즈 {{ book.series_book_count }}권<span
+                v-if="book.series_read_count != null"
+              >
+                · {{ book.series_read_count }}권 읽음</span
+              ></template
             >
-              · {{ book.series_read_count }}권 읽음</span
-            >
+            <template v-else>{{ isRead ? "읽음" : "안 읽음" }}</template>
           </p>
         </CardFooter>
       </LightCard>

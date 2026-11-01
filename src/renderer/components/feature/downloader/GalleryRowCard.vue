@@ -11,7 +11,6 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
@@ -215,9 +214,10 @@ const { borderStyle } = useGalleryBorders();
       </div>
       <!-- 태그 -->
       <div class="flex max-h-14 flex-wrap gap-1 overflow-hidden">
-        <Badge
+        <button
           v-for="tag in props.gallery.tags"
           :key="`${tag.type}:${tag.name}`"
+          type="button"
           :class="getTagDisplayInfo(tag).className"
           class="cursor-pointer hover:underline"
           @click.stop="
@@ -230,8 +230,9 @@ const { borderStyle } = useGalleryBorders();
               `-${tag.type === 'male' || tag.type === 'female' ? tag.type : 'tag'}:${tag.name}`,
             )
           "
-          >{{ getTagDisplayInfo(tag).displayText }}</Badge
         >
+          {{ getTagDisplayInfo(tag).displayText }}
+        </button>
       </div>
     </div>
     <div class="flex shrink-0 flex-col gap-2 max-[1000px]:max-w-24">

@@ -39,6 +39,7 @@ export const useTheme = () => {
     } catch (error) {
       console.error("테마 초기화 실패:", error);
       // 기본 테마 적용
+      currentTheme.value = "android-default";
       loadThemeCSS("android-default");
     }
   };

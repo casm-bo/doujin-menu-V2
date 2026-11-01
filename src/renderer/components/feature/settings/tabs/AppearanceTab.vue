@@ -102,7 +102,7 @@ const onColorThemeChange = async (newTheme: AcceptableValue) => {
           :model-value="theme"
           @update:model-value="onThemeChange"
         >
-          <SelectTrigger>
+          <SelectTrigger aria-label="앱 테마">
             <SelectValue placeholder="테마 선택" />
           </SelectTrigger>
           <SelectContent>
@@ -138,7 +138,7 @@ const onColorThemeChange = async (newTheme: AcceptableValue) => {
           :model-value="colorTheme"
           @update:model-value="onColorThemeChange"
         >
-          <SelectTrigger>
+          <SelectTrigger aria-label="컬러 테마">
             <SelectValue placeholder="컬러 테마 선택" />
           </SelectTrigger>
           <SelectContent>

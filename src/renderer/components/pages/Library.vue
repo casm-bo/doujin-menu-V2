@@ -832,7 +832,12 @@ watch(
         description="라이브러리 사용법 및 검색 팁"
       >
         <template #trigger>
-          <Button variant="ghost" size="icon">
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label="라이브러리 도움말"
+            title="라이브러리 도움말"
+          >
             <Icon icon="solar:question-circle-bold-duotone" class="h-6 w-6" />
           </Button>
         </template>
@@ -1100,6 +1105,8 @@ watch(
               v-else
               variant="outline"
               class="rounded-l-none border-l-0"
+              aria-label="정렬 방향 전환"
+              title="정렬 방향 전환"
               @click="toggleSortOrder"
             >
               <Icon
@@ -1163,6 +1170,8 @@ watch(
                   size="icon"
                   class="h-7 w-7"
                   :disabled="viewMode !== 'grid'"
+                  aria-label="카드 축소"
+                  title="카드 축소"
                   @click.stop="uiStore.zoomOut()"
                 >
                   <Icon
@@ -1178,6 +1187,8 @@ watch(
                   size="icon"
                   class="h-7 w-7"
                   :disabled="viewMode !== 'grid'"
+                  aria-label="카드 확대"
+                  title="카드 확대"
                   @click.stop="uiStore.zoomIn()"
                 >
                   <Icon icon="solar:add-circle-bold-duotone" class="h-4 w-4" />

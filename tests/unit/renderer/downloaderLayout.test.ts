@@ -113,25 +113,44 @@ const flush = async () => {
   }
 };
 it("opens conditions without searching and preserves search result scroll through the subscription feed", async () => {
+  let intersect: IntersectionObserverCallback | undefined;
+  let observerOptions: IntersectionObserverInit | undefined;
   vi.stubGlobal(
     "IntersectionObserver",
     class {
+      constructor(
+        callback: IntersectionObserverCallback,
+        options: IntersectionObserverInit,
+      ) {
+        intersect = callback;
+        observerOptions = options;
+      }
       observe() {}
       disconnect() {}
     },
   );
-  mocks.invoke.mockImplementation(async (channel: string) => {
-    if (channel === "get-config") return {};
-    if (channel === "get-config-value") return null;
-    if (channel === "search-galleries" || channel === "get-subscription-feed")
-      return { success: true, data: [42], hasNextPage: false };
-    if (channel === "get-gallery-details")
-      return {
-        success: true,
-        data: { id: 42, title: { display: "Synthetic" } },
-      };
-    return { success: true };
-  });
+  mocks.invoke.mockImplementation(
+    async (channel: string, arg: { page?: number } | number) => {
+      if (channel === "get-config") return {};
+      if (channel === "get-config-value") return null;
+      if (channel === "search-galleries") {
+        const page = (arg as { page: number }).page;
+        return {
+          success: true,
+          data: page === 1 ? [42] : [43],
+          hasNextPage: page === 1,
+        };
+      }
+      if (channel === "get-subscription-feed")
+        return { success: true, data: [42], hasNextPage: false };
+      if (channel === "get-gallery-details")
+        return {
+          success: true,
+          data: { id: arg, title: { display: "Synthetic" } },
+        };
+      return { success: true };
+    },
+  );
   client = new QueryClient({
     defaultOptions: { queries: { retry: false, staleTime: Infinity } },
   });
@@ -189,4 +208,14 @@ it("opens conditions without searching and preserves search result scroll throug
       ([channel]) => channel === "search-galleries",
     ),
   ).toHaveLength(1);
+  expect(observerOptions?.root).toBe(result);
+  intersect!(
+    [{ isIntersecting: true } as IntersectionObserverEntry],
+    {} as IntersectionObserver,
+  );
+  await flush();
+  expect(mocks.invoke).toHaveBeenCalledWith(
+    "search-galleries",
+    expect.objectContaining({ page: 2 }),
+  );
 });

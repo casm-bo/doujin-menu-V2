@@ -87,6 +87,7 @@ const navigate = (item: { to: string; name: string }) => {
             type="button"
             class="rail-item"
             :data-active="isManagement"
+            :aria-current="isManagement ? 'page' : undefined"
             aria-label="관리 메뉴"
             title="관리"
           >

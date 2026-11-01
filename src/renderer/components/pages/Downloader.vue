@@ -253,6 +253,7 @@ const allGalleries = computed(() => {
 
 // Intersection Observer 설정
 const observerTarget = ref<HTMLElement | null>(null);
+const resultScrollRef = ref<HTMLElement | null>(null);
 let observer: IntersectionObserver | null = null;
 
 const handleSelectGallery = (gallery: HitomiGalleryDetails) => {
@@ -369,7 +370,8 @@ onMounted(() => {
     },
     {
       threshold: 0.1,
-      root: observerTarget.value?.closest("[data-result-scroll]"),
+      rootMargin: "0px 0px 800px 0px",
+      root: resultScrollRef.value,
     },
   );
   if (observerTarget.value) {
@@ -565,7 +567,12 @@ useSearchPersistence(searchQuery, "downloader-search-query");
             description="다운로더 사용법 및 검색 팁"
           >
             <template #trigger>
-              <Button variant="ghost" size="icon">
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label="검색 도움말"
+                title="검색 도움말"
+              >
                 <Icon
                   icon="solar:question-circle-bold-duotone"
                   class="h-6 w-6"
@@ -673,10 +680,12 @@ useSearchPersistence(searchQuery, "downloader-search-query");
               "
               >태그 필터</Button
             >
-            <PresetDropdown
-              v-model="searchQuery"
-              @apply-preset="handleSearch"
-            />
+            <div class="w-40 max-w-full min-w-0">
+              <PresetDropdown
+                v-model="searchQuery"
+                @apply-preset="handleSearch"
+              />
+            </div>
             <Select
               :model-value="downloaderPopularity"
               @update:model-value="handlePopularityChange"
@@ -754,13 +763,15 @@ useSearchPersistence(searchQuery, "downloader-search-query");
           <div class="flex items-center gap-2">
             <!-- 썸네일 줌 조절 -->
             <div
-              class="inline-flex h-8 items-center rounded-md border"
+              class="inline-flex min-h-9 items-center rounded-full border"
               :class="viewMode !== 'grid' ? 'opacity-50' : ''"
             >
               <Button
                 variant="ghost"
                 size="icon"
-                class="h-8 w-8 rounded-r-none border-r"
+                class="size-9 rounded-r-none border-r"
+                aria-label="카드 축소"
+                title="카드 축소"
                 :disabled="viewMode !== 'grid'"
                 @click="uiStore.zoomOut()"
               >
@@ -774,7 +785,9 @@ useSearchPersistence(searchQuery, "downloader-search-query");
               <Button
                 variant="ghost"
                 size="icon"
-                class="h-8 w-8 rounded-l-none border-l"
+                class="size-9 rounded-l-none border-l"
+                aria-label="카드 확대"
+                title="카드 확대"
                 :disabled="viewMode !== 'grid'"
                 @click="uiStore.zoomIn()"
               >
@@ -797,6 +810,7 @@ useSearchPersistence(searchQuery, "downloader-search-query");
         </div>
 
         <div
+          ref="resultScrollRef"
           data-result-scroll
           class="relative min-h-0 flex-1 overflow-x-hidden overflow-y-auto p-2"
         >
@@ -841,10 +855,7 @@ useSearchPersistence(searchQuery, "downloader-search-query");
                 @book-deleted="handleBookDeleted"
               />
             </div>
-            <div
-              ref="observerTarget"
-              class="absolute bottom-0 h-[1200px]"
-            ></div>
+            <div ref="observerTarget" class="h-px"></div>
             <div
               v-if="isFetchingNextPage"
               class="text-muted-foreground py-4 text-center"

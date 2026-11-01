@@ -40,7 +40,7 @@ it("ignores composing Enter, submits normal Enter and closes suggestions without
     render: () =>
       h(SmartSearchInput, {
         modelValue: query.value,
-        "onUpdate:modelValue": (value) => (query.value = value),
+        "onUpdate:modelValue": (value: string) => (query.value = value),
         onSubmit: submit,
       }),
   });

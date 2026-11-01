@@ -360,6 +360,7 @@ defineExpose({ focus });
           ref="input"
           :model-value="props.modelValue"
           :placeholder="placeholder"
+          :aria-label="placeholder || '검색어'"
           :class="[
             'bg-toolbar min-h-12 w-full rounded-full pl-4',
             props.modelValue.length > 0 ? 'pr-24' : 'pr-14',

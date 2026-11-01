@@ -126,7 +126,7 @@ const { getTagDisplayInfo } = useTagDisplay();
         {{ gallery.files?.length || 0 }} 페이지
       </p>
       <div
-        class="flex max-h-[5.25rem] min-h-[5.25rem] flex-wrap content-start gap-1 overflow-hidden"
+        class="flex max-h-[4.25rem] min-h-[4.25rem] flex-wrap content-start gap-1 overflow-hidden"
       >
         <button
           v-for="tag in gallery.tags"

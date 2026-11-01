@@ -139,7 +139,11 @@ const sortedQueue = computed(() => {
 <template>
   <Popover>
     <PopoverTrigger as-child>
-      <Button variant="outline" size="sm" class="relative min-h-8 rounded-full">
+      <Button
+        variant="outline"
+        size="sm"
+        class="relative h-[32px] min-h-0 rounded-full"
+      >
         <Icon icon="solar:download-square-bold-duotone" class="h-5 w-5" />
         <span>다운로드 큐</span>
         <Badge

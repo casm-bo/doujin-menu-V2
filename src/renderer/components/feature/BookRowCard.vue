@@ -349,15 +349,16 @@ const { borderStyle } = useGalleryBorders();
         v-if="!hideTags"
         class="flex max-h-14 flex-wrap gap-1 overflow-hidden"
       >
-        <Badge
+        <button
           v-for="tag in book.tags"
           :key="tag.name"
+          type="button"
           :class="getTagDisplayInfo(tag).className"
           @click.stop="emit('selectTag', tag.name)"
           @contextmenu.prevent.stop="emit('excludeTag', tag.name)"
         >
           {{ getTagDisplayInfo(tag).displayText }}
-        </Badge>
+        </button>
       </div>
     </div>
     <DropdownMenu>

@@ -18,7 +18,8 @@ it("cycles series states, clears selection only on changes and preserves other c
     render: () =>
       h(LibrarySeriesChips, {
         modelValue: state.value,
-        "onUpdate:modelValue": (value) => (state.value = value),
+        "onUpdate:modelValue": (value: "all" | "series" | "standalone") =>
+          (state.value = value),
       }),
   });
   app.mount(host);

@@ -33,7 +33,7 @@ onUnmounted(() => {
 
 <template>
   <header
-    class="bg-toolbar flex h-9 items-center justify-between border-b pl-4"
+    class="bg-toolbar flex h-[36px] items-center justify-between border-b pl-4"
     style="-webkit-app-region: drag"
   >
     <div class="flex items-center gap-2">
