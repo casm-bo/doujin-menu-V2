@@ -32,7 +32,14 @@ import { useDownloadQueueStore } from "@/store/downloadQueueStore";
 import { useSubscriptionStore } from "@/store/subscriptionStore";
 import { useUiStore } from "@/store/uiStore";
 import { Icon } from "@iconify/vue";
-import { ChevronLeft } from "lucide-vue-next";
+import {
+  ChevronLeft,
+  BellPlus,
+  ListChecks,
+  RefreshCw,
+  Eraser,
+  ShieldBan,
+} from "lucide-vue-next";
 import { applyGalleryPresentation } from "../../../types/presentationGallery";
 import { useInfiniteQuery, useQueryClient } from "@tanstack/vue-query";
 import type { HitomiGalleryDetails } from "../../../types/hitomi.js";
@@ -543,23 +550,34 @@ useSearchPersistence(searchQuery, "downloader-search-query");
                 title="더보기"
                 ><Icon icon="solar:menu-dots-linear" class="size-5" /></Button
             ></DropdownMenuTrigger>
-            <DropdownMenuContent align="end" class="w-52 rounded-xl">
+            <DropdownMenuContent align="end" class="w-64 rounded-xl">
               <DropdownMenuItem
+                class="gap-3 px-3 py-2.5"
                 :disabled="!searchQuery.trim() || isSubscribing"
                 @select="subscribeCurrentSearch"
-                >현재 검색 구독</DropdownMenuItem
+                ><BellPlus class="text-primary mr-1 size-5" />현재 검색
+                구독</DropdownMenuItem
               >
-              <DropdownMenuItem @select="subscriptionToolbar?.openManager()"
-                >구독 관리</DropdownMenuItem
+              <DropdownMenuItem
+                class="gap-3 px-3 py-2.5"
+                @select="subscriptionToolbar?.openManager()"
+                ><ListChecks class="text-primary mr-1 size-5" />구독
+                관리</DropdownMenuItem
               >
-              <DropdownMenuItem @select="handleSearch"
-                >새로고침</DropdownMenuItem
+              <DropdownMenuItem class="gap-3 px-3 py-2.5" @select="handleSearch"
+                ><RefreshCw
+                  class="text-primary mr-1 size-5"
+                />새로고침</DropdownMenuItem
               >
-              <DropdownMenuItem @select="searchQuery = ''"
-                >검색어 지우기</DropdownMenuItem
+              <DropdownMenuItem
+                class="gap-3 px-3 py-2.5"
+                @select="searchQuery = ''"
+                ><Eraser class="text-primary mr-1 size-5" />검색어
+                지우기</DropdownMenuItem
               >
-              <DropdownMenuItem @select="goToSettings"
-                >차단 태그·다운로드 설정</DropdownMenuItem
+              <DropdownMenuItem class="gap-3 px-3 py-2.5" @select="goToSettings"
+                ><ShieldBan class="text-primary mr-1 size-5" />차단
+                태그·다운로드 설정</DropdownMenuItem
               >
             </DropdownMenuContent>
           </DropdownMenu>

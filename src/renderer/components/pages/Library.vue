@@ -30,6 +30,13 @@ import { SORT_CYCLE, SORT_LABELS, nextSortBy } from "@/store/sortCycle";
 import { useUiStore } from "@/store/uiStore";
 import { hasOpenDialog } from "@/lib/utils";
 import { Icon } from "@iconify/vue";
+import {
+  WandSparkles,
+  Layers,
+  Shuffle,
+  Settings2,
+  FolderOpen,
+} from "lucide-vue-next";
 import WorkViewControls from "../feature/WorkViewControls.vue";
 import LibrarySeriesChips from "../feature/LibrarySeriesChips.vue";
 import {
@@ -809,22 +816,32 @@ watch(
             title="더보기"
             ><Icon icon="solar:menu-dots-linear" class="size-5" /></Button
         ></DropdownMenuTrigger>
-        <DropdownMenuContent align="end" class="w-56 rounded-xl">
+        <DropdownMenuContent align="end" class="w-64 rounded-xl">
           <DropdownMenuItem
+            class="gap-3 px-3 py-2.5"
             :disabled="seriesDetectionMutation.isPending.value"
             @select="seriesDetectionMutation.mutate()"
-            >시리즈 자동 생성</DropdownMenuItem
-          >
-          <DropdownMenuItem @select="router.push('/series-manager')"
-            >시리즈 관리</DropdownMenuItem
+            ><WandSparkles class="text-primary mr-1 size-5" />시리즈 자동
+            생성</DropdownMenuItem
           >
           <DropdownMenuItem
+            class="gap-3 px-3 py-2.5"
+            @select="router.push('/series-manager')"
+            ><Layers class="text-primary mr-1 size-5" />시리즈
+            관리</DropdownMenuItem
+          >
+          <DropdownMenuItem
+            class="gap-3 px-3 py-2.5"
             :disabled="books.length === 0"
             @select="openRandomBookFromCurrentView"
-            >랜덤 작품 열기</DropdownMenuItem
+            ><Shuffle class="text-primary mr-1 size-5" />랜덤 작품
+            열기</DropdownMenuItem
           >
-          <DropdownMenuItem @select="router.push('/settings?tab=library')"
-            >라이브러리 설정</DropdownMenuItem
+          <DropdownMenuItem
+            class="gap-3 px-3 py-2.5"
+            @select="router.push('/settings?tab=library')"
+            ><Settings2 class="text-primary mr-1 size-5" />라이브러리
+            설정</DropdownMenuItem
           >
         </DropdownMenuContent>
       </DropdownMenu>
@@ -1126,7 +1143,7 @@ watch(
           <DropdownMenu>
             <DropdownMenuTrigger as-child>
               <Button variant="outline">
-                <Icon icon="solar:menu-dots-bold" class="h-4 w-4" />
+                <FolderOpen class="size-5" />
                 폴더
               </Button>
             </DropdownMenuTrigger>

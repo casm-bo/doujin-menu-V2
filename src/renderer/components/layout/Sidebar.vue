@@ -95,13 +95,17 @@ const navigate = (item: { to: string; name: string }) => {
             ><span>관리</span>
           </button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent side="right" align="end" class="w-48 rounded-xl">
+        <DropdownMenuContent side="right" align="end" class="w-56 rounded-xl">
           <DropdownMenuItem
             v-for="item in managementItems"
             :key="item.to"
+            class="gap-3 px-3 py-2.5"
             @select="navigate(item)"
           >
-            <component :is="item.icon" class="mr-2 size-5" />{{ item.label }}
+            <span
+              class="bg-primary/10 text-primary flex size-8 shrink-0 items-center justify-center rounded-lg"
+              ><component :is="item.icon" class="size-5" /></span
+            >{{ item.label }}
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
