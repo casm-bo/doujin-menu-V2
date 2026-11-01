@@ -30,6 +30,7 @@ interface Props {
     bookId?: number | null;
   };
   selected?: boolean;
+  thumbnailZoom?: number;
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -82,7 +83,9 @@ const { borderStyle } = useGalleryBorders();
     @click="emit('select-gallery', gallery)"
   >
     <div
-      class="bg-muted relative aspect-[0.72] w-[104px] shrink-0 cursor-zoom-in overflow-hidden rounded-lg"
+      data-row-cover
+      :style="{ width: `${160 * (thumbnailZoom ?? 1)}px` }"
+      class="bg-muted relative aspect-[0.72] max-w-[40%] shrink-0 cursor-zoom-in overflow-hidden rounded-xl"
       @click.stop="emit('preview-gallery', gallery)"
     >
       <ProxiedImage

@@ -24,7 +24,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import WorkViewControls from "../feature/WorkViewControls.vue";
 import { useKeybindings } from "@/composable/useKeybindings";
 import { useScrollRestoration } from "@/composable/useScrollRestoration";
 import { useSearchPersistence } from "@/composable/useSearchPersistence";
@@ -755,64 +755,25 @@ useSearchPersistence(searchQuery, "downloader-search-query");
 
       <!-- Right Column: Search Results -->
       <div class="flex min-h-0 flex-1 flex-col gap-4">
-        <div class="flex items-center justify-between">
+        <div class="flex flex-wrap items-center justify-between gap-3">
           <h2 class="text-muted-foreground text-xs font-normal" role="status">
             {{ activeSource === "search" ? "검색 결과" : "구독 피드" }} · 현재
             {{ allGalleries.length }}개 표시
           </h2>
-          <div class="flex items-center gap-2">
-            <!-- 썸네일 줌 조절 -->
-            <div
-              class="inline-flex min-h-9 items-center rounded-full border"
-              :class="viewMode !== 'grid' ? 'opacity-50' : ''"
-            >
-              <Button
-                variant="ghost"
-                size="icon"
-                class="size-9 rounded-r-none border-r"
-                aria-label="카드 축소"
-                title="카드 축소"
-                :disabled="viewMode !== 'grid'"
-                @click="uiStore.zoomOut()"
-              >
-                <Icon icon="solar:minus-circle-bold-duotone" class="h-4 w-4" />
-              </Button>
-              <div
-                class="flex w-12 items-center justify-center text-xs tabular-nums"
-              >
-                {{ Math.round(uiStore.thumbnailZoom * 100) }}%
-              </div>
-              <Button
-                variant="ghost"
-                size="icon"
-                class="size-9 rounded-l-none border-l"
-                aria-label="카드 확대"
-                title="카드 확대"
-                :disabled="viewMode !== 'grid'"
-                @click="uiStore.zoomIn()"
-              >
-                <Icon icon="solar:add-circle-bold-duotone" class="h-4 w-4" />
-              </Button>
-            </div>
-            <ToggleGroup
-              :model-value="viewMode"
-              type="single"
-              @update:model-value="handleViewModeChange"
-            >
-              <ToggleGroupItem value="grid" aria-label="썸네일 뷰">
-                <Icon icon="solar:widget-4-bold-duotone" class="h-4 w-4" />
-              </ToggleGroupItem>
-              <ToggleGroupItem value="list" aria-label="리스트 뷰">
-                <Icon icon="solar:list-bold-duotone" class="h-4 w-4" />
-              </ToggleGroupItem>
-            </ToggleGroup>
-          </div>
+          <WorkViewControls
+            :view-mode="viewMode"
+            :zoom="uiStore.thumbnailZoom"
+            @update:view-mode="handleViewModeChange"
+            @increase="uiStore.zoomIn()"
+            @decrease="uiStore.zoomOut()"
+          />
         </div>
 
         <div
           ref="resultScrollRef"
           data-result-scroll
           class="relative min-h-0 flex-1 overflow-x-hidden overflow-y-auto p-2"
+          @wheel="handleGridWheel"
         >
           <div v-if="isLoading" class="flex h-full items-center justify-center">
             <p class="text-muted-foreground">
@@ -830,7 +791,6 @@ useSearchPersistence(searchQuery, "downloader-search-query");
               v-if="viewMode === 'grid'"
               class="grid gap-3"
               :style="downloaderGridStyle"
-              @wheel="handleGridWheel"
             >
               <GalleryThumbnailCard
                 v-for="item in allGalleries"
@@ -848,6 +808,7 @@ useSearchPersistence(searchQuery, "downloader-search-query");
                 v-for="item in allGalleries"
                 :key="item.id"
                 :gallery="item"
+                :thumbnail-zoom="uiStore.thumbnailZoom"
                 :download-status="downloadStatuses[item.id]"
                 :selected="selectedGallery?.id === item.id"
                 @select-gallery="handleSelectGallery"

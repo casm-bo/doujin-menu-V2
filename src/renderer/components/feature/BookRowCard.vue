@@ -33,6 +33,7 @@ const props = defineProps<{
   queryKey: readonly unknown[];
   hideTags?: boolean;
   selected?: boolean;
+  thumbnailZoom?: number;
 }>();
 const emit = defineEmits([
   "selectTag",
@@ -219,7 +220,9 @@ const { borderStyle } = useGalleryBorders();
       @click.stop="emit('toggle-select', $event)"
     />
     <div
-      class="bg-muted relative aspect-[0.72] w-[104px] shrink-0 overflow-hidden rounded-lg"
+      data-row-cover
+      :style="{ width: `${160 * (thumbnailZoom ?? 1)}px` }"
+      class="bg-muted relative aspect-[0.72] max-w-[40%] shrink-0 overflow-hidden rounded-xl"
     >
       <img
         :src="coverUrl"

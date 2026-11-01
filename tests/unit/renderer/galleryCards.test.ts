@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, expect, it, vi } from "vitest";
-import { computed, createApp, h, ref, type App } from "vue";
+import { computed, createApp, h, nextTick, ref, type App } from "vue";
 const actions = vi.hoisted(() => ({
   download: vi.fn(),
   copy: vi.fn(),
@@ -36,7 +36,8 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 for (const component of [Grid, Row]) {
-  it(`${component === Grid ? "grid" : "row"} opens detail once and isolates tag/download actions`, () => {
+  it(`${component === Grid ? "grid" : "row"} opens detail once and isolates tag/download actions`, async () => {
+    const zoom = ref(1);
     const select = vi.fn(),
       preview = vi.fn();
     const host = document.createElement("div");
@@ -60,6 +61,7 @@ for (const component of [Grid, Row]) {
       render: () =>
         h(component, {
           gallery,
+          ...(component === Row ? { thumbnailZoom: zoom.value } : {}),
           onSelectGallery: select,
           onPreviewGallery: preview,
         }),
@@ -86,5 +88,15 @@ for (const component of [Grid, Row]) {
     expect(select).not.toHaveBeenCalled();
     (host.firstElementChild as HTMLElement).click();
     expect(select).toHaveBeenCalledTimes(1);
+    if (component === Row) {
+      expect(
+        host.querySelector<HTMLElement>("[data-row-cover]")?.style.width,
+      ).toBe("160px");
+      zoom.value = 1.2;
+      await nextTick();
+      expect(
+        host.querySelector<HTMLElement>("[data-row-cover]")?.style.width,
+      ).toBe("192px");
+    }
   });
 }

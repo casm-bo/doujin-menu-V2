@@ -30,6 +30,7 @@ import { SORT_CYCLE, SORT_LABELS, nextSortBy } from "@/store/sortCycle";
 import { useUiStore } from "@/store/uiStore";
 import { hasOpenDialog } from "@/lib/utils";
 import { Icon } from "@iconify/vue";
+import WorkViewControls from "../feature/WorkViewControls.vue";
 import LibrarySeriesChips from "../feature/LibrarySeriesChips.vue";
 import {
   useInfiniteQuery,
@@ -965,7 +966,7 @@ watch(
         <LibrarySeriesChips v-else v-model="seriesStatus" />
         <div
           v-show="selectedCount === 0"
-          class="ml-auto flex flex-wrap items-center gap-2"
+          class="flex flex-wrap items-center gap-3"
         >
           <DropdownMenu>
             <DropdownMenuTrigger as-child>
@@ -1121,12 +1122,12 @@ watch(
               />
             </Button>
           </div>
-          <!-- 보기 메뉴: 라이브러리 폴더 / 뷰 모드 / 썸네일 줌 -->
+          <!-- 라이브러리 폴더 -->
           <DropdownMenu>
             <DropdownMenuTrigger as-child>
               <Button variant="outline">
                 <Icon icon="solar:menu-dots-bold" class="h-4 w-4" />
-                보기
+                폴더
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" class="w-64">
@@ -1144,59 +1145,16 @@ watch(
                   <span class="truncate" :title="dir">{{ dir }}</span>
                 </DropdownMenuRadioItem>
               </DropdownMenuRadioGroup>
-              <DropdownMenuSeparator />
-              <DropdownMenuLabel>뷰 모드</DropdownMenuLabel>
-              <DropdownMenuRadioGroup v-model="viewMode">
-                <DropdownMenuRadioItem value="grid">
-                  <Icon
-                    icon="solar:widget-4-bold-duotone"
-                    class="mr-2 h-4 w-4"
-                  />
-                  그리드
-                </DropdownMenuRadioItem>
-                <DropdownMenuRadioItem value="list">
-                  <Icon icon="solar:list-bold-duotone" class="mr-2 h-4 w-4" />
-                  리스트
-                </DropdownMenuRadioItem>
-              </DropdownMenuRadioGroup>
-              <DropdownMenuSeparator />
-              <DropdownMenuLabel>썸네일 크기</DropdownMenuLabel>
-              <div
-                class="flex items-center justify-between px-2 py-1.5"
-                :class="viewMode !== 'grid' ? 'opacity-50' : ''"
-              >
-                <Button
-                  variant="outline"
-                  size="icon"
-                  class="h-7 w-7"
-                  :disabled="viewMode !== 'grid'"
-                  aria-label="카드 축소"
-                  title="카드 축소"
-                  @click.stop="uiStore.zoomOut()"
-                >
-                  <Icon
-                    icon="solar:minus-circle-bold-duotone"
-                    class="h-4 w-4"
-                  />
-                </Button>
-                <span class="text-xs tabular-nums">
-                  {{ Math.round(uiStore.thumbnailZoom * 100) }}%
-                </span>
-                <Button
-                  variant="outline"
-                  size="icon"
-                  class="h-7 w-7"
-                  :disabled="viewMode !== 'grid'"
-                  aria-label="카드 확대"
-                  title="카드 확대"
-                  @click.stop="uiStore.zoomIn()"
-                >
-                  <Icon icon="solar:add-circle-bold-duotone" class="h-4 w-4" />
-                </Button>
-              </div>
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
+        <WorkViewControls
+          v-model:view-mode="viewMode"
+          class="ml-auto"
+          :zoom="uiStore.thumbnailZoom"
+          @increase="uiStore.zoomIn()"
+          @decrease="uiStore.zoomOut()"
+        />
       </div>
 
       <div
@@ -1312,17 +1270,19 @@ watch(
       <div
         v-else-if="books.length > 0 && viewMode === 'list'"
         data-result-scroll
-        class="flex min-h-0 flex-grow flex-col overflow-x-hidden overflow-y-auto"
+        class="flex min-h-0 flex-grow flex-col gap-3 overflow-x-hidden overflow-y-auto"
         :class="{
           'cursor-crosshair select-none': isDraggingSelection,
         }"
         @pointerdown="handleSelectionPointerDown"
         @click.capture="suppressClickAfterDrag"
+        @wheel="handleGridWheel"
       >
         <BookRowCard
           v-for="book in books"
           :key="book.id"
           :book="book"
+          :thumbnail-zoom="uiStore.thumbnailZoom"
           :query-key="queryKey"
           :hide-tags="hideLibraryTags"
           :selected="selectedBookIds.has(book.id)"
