@@ -125,14 +125,14 @@ const goToViewer = (bookId: number) => {
 </script>
 
 <template>
-  <div class="flex h-full flex-col gap-6">
-    <PageHeader icon="solar:chart-square-bold-duotone" title="통계" />
+  <div class="flex min-h-full min-w-0 flex-col gap-4">
+    <PageHeader icon="solar:chart-square-linear" title="통계" />
 
-    <div class="flex-grow overflow-y-auto pr-4">
-      <div v-if="isLoading" class="text-center text-gray-500">
+    <div class="min-w-0 flex-grow">
+      <div v-if="isLoading" class="text-muted-foreground text-center">
         통계 데이터를 불러오는 중...
       </div>
-      <div v-else-if="isError" class="text-center text-red-500">
+      <div v-else-if="isError" class="text-destructive text-center">
         통계 데이터를 불러오는데 실패했습니다.
       </div>
       <div
@@ -171,7 +171,7 @@ const goToViewer = (bookId: number) => {
                   {{
                     formatNumberWithCommas(statistics.readingProgress.read)
                   }}권
-                  <span class="text-xs text-gray-500">
+                  <span class="text-muted-foreground text-xs">
                     ({{
                       (
                         (statistics.readingProgress.read /
@@ -188,7 +188,7 @@ const goToViewer = (bookId: number) => {
                   {{
                     formatNumberWithCommas(statistics.readingProgress.reading)
                   }}권
-                  <span class="text-xs text-gray-500">
+                  <span class="text-muted-foreground text-xs">
                     ({{
                       (
                         (statistics.readingProgress.reading /
@@ -205,7 +205,7 @@ const goToViewer = (bookId: number) => {
                   {{
                     formatNumberWithCommas(statistics.readingProgress.unread)
                   }}권
-                  <span class="text-xs text-gray-500">
+                  <span class="text-muted-foreground text-xs">
                     ({{
                       (
                         (statistics.readingProgress.unread /
@@ -227,7 +227,7 @@ const goToViewer = (bookId: number) => {
                       statistics.readingProgress.favorites,
                     )
                   }}권
-                  <span class="text-xs text-gray-500">
+                  <span class="text-muted-foreground text-xs">
                     ({{
                       (
                         (statistics.readingProgress.favorites /
@@ -269,12 +269,12 @@ const goToViewer = (bookId: number) => {
                       book.title
                     }}</span>
                   </div>
-                  <div class="flex-shrink-0 text-sm text-gray-500">
+                  <div class="text-muted-foreground flex-shrink-0 text-sm">
                     {{ book.view_count }}회
                   </div>
                 </div>
               </div>
-              <div v-else class="text-center text-gray-500">
+              <div v-else class="text-muted-foreground text-center">
                 아직 조회 기록이 없습니다.
               </div>
             </ScrollArea>
@@ -301,7 +301,7 @@ const goToViewer = (bookId: number) => {
                 >
                   <div class="flex items-center gap-2">
                     <Badge variant="secondary">{{ tag.name }}</Badge>
-                    <span class="text-sm text-gray-500"
+                    <span class="text-muted-foreground text-sm"
                       >({{ tag.count }}권)</span
                     >
                   </div>
@@ -312,7 +312,7 @@ const goToViewer = (bookId: number) => {
                   </div>
                 </div>
               </div>
-              <div v-else class="text-center text-gray-500">
+              <div v-else class="text-muted-foreground text-center">
                 데이터가 없습니다.
               </div>
             </ScrollArea>
@@ -344,12 +344,12 @@ const goToViewer = (bookId: number) => {
                   <div class="flex items-center gap-2">
                     <Badge variant="secondary">{{ tag.name }}</Badge>
                   </div>
-                  <div class="text-sm text-gray-500">
+                  <div class="text-muted-foreground text-sm">
                     {{ tag.view_count }}회
                   </div>
                 </div>
               </div>
-              <div v-else class="text-center text-gray-500">
+              <div v-else class="text-muted-foreground text-center">
                 아직 조회 기록이 없습니다.
               </div>
             </ScrollArea>
@@ -377,7 +377,7 @@ const goToViewer = (bookId: number) => {
                 >
                   <div class="flex items-center gap-2">
                     <Badge variant="secondary">{{ artist.name }}</Badge>
-                    <span class="text-sm text-gray-500"
+                    <span class="text-muted-foreground text-sm"
                       >({{ artist.count }}권)</span
                     >
                   </div>
@@ -388,7 +388,7 @@ const goToViewer = (bookId: number) => {
                   </div>
                 </div>
               </div>
-              <div v-else class="text-center text-gray-500">
+              <div v-else class="text-muted-foreground text-center">
                 데이터가 없습니다.
               </div>
             </ScrollArea>
@@ -420,12 +420,12 @@ const goToViewer = (bookId: number) => {
                   <div class="flex items-center gap-2">
                     <Badge variant="secondary">{{ artist.name }}</Badge>
                   </div>
-                  <div class="text-sm text-gray-500">
+                  <div class="text-muted-foreground text-sm">
                     {{ artist.view_count }}회
                   </div>
                 </div>
               </div>
-              <div v-else class="text-center text-gray-500">
+              <div v-else class="text-muted-foreground text-center">
                 아직 조회 기록이 없습니다.
               </div>
             </ScrollArea>
@@ -456,7 +456,7 @@ const goToViewer = (bookId: number) => {
                 >
                   <div class="flex items-center gap-2">
                     <Badge variant="secondary">{{ group.name }}</Badge>
-                    <span class="text-sm text-gray-500"
+                    <span class="text-muted-foreground text-sm"
                       >({{ group.count }}권)</span
                     >
                   </div>
@@ -467,7 +467,7 @@ const goToViewer = (bookId: number) => {
                   </div>
                 </div>
               </div>
-              <div v-else class="text-center text-gray-500">
+              <div v-else class="text-muted-foreground text-center">
                 데이터가 없습니다.
               </div>
             </ScrollArea>
@@ -498,7 +498,7 @@ const goToViewer = (bookId: number) => {
                 >
                   <div class="flex items-center gap-2">
                     <Badge variant="secondary">{{ character.name }}</Badge>
-                    <span class="text-sm text-gray-500"
+                    <span class="text-muted-foreground text-sm"
                       >({{ character.count }}권)</span
                     >
                   </div>
@@ -511,7 +511,7 @@ const goToViewer = (bookId: number) => {
                   </div>
                 </div>
               </div>
-              <div v-else class="text-center text-gray-500">
+              <div v-else class="text-muted-foreground text-center">
                 데이터가 없습니다.
               </div>
             </ScrollArea>
@@ -542,12 +542,12 @@ const goToViewer = (bookId: number) => {
                       series.name
                     }}</span>
                   </div>
-                  <div class="flex-shrink-0 text-sm text-gray-500">
+                  <div class="text-muted-foreground flex-shrink-0 text-sm">
                     {{ series.count }}권
                   </div>
                 </div>
               </div>
-              <div v-else class="text-center text-gray-500">
+              <div v-else class="text-muted-foreground text-center">
                 데이터가 없습니다.
               </div>
             </ScrollArea>
@@ -566,19 +566,19 @@ const goToViewer = (bookId: number) => {
           <CardContent>
             <div class="space-y-3">
               <div>
-                <p class="mb-1 text-sm text-gray-500">총 페이지 수</p>
+                <p class="text-muted-foreground mb-1 text-sm">총 페이지 수</p>
                 <p class="text-primary text-3xl font-bold">
                   {{ formatNumberWithCommas(statistics.totalPages) }}
                 </p>
               </div>
               <div class="bg-border my-2 h-px"></div>
               <div>
-                <p class="mb-1 text-sm text-gray-500">읽은 페이지 수</p>
+                <p class="text-muted-foreground mb-1 text-sm">읽은 페이지 수</p>
                 <p
                   class="text-2xl font-semibold text-green-600 dark:text-green-500"
                 >
                   {{ formatNumberWithCommas(statistics.readPages) }}
-                  <span class="text-sm text-gray-500">
+                  <span class="text-muted-foreground text-sm">
                     ({{
                       (
                         (statistics.readPages / statistics.totalPages) *
@@ -590,7 +590,7 @@ const goToViewer = (bookId: number) => {
               </div>
               <div class="bg-border my-2 h-px"></div>
               <div>
-                <p class="mb-1 text-sm text-gray-500">평균 페이지 수</p>
+                <p class="text-muted-foreground mb-1 text-sm">평균 페이지 수</p>
                 <p class="text-xl font-semibold">
                   {{ formatNumberWithCommas(statistics.averagePages) }}
                 </p>
@@ -610,10 +610,16 @@ const goToViewer = (bookId: number) => {
           <CardContent
             class="flex h-full items-center justify-center py-4 text-center text-4xl font-bold"
           >
-            <div v-if="isLibrarySizeLoading" class="text-sm text-gray-500">
+            <div
+              v-if="isLibrarySizeLoading"
+              class="text-muted-foreground text-sm"
+            >
               계산 중...
             </div>
-            <div v-else-if="isLibrarySizeError" class="text-sm text-red-500">
+            <div
+              v-else-if="isLibrarySizeError"
+              class="text-destructive text-sm"
+            >
               오류
             </div>
             <div v-else>
@@ -633,13 +639,13 @@ const goToViewer = (bookId: number) => {
           <CardContent>
             <div
               v-if="isAppUsageStatsLoading"
-              class="text-center text-gray-500"
+              class="text-muted-foreground text-center"
             >
               불러오는 중...
             </div>
             <div
               v-else-if="isAppUsageStatsError"
-              class="text-center text-red-500"
+              class="text-destructive text-center"
             >
               오류
             </div>
@@ -648,13 +654,13 @@ const goToViewer = (bookId: number) => {
               class="grid grid-cols-2 gap-4 md:grid-cols-4"
             >
               <div class="space-y-1">
-                <p class="text-sm text-gray-500">오늘</p>
+                <p class="text-muted-foreground text-sm">오늘</p>
                 <p class="text-2xl font-bold text-blue-600 dark:text-blue-500">
                   {{ formatDuration(liveUsageStats.today) }}
                 </p>
               </div>
               <div class="space-y-1">
-                <p class="text-sm text-gray-500">이번 주</p>
+                <p class="text-muted-foreground text-sm">이번 주</p>
                 <p
                   class="text-2xl font-bold text-green-600 dark:text-green-500"
                 >
@@ -662,7 +668,7 @@ const goToViewer = (bookId: number) => {
                 </p>
               </div>
               <div class="space-y-1">
-                <p class="text-sm text-gray-500">이번 달</p>
+                <p class="text-muted-foreground text-sm">이번 달</p>
                 <p
                   class="text-2xl font-bold text-purple-600 dark:text-purple-500"
                 >
@@ -670,7 +676,7 @@ const goToViewer = (bookId: number) => {
                 </p>
               </div>
               <div class="space-y-1">
-                <p class="text-sm text-gray-500">전체</p>
+                <p class="text-muted-foreground text-sm">전체</p>
                 <p
                   class="text-2xl font-bold text-orange-600 dark:text-orange-500"
                 >
@@ -679,7 +685,7 @@ const goToViewer = (bookId: number) => {
               </div>
               <div class="col-span-2 space-y-1 md:col-span-4">
                 <div class="bg-border my-2 h-px"></div>
-                <p class="text-sm text-gray-500">평균 일일 사용 시간</p>
+                <p class="text-muted-foreground text-sm">평균 일일 사용 시간</p>
                 <p class="text-xl font-semibold">
                   {{ formatDuration(liveUsageStats.averageDaily) }}
                 </p>
@@ -712,7 +718,7 @@ const goToViewer = (bookId: number) => {
                 <span class="text-sm">{{ type.type || "미지정" }}</span>
                 <span class="font-semibold">
                   {{ formatNumberWithCommas(type.count) }}권
-                  <span class="text-xs text-gray-500">
+                  <span class="text-muted-foreground text-xs">
                     ({{
                       ((type.count / statistics.totalBooks) * 100).toFixed(1)
                     }}%)
@@ -720,7 +726,7 @@ const goToViewer = (bookId: number) => {
                 </span>
               </div>
             </div>
-            <div v-else class="text-center text-gray-500">
+            <div v-else class="text-muted-foreground text-center">
               데이터가 없습니다.
             </div>
           </CardContent>
@@ -751,7 +757,7 @@ const goToViewer = (bookId: number) => {
                   페이지)
                 </p>
               </div>
-              <div v-else class="text-sm text-gray-500">
+              <div v-else class="text-muted-foreground text-sm">
                 가장 긴 책 데이터가 없습니다.
               </div>
 
@@ -769,7 +775,7 @@ const goToViewer = (bookId: number) => {
                   페이지)
                 </p>
               </div>
-              <div v-else class="text-sm text-gray-500">
+              <div v-else class="text-muted-foreground text-sm">
                 가장 짧은 책 데이터가 없습니다.
               </div>
             </div>
@@ -809,12 +815,12 @@ const goToViewer = (bookId: number) => {
                           book.title
                         }}</span>
                       </div>
-                      <div class="flex-shrink-0 text-sm text-gray-500">
+                      <div class="text-muted-foreground flex-shrink-0 text-sm">
                         {{ book.count }}권
                       </div>
                     </div>
                   </div>
-                  <div v-else class="text-center text-gray-500">
+                  <div v-else class="text-muted-foreground text-center">
                     중복된 책이 없습니다.
                   </div>
                 </ScrollArea>
@@ -839,12 +845,12 @@ const goToViewer = (bookId: number) => {
                           book.hitomi_id
                         }}</span>
                       </div>
-                      <div class="flex-shrink-0 text-sm text-gray-500">
+                      <div class="text-muted-foreground flex-shrink-0 text-sm">
                         {{ book.count }}권
                       </div>
                     </div>
                   </div>
-                  <div v-else class="text-center text-gray-500">
+                  <div v-else class="text-muted-foreground text-center">
                     중복된 책이 없습니다.
                   </div>
                 </ScrollArea>

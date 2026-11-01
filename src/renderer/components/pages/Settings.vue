@@ -69,50 +69,78 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="flex h-full flex-col gap-6">
+  <div class="settings-page flex min-h-full min-w-0 flex-col gap-4">
     <PageHeader icon="solar:settings-bold-duotone" title="설정" />
 
     <Tabs v-model="tab" orientation="vertical">
-      <div class="grid w-full grid-cols-1 gap-6 md:grid-cols-4">
+      <div
+        class="grid w-full grid-cols-1 gap-6 md:grid-cols-[200px_minmax(0,1fr)]"
+      >
         <div class="md:col-span-1">
           <div class="md:sticky md:top-0">
-            <TabsList class="h-auto w-full flex-col items-stretch">
-              <TabsTrigger value="appearance" class="justify-start px-3 py-2">
+            <TabsList
+              class="bg-toolbar h-auto w-full flex-col items-stretch gap-1 rounded-xl p-2"
+            >
+              <TabsTrigger
+                value="appearance"
+                class="text-foreground data-[state=active]:bg-nav-selected min-h-10 justify-start rounded-full px-3 py-2 data-[state=active]:shadow-none"
+              >
                 <Icon icon="solar:palette-linear" class="h-5 w-5" />
                 외관
               </TabsTrigger>
-              <TabsTrigger value="general" class="justify-start px-3 py-2">
+              <TabsTrigger
+                value="general"
+                class="text-foreground data-[state=active]:bg-nav-selected min-h-10 justify-start rounded-full px-3 py-2 data-[state=active]:shadow-none"
+              >
                 <Icon icon="solar:settings-linear" class="h-5 w-5" />
                 일반
               </TabsTrigger>
-              <TabsTrigger value="library" class="justify-start px-3 py-2">
+              <TabsTrigger
+                value="library"
+                class="text-foreground data-[state=active]:bg-nav-selected min-h-10 justify-start rounded-full px-3 py-2 data-[state=active]:shadow-none"
+              >
                 <Icon icon="solar:folder-with-files-linear" class="h-5 w-5" />
                 라이브러리
               </TabsTrigger>
-              <TabsTrigger value="viewer" class="justify-start px-3 py-2">
+              <TabsTrigger
+                value="viewer"
+                class="text-foreground data-[state=active]:bg-nav-selected min-h-10 justify-start rounded-full px-3 py-2 data-[state=active]:shadow-none"
+              >
                 <Icon icon="solar:display-linear" class="h-5 w-5" />
                 뷰어
               </TabsTrigger>
-              <TabsTrigger value="keybindings" class="justify-start px-3 py-2">
+              <TabsTrigger
+                value="keybindings"
+                class="text-foreground data-[state=active]:bg-nav-selected min-h-10 justify-start rounded-full px-3 py-2 data-[state=active]:shadow-none"
+              >
                 <Icon icon="solar:keyboard-linear" class="h-5 w-5" />
                 단축키
               </TabsTrigger>
-              <TabsTrigger value="downloader" class="justify-start px-3 py-2">
+              <TabsTrigger
+                value="downloader"
+                class="text-foreground data-[state=active]:bg-nav-selected min-h-10 justify-start rounded-full px-3 py-2 data-[state=active]:shadow-none"
+              >
                 <Icon icon="solar:download-square-linear" class="h-5 w-5" />
-                다운로더
+                다운로드
               </TabsTrigger>
-              <TabsTrigger value="companion" class="justify-start px-3 py-2">
+              <TabsTrigger
+                value="companion"
+                class="text-foreground data-[state=active]:bg-nav-selected min-h-10 justify-start rounded-full px-3 py-2 data-[state=active]:shadow-none"
+              >
                 <Icon icon="solar:smartphone-2-linear" class="h-5 w-5" />
                 모바일 연동
               </TabsTrigger>
               <TabsTrigger
                 value="data-security"
-                class="justify-start px-3 py-2"
+                class="text-foreground data-[state=active]:bg-nav-selected min-h-10 justify-start rounded-full px-3 py-2 data-[state=active]:shadow-none"
               >
                 <Icon icon="solar:shield-check-linear" class="h-5 w-5" />
                 데이터 · 보안
               </TabsTrigger>
-              <TabsTrigger value="about" class="justify-start px-3 py-2">
+              <TabsTrigger
+                value="about"
+                class="text-foreground data-[state=active]:bg-nav-selected min-h-10 justify-start rounded-full px-3 py-2 data-[state=active]:shadow-none"
+              >
                 <Icon icon="solar:info-circle-linear" class="h-5 w-5" />
                 정보 · 업데이트
               </TabsTrigger>
@@ -120,7 +148,7 @@ onMounted(() => {
           </div>
         </div>
 
-        <div class="h-full overflow-y-auto pb-6 md:col-span-3">
+        <div class="min-w-0 space-y-4 pb-6">
           <TabsContent value="appearance" class="mt-0">
             <AppearanceTab />
           </TabsContent>
@@ -161,3 +189,14 @@ onMounted(() => {
     </Tabs>
   </div>
 </template>
+
+<style scoped>
+.settings-page :deep([data-slot="card"]) {
+  border-radius: 12px;
+  box-shadow: none;
+}
+.settings-page :deep([data-slot="card-title"]) {
+  font-size: 1rem;
+  font-weight: 600;
+}
+</style>

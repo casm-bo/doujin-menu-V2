@@ -629,7 +629,7 @@ useKeybindings(
     <Transition name="fade">
       <div
         v-if="showControls"
-        class="bg-muted-foreground/65 supports-[backdrop-filter]:bg-muted-foreground/55 fixed top-0 right-0 left-0 z-50 flex h-12 items-center justify-between gap-2 px-3 backdrop-blur-sm transition-opacity duration-300 supports-[backdrop-filter]:backdrop-blur-sm"
+        class="bg-toolbar/95 text-foreground fixed top-0 right-0 left-0 z-50 flex h-12 items-center justify-between gap-2 px-3 backdrop-blur-sm transition-opacity duration-150 supports-[backdrop-filter]:backdrop-blur-sm"
         style="-webkit-app-region: drag"
       >
         <TooltipProvider>
@@ -639,7 +639,7 @@ useKeybindings(
                 <Button
                   variant="ghost"
                   size="icon"
-                  class="text-background hover:bg-background/15 hover:text-background size-8"
+                  class="text-foreground hover:bg-accent hover:text-foreground size-9 rounded-full"
                   style="-webkit-app-region: no-drag"
                   @click="isNewWindow ? closeCurrentWindow() : router.back()"
                 >
@@ -658,7 +658,7 @@ useKeybindings(
                 </p>
               </TooltipContent>
             </Tooltip>
-            <h1 class="text-background truncate px-2 text-xl font-bold">
+            <h1 class="text-foreground truncate px-2 text-xl font-bold">
               {{ bookTitle || "만화책 뷰어" }}
             </h1>
           </div>
@@ -666,14 +666,14 @@ useKeybindings(
             <!-- 시리즈 네비게이션 버튼 -->
             <div
               v-if="book?.series_collection_id"
-              class="border-background/25 mr-1 flex items-center gap-1 border-r pr-1"
+              class="border-border mr-1 flex items-center gap-1 border-r pr-1"
             >
               <Tooltip>
                 <TooltipTrigger as-child>
                   <Button
                     variant="ghost"
                     size="icon"
-                    class="text-background hover:bg-background/15 hover:text-background size-8"
+                    class="text-foreground hover:bg-accent hover:text-foreground size-9 rounded-full"
                     style="-webkit-app-region: no-drag"
                     @click="store.loadPrevBookInSeries()"
                   >
@@ -694,7 +694,7 @@ useKeybindings(
                   <Button
                     variant="ghost"
                     size="icon"
-                    class="text-background hover:bg-background/15 hover:text-background size-8"
+                    class="text-foreground hover:bg-accent hover:text-foreground size-9 rounded-full"
                     style="-webkit-app-region: no-drag"
                     @click="store.loadNextBookInSeries()"
                   >
@@ -713,7 +713,7 @@ useKeybindings(
                 <Button
                   variant="ghost"
                   size="icon"
-                  class="text-background hover:bg-background/15 hover:text-background size-8"
+                  class="text-foreground hover:bg-accent hover:text-foreground size-9 rounded-full"
                   style="-webkit-app-region: no-drag"
                   @click="store.loadPrevBook()"
                 >
@@ -729,7 +729,7 @@ useKeybindings(
                 <Button
                   variant="ghost"
                   size="icon"
-                  class="text-background hover:bg-background/15 hover:text-background size-8"
+                  class="text-foreground hover:bg-accent hover:text-foreground size-9 rounded-full"
                   style="-webkit-app-region: no-drag"
                   @click="store.toggleAutoPlay"
                 >
@@ -761,7 +761,7 @@ useKeybindings(
                 <Button
                   variant="ghost"
                   size="icon"
-                  class="text-background hover:bg-background/15 hover:text-background size-8"
+                  class="text-foreground hover:bg-accent hover:text-foreground size-9 rounded-full"
                   style="-webkit-app-region: no-drag"
                   @click="store.loadNextBook()"
                 >
@@ -781,7 +781,7 @@ useKeybindings(
                 <Button
                   variant="ghost"
                   size="icon"
-                  class="text-background hover:bg-background/15 hover:text-background size-8"
+                  class="text-foreground hover:bg-accent hover:text-foreground size-9 rounded-full"
                   style="-webkit-app-region: no-drag"
                   @click="store.loadNextBook('random')"
                 >
@@ -797,7 +797,7 @@ useKeybindings(
                 <Button
                   variant="ghost"
                   size="icon"
-                  class="text-background hover:bg-background/15 hover:text-background size-8"
+                  class="text-foreground hover:bg-accent hover:text-foreground size-9 rounded-full"
                   style="-webkit-app-region: no-drag"
                   @click="store.toggleFavorite()"
                 >
@@ -818,12 +818,12 @@ useKeybindings(
             <!-- 새 창 모드일 때 윈도우 타이틀바 스타일 창 제어 버튼 -->
             <div
               v-if="isNewWindow"
-              class="border-background/25 ml-1 flex items-stretch border-l"
+              class="border-border ml-1 flex items-stretch border-l"
               style="-webkit-app-region: no-drag"
             >
               <button
                 type="button"
-                class="text-background hover:bg-background/15 flex w-9 items-center justify-center transition-colors"
+                class="text-foreground hover:bg-accent flex w-9 items-center justify-center transition-colors"
                 title="최소화"
                 @click="minimizeWindow"
               >
@@ -831,7 +831,7 @@ useKeybindings(
               </button>
               <button
                 type="button"
-                class="text-background hover:bg-background/15 flex w-9 items-center justify-center transition-colors"
+                class="text-foreground hover:bg-accent flex w-9 items-center justify-center transition-colors"
                 :title="isMaximized ? '최대화 복원' : '최대화'"
                 @click="maximizeToggleWindow"
               >
@@ -842,7 +842,7 @@ useKeybindings(
               </button>
               <button
                 type="button"
-                class="text-background hover:bg-destructive hover:text-destructive-foreground flex w-9 items-center justify-center transition-colors"
+                class="text-foreground hover:bg-destructive hover:text-destructive-foreground flex w-9 items-center justify-center transition-colors"
                 title="닫기"
                 @click="closeCurrentWindow"
               >
@@ -1003,7 +1003,7 @@ useKeybindings(
     <Transition name="fade">
       <div
         v-if="showControls"
-        class="bg-muted-foreground/65 supports-[backdrop-filter]:bg-muted-foreground/55 fixed right-0 bottom-0 left-0 z-50 flex h-12 items-center justify-between gap-4 px-3 backdrop-blur-sm transition-opacity duration-300 supports-[backdrop-filter]:backdrop-blur-sm"
+        class="bg-toolbar/95 text-foreground fixed right-0 bottom-0 left-0 z-50 flex h-12 items-center justify-between gap-4 px-3 backdrop-blur-sm transition-opacity duration-150 supports-[backdrop-filter]:backdrop-blur-sm"
         style="-webkit-app-region: no-drag"
       >
         <!-- 페이지 이동 -->
@@ -1015,7 +1015,7 @@ useKeybindings(
                   :disabled="currentPage <= 1 && readingMode !== 'webtoon'"
                   variant="ghost"
                   size="icon"
-                  class="text-background hover:bg-background/15 hover:text-background size-8 shrink-0"
+                  class="text-foreground hover:bg-accent hover:text-foreground size-9 shrink-0 rounded-full"
                   @click="store.prevPage()"
                 >
                   <Icon icon="solar:arrow-left-bold" class="size-5" />
@@ -1034,7 +1034,7 @@ useKeybindings(
                 class="flex-1"
                 @update:model-value="(v) => store.goToPage(v![0])"
               />
-              <span class="text-background min-w-20 shrink-0 text-center">
+              <span class="text-foreground min-w-20 shrink-0 text-center">
                 {{ currentPage }} / {{ totalPages }}
               </span>
             </div>
@@ -1046,7 +1046,7 @@ useKeybindings(
                   "
                   variant="ghost"
                   size="icon"
-                  class="text-background hover:bg-background/15 hover:text-background size-8 shrink-0"
+                  class="text-foreground hover:bg-accent hover:text-foreground size-9 shrink-0 rounded-full"
                   @click="store.nextPage()"
                 >
                   <Icon icon="solar:arrow-right-bold" class="size-5" />
@@ -1068,7 +1068,7 @@ useKeybindings(
                 <Button
                   variant="ghost"
                   size="icon"
-                  class="text-background hover:bg-background/15 hover:text-background size-8"
+                  class="text-foreground hover:bg-accent hover:text-foreground size-9 rounded-full"
                   @click="openInExternalProgram"
                 >
                   <Icon icon="solar:monitor-bold-duotone" class="size-5" />
@@ -1089,7 +1089,7 @@ useKeybindings(
                 <Button
                   variant="ghost"
                   size="icon"
-                  class="text-background hover:bg-background/15 hover:text-background size-8"
+                  class="text-foreground hover:bg-accent hover:text-foreground size-9 rounded-full"
                   @click="isDetailOpen = true"
                 >
                   <Icon icon="solar:info-circle-bold-duotone" class="size-5" />
@@ -1108,7 +1108,7 @@ useKeybindings(
                     <Button
                       variant="ghost"
                       size="icon"
-                      class="text-background hover:bg-background/15 hover:text-background size-8"
+                      class="text-foreground hover:bg-accent hover:text-foreground size-9 rounded-full"
                     >
                       <Icon icon="solar:settings-bold-duotone" class="size-5" />
                     </Button>
@@ -1117,7 +1117,9 @@ useKeybindings(
                 <TooltipContent>
                   <p>뷰어 설정</p>
                 </TooltipContent>
-                <PopoverContent class="w-80">
+                <PopoverContent
+                  class="max-h-[80dvh] w-80 overflow-y-auto rounded-xl"
+                >
                   <div class="grid gap-4">
                     <div class="space-y-2">
                       <h4 class="leading-none font-medium">보기 설정</h4>
@@ -1296,7 +1298,7 @@ useKeybindings(
             <Button
               variant="ghost"
               size="icon"
-              class="text-background hover:bg-background/15 hover:text-background size-8"
+              class="text-foreground hover:bg-accent hover:text-foreground size-9 rounded-full"
             >
               <Icon icon="solar:question-circle-bold-duotone" class="size-5" />
             </Button>

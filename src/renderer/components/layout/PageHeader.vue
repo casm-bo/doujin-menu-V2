@@ -14,13 +14,13 @@ defineProps<{
 </script>
 
 <template>
-  <div class="flex items-center justify-between">
-    <h1 class="flex items-center gap-2 text-xl font-bold">
+  <div class="flex flex-wrap items-center justify-between gap-3">
+    <h1 class="flex items-center gap-2 text-xl font-semibold">
       <Icon :icon="icon" class="text-primary h-5 w-5" />
       {{ title }}
       <slot name="help" />
     </h1>
-    <div class="flex items-center gap-2">
+    <div class="flex flex-wrap items-center gap-2">
       <slot name="actions" />
     </div>
   </div>

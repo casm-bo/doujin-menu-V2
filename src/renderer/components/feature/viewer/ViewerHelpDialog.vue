@@ -38,10 +38,12 @@ const mouseBindings = [
     <DialogTrigger as-child>
       <slot />
     </DialogTrigger>
-    <DialogContent class="max-w-2xl">
+    <DialogContent
+      class="max-h-[85dvh] max-w-2xl overflow-y-auto rounded-[20px]"
+    >
       <DialogHeader>
         <DialogTitle class="flex items-center gap-2">
-          <Icon icon="solar:help-bold-duotone" class="h-6 w-6" />
+          <Icon icon="solar:question-circle-linear" class="h-6 w-6" />
           뷰어 도움말
         </DialogTitle>
         <DialogDescription>

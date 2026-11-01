@@ -146,8 +146,8 @@ const goToDownloaderWithSearch = (name: string) => {
 </script>
 
 <template>
-  <div class="flex h-full flex-col gap-6">
-    <PageHeader icon="solar:tag-bold-duotone" title="탐색" />
+  <div class="flex min-h-full min-w-0 flex-col gap-4">
+    <PageHeader icon="solar:tag-linear" title="탐색" />
 
     <!-- 콘텐츠 -->
     <div class="flex min-h-0 flex-1 flex-col gap-4">

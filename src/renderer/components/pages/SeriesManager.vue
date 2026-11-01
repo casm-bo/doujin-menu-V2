@@ -412,13 +412,13 @@ const toggleSortOrder = () => {
 };
 
 // 스크롤 위치 복원
-useScrollRestoration(".flex-grow.overflow-y-auto");
+useScrollRestoration("main");
 </script>
 
 <template>
-  <div class="flex h-full flex-col gap-6">
+  <div class="flex min-h-full min-w-0 flex-col gap-4">
     <!-- 헤더 -->
-    <PageHeader icon="solar:library-bold-duotone" title="시리즈">
+    <PageHeader icon="solar:library-linear" title="시리즈">
       <template #help>
         <HelpDialog
           title="시리즈 도움말"
@@ -587,7 +587,7 @@ useScrollRestoration(".flex-grow.overflow-y-auto");
       <!-- 그리드 뷰 -->
       <div
         v-else-if="collections.length > 0 && viewMode === 'grid'"
-        class="grid flex-grow grid-cols-1 items-start gap-4 overflow-y-auto sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-6"
+        class="grid flex-grow grid-cols-1 items-start gap-3 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-6"
       >
         <SeriesCollectionCard
           v-for="series in collections"
@@ -613,7 +613,7 @@ useScrollRestoration(".flex-grow.overflow-y-auto");
       <!-- 리스트 뷰 -->
       <div
         v-else-if="collections.length > 0 && viewMode === 'list'"
-        class="flex flex-grow flex-col gap-2 overflow-y-auto"
+        class="flex flex-grow flex-col gap-3"
       >
         <SeriesCollectionRowCard
           v-for="series in collections"

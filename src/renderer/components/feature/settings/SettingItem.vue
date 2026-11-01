@@ -1,6 +1,8 @@
 <template>
-  <div class="flex items-center justify-between gap-4">
-    <div class="flex grow flex-col items-start gap-1">
+  <div
+    class="flex min-w-0 flex-col items-start justify-between gap-3 sm:flex-row sm:items-center"
+  >
+    <div class="flex min-w-0 grow flex-col items-start gap-1 break-words">
       <Label :for="labelFor">{{ title }}</Label>
       <slot name="subtitle" />
       <p
@@ -10,7 +12,9 @@
         {{ subtitle }}
       </p>
     </div>
-    <slot />
+    <div class="w-full min-w-0 sm:w-auto sm:shrink-0 [&>*]:max-w-full">
+      <slot />
+    </div>
   </div>
 </template>
 

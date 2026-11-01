@@ -162,11 +162,11 @@ const dismissSelection = async () => {
 </script>
 
 <template>
-  <div class="flex h-full flex-col gap-6">
-    <PageHeader icon="solar:copy-bold-duotone" title="중복 정리" />
+  <div class="flex min-h-full min-w-0 flex-col gap-4">
+    <PageHeader icon="solar:copy-linear" title="중복·ID 검토" />
 
     <!-- 본문 (스크롤 영역) -->
-    <div class="flex-grow overflow-y-auto pr-4">
+    <div class="min-w-0 flex-grow">
       <!-- 로딩 -->
       <div v-if="status === 'pending'" class="p-4 text-center">
         <p>중복 목록을 불러오는 중...</p>
