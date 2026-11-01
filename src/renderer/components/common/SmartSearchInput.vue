@@ -348,7 +348,10 @@ defineExpose({ focus });
           ref="input"
           :model-value="props.modelValue"
           :placeholder="placeholder"
-          :class="['w-full', props.modelValue.length > 0 ? 'pr-20' : 'pr-12']"
+          :class="[
+            'bg-toolbar min-h-12 w-full rounded-full pl-4',
+            props.modelValue.length > 0 ? 'pr-24' : 'pr-14',
+          ]"
           @update:model-value="emit('update:modelValue', $event)"
           @keydown="handleKeyDown"
           @focus="isFocused = true"
