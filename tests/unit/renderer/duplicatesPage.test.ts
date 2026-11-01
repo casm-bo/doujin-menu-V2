@@ -109,8 +109,11 @@ const group = (matchType: DuplicateGroup["matchType"]): DuplicateGroup => ({
     },
   ],
 });
-async function mount(matchType: DuplicateGroup["matchType"] = "missing_id") {
-  api.getDuplicateGroups.mockResolvedValue([group(matchType)]);
+async function mount(
+  matchType: DuplicateGroup["matchType"] = "missing_id",
+  fixtures = [group(matchType)],
+) {
+  api.getDuplicateGroups.mockResolvedValue(fixtures);
   host = document.createElement("div");
   document.body.append(host);
   app = createApp(Duplicates);
@@ -170,5 +173,72 @@ it("preserves delete confirmation and does not dismiss actual ID matches", async
   button("휴지통으로 이동").click();
   await flush();
   expect(host.textContent).toContain("휴지통으로 이동하시겠습니까?");
+  expect(api.deleteDuplicateBooks).not.toHaveBeenCalled();
+});
+
+const testGroup = (
+  key: string,
+  ids: number[],
+  offlineIds: number[] = [],
+): DuplicateGroup => ({
+  ...group("title"),
+  key,
+  books: ids.map((id) => ({
+    ...group("title").books[0],
+    id,
+    title: `Synthetic ${id}`,
+    is_offline: offlineIds.includes(id),
+  })),
+});
+it("selects a Ctrl+Shift range across groups and excludes offline rows", async () => {
+  await mount("title", [
+    testGroup("a", [1, 2, 3], [2]),
+    testGroup("b", [4, 5]),
+  ]);
+  const row = (id: number) =>
+    host.querySelector<HTMLElement>(`[data-book-id="${id}"]`)!;
+  row(1).click();
+  row(4).dispatchEvent(
+    new MouseEvent("click", { bubbles: true, ctrlKey: true, shiftKey: true }),
+  );
+  await flush();
+  expect(host.textContent).toContain("3개 선택됨");
+  const checked = Array.from(
+    host.querySelectorAll<HTMLInputElement>('input[type="checkbox"]'),
+  ).map((input) => input.checked);
+  expect(checked).toEqual([true, false, true, true, false]);
+  row(5).dispatchEvent(
+    new MouseEvent("click", { bubbles: true, ctrlKey: true, shiftKey: true }),
+  );
+  await flush();
+  expect(host.textContent).toContain("원본까지 삭제");
+  expect(api.deleteDuplicateBooks).not.toHaveBeenCalled();
+});
+it("uses the clicked row when a book occurs in more than one group", async () => {
+  await mount("title", [testGroup("a", [1, 2]), testGroup("b", [1, 3, 4])]);
+  const repeated = host.querySelectorAll<HTMLElement>('[data-book-id="1"]');
+  repeated[1].click();
+  host
+    .querySelector('[data-book-id="4"]')!
+    .dispatchEvent(
+      new MouseEvent("click", { bubbles: true, ctrlKey: true, shiftKey: true }),
+    );
+  await flush();
+  expect(host.textContent).toContain("3개 선택됨");
+  expect(
+    host.querySelector<HTMLInputElement>('[data-book-id="2"] input')?.checked,
+  ).toBe(false);
+});
+it("selects all unique online works and clears the selection without deleting", async () => {
+  await mount("title", [testGroup("a", [1, 2], [2]), testGroup("b", [1, 3])]);
+  button("전체 선택").click();
+  await flush();
+  expect(host.textContent).toContain("2개 선택됨");
+  expect(
+    host.querySelector<HTMLInputElement>('[data-book-id="2"] input')?.checked,
+  ).toBe(false);
+  button("전체 선택 해제").click();
+  await flush();
+  expect(host.textContent).toContain("0개 선택됨");
   expect(api.deleteDuplicateBooks).not.toHaveBeenCalled();
 });

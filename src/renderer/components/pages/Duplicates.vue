@@ -20,9 +20,10 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Icon } from "@iconify/vue";
+import { selectBookRange } from "../feature/librarySelection";
 import PageHeader from "../layout/PageHeader.vue";
 import { useQuery, useQueryClient } from "@tanstack/vue-query";
-import { computed, ref } from "vue";
+import { computed, ref, watch } from "vue";
 import { toast } from "vue-sonner";
 import type { DuplicateGroup } from "../../../types/ipc";
 
@@ -38,6 +39,34 @@ const groups = computed(() => data.value ?? []);
 
 // 선택된 책 ID 집합 (반응성 보장을 위해 토글 시 new Set으로 교체)
 const selectedIds = ref<Set<number>>(new Set());
+const selectionAnchor = ref<string | null>(null);
+const rowKey = (group: DuplicateGroup, bookId: number) =>
+  `${group.matchType}:${group.key}:${bookId}`;
+const selectableRows = computed(() =>
+  groups.value.flatMap((group) =>
+    group.books
+      .filter((book) => !book.is_offline)
+      .map((book) => ({ id: book.id, key: rowKey(group, book.id) })),
+  ),
+);
+const selectableBookIds = computed(() => [
+  ...new Set(selectableRows.value.map((row) => row.id)),
+]);
+const allSelected = computed(
+  () =>
+    selectableBookIds.value.length > 0 &&
+    selectableBookIds.value.every((id) => selectedIds.value.has(id)),
+);
+watch(groups, () => {
+  selectionAnchor.value = null;
+});
+const toggleAll = () => {
+  if (isBusy.value) return;
+  selectedIds.value = allSelected.value
+    ? new Set()
+    : new Set(selectableBookIds.value);
+  selectionAnchor.value = null;
+};
 
 // 삭제 진행 중 여부
 const isDeleting = ref(false);
@@ -71,15 +100,34 @@ const getMatchTypeLabel = (matchType: DuplicateGroup["matchType"]) => {
 };
 
 // 선택 토글 (오프라인 책은 호출되지 않음 — 체크박스 비활성화)
-const toggleSelect = (bookId: number) => {
-  if (isBusy.value) return;
-  const next = new Set(selectedIds.value);
-  if (next.has(bookId)) {
-    next.delete(bookId);
+const toggleSelect = (
+  bookId: number,
+  group: DuplicateGroup,
+  event: MouseEvent,
+) => {
+  if (isBusy.value || !selectableBookIds.value.includes(bookId)) return;
+  const key = rowKey(group, bookId);
+  const rows = selectableRows.value;
+  const anchorIndex = rows.findIndex(
+    (row) => row.key === selectionAnchor.value,
+  );
+  if (event.ctrlKey && event.shiftKey && anchorIndex >= 0) {
+    const indices = selectBookRange(
+      rows.map((_, index) => index),
+      anchorIndex,
+      rows.findIndex((row) => row.key === key),
+    );
+    selectedIds.value = new Set([
+      ...selectedIds.value,
+      ...[...indices].map((index) => rows[index].id),
+    ]);
   } else {
-    next.add(bookId);
+    const next = new Set(selectedIds.value);
+    if (!next.delete(bookId)) next.add(bookId);
+    selectedIds.value = next;
   }
-  selectedIds.value = next;
+  if (selectedIds.value.has(bookId)) selectionAnchor.value = key;
+  else if (selectedIds.value.size === 0) selectionAnchor.value = null;
 };
 
 const isSelected = (bookId: number) => selectedIds.value.has(bookId);
@@ -165,6 +213,17 @@ const dismissSelection = async () => {
   <div class="flex min-h-full min-w-0 flex-col gap-4">
     <PageHeader icon="solar:copy-linear" title="중복·ID 검토" />
 
+    <div class="flex flex-wrap items-center justify-between gap-3">
+      <p class="text-muted-foreground text-sm">
+        Ctrl+Shift+클릭으로 마지막 선택부터 범위를 선택합니다.
+      </p>
+      <Button
+        variant="outline"
+        :disabled="isBusy || selectableBookIds.length === 0"
+        @click="toggleAll"
+        >{{ allSelected ? "전체 선택 해제" : "전체 선택" }}</Button
+      >
+    </div>
     <!-- 본문 (스크롤 영역) -->
     <div class="min-w-0 flex-grow">
       <!-- 로딩 -->
@@ -200,7 +259,7 @@ const dismissSelection = async () => {
           class="p-4"
         >
           <!-- 그룹 헤더 (전체 선택 경고를 같은 줄에 표시해 본문 레이아웃 시프팅 방지) -->
-          <div class="mb-3 flex items-center gap-2">
+          <div class="mb-3 flex flex-wrap items-center gap-2">
             <Badge
               :variant="group.matchType === 'title' ? 'secondary' : 'default'"
             >
@@ -235,27 +294,31 @@ const dismissSelection = async () => {
             <div
               v-for="book in group.books"
               :key="book.id"
+              :data-book-id="book.id"
               :class="[
-                'flex items-center gap-3 rounded-md p-2 transition-colors select-none',
+                'flex items-center gap-4 rounded-xl p-3 transition-colors select-none',
                 book.is_offline
                   ? 'cursor-not-allowed opacity-70'
                   : 'cursor-pointer',
                 isSelected(book.id) ? 'bg-accent/40' : 'hover:bg-accent/20',
               ]"
-              @click="!book.is_offline && toggleSelect(book.id)"
+              @click="!book.is_offline && toggleSelect(book.id, group, $event)"
             >
               <!-- 체크박스 (오프라인 책은 비활성화). 행 전체 클릭으로 토글되므로 체크박스 직접 클릭은 전파를 막아 이중 토글을 방지 -->
               <Checkbox
                 :model-value="isSelected(book.id)"
+                :aria-label="`${book.title} 선택`"
                 :disabled="book.is_offline || isBusy"
-                @click.stop="!book.is_offline && toggleSelect(book.id)"
+                @click.stop="
+                  !book.is_offline && toggleSelect(book.id, group, $event)
+                "
               />
 
               <!-- 커버 (오프라인/파일 접근 불가 시 placeholder로 폴백) -->
               <img
                 :src="getCoverUrl(book.cover_path)"
                 :alt="book.title"
-                class="h-20 w-16 flex-shrink-0 rounded-md object-cover"
+                class="bg-muted aspect-[0.72] w-40 max-w-[30%] shrink-0 rounded-xl object-cover"
                 @error="
                   ($event.target as HTMLImageElement).src =
                     'https://via.placeholder.com/256x384'
@@ -309,7 +372,7 @@ const dismissSelection = async () => {
 
     <!-- 하단 고정 액션 바 -->
     <div
-      class="bg-background flex items-center justify-between gap-4 border-t pt-4"
+      class="bg-background sticky bottom-0 z-10 flex flex-wrap items-center justify-between gap-4 border-t py-4"
     >
       <div class="flex items-center gap-2">
         <span class="text-sm font-medium"> {{ selectedCount }}개 선택됨 </span>
@@ -321,7 +384,7 @@ const dismissSelection = async () => {
           원본 포함 삭제 주의
         </span>
       </div>
-      <div class="flex items-center gap-2">
+      <div class="flex flex-wrap items-center gap-2">
         <Button
           variant="outline"
           :disabled="!canDismissSelection || isBusy"
