@@ -286,13 +286,6 @@ defineExpose({
 
 <template>
   <div class="flex min-w-0 flex-wrap items-center gap-2">
-    <Button
-      variant="outline"
-      size="sm"
-      :disabled="newCount === 0"
-      @click="markAllRead"
-      >모두 읽음</Button
-    >
     <Popover v-model:open="isOpen">
       <PopoverTrigger as-child>
         <Button variant="outline" @click="load">
@@ -516,5 +509,13 @@ defineExpose({
     <span v-if="newCount > 0" class="text-sm font-medium">
       신작 {{ newCount }}건
     </span>
+    <Button
+      variant="outline"
+      class="ml-auto"
+      size="sm"
+      :disabled="newCount === 0"
+      @click="markAllRead"
+      >모두 읽음</Button
+    >
   </div>
 </template>

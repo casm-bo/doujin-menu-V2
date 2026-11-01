@@ -199,7 +199,12 @@ it("opens conditions without searching and preserves search result scroll throug
   ).toHaveLength(1);
   result.scrollTop = 35;
   result.dispatchEvent(new Event("scroll"));
-  find("검색으로 돌아가기").click();
+  expect(host.querySelector("h2")?.textContent).toBe("구독 신작");
+  const back = host.querySelector<HTMLButtonElement>(
+    '[aria-label="검색으로 돌아가기"]',
+  )!;
+  expect(back.textContent?.trim()).toBe("");
+  back.click();
   await flush();
   expect(host.querySelector("input")?.value).toBe("artist:synthetic");
   expect(result.scrollTop).toBe(123);

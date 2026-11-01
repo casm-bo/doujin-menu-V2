@@ -32,6 +32,7 @@ import { useDownloadQueueStore } from "@/store/downloadQueueStore";
 import { useSubscriptionStore } from "@/store/subscriptionStore";
 import { useUiStore } from "@/store/uiStore";
 import { Icon } from "@iconify/vue";
+import { ChevronLeft } from "lucide-vue-next";
 import { applyGalleryPresentation } from "../../../types/presentationGallery";
 import { useInfiniteQuery, useQueryClient } from "@tanstack/vue-query";
 import type { HitomiGalleryDetails } from "../../../types/hitomi.js";
@@ -648,11 +649,15 @@ useSearchPersistence(searchQuery, "downloader-search-query");
         </div>
         <div v-else class="flex flex-wrap items-center gap-2">
           <Button
-            variant="outline"
+            variant="ghost"
+            size="icon"
             class="rounded-full"
+            aria-label="검색으로 돌아가기"
+            title="검색으로 돌아가기"
             @click="changeSource('search')"
-            >검색으로 돌아가기</Button
-          ><span class="text-sm font-semibold">구독 신작</span>
+            ><ChevronLeft class="size-6"
+          /></Button>
+          <h2 class="text-2xl font-semibold">구독 신작</h2>
         </div>
         <div class="flex flex-wrap items-center gap-2">
           <template v-if="activeSource === 'search'">
@@ -705,6 +710,7 @@ useSearchPersistence(searchQuery, "downloader-search-query");
           </template>
           <SubscriptionToolbar
             ref="subscriptionToolbar"
+            :class="{ 'w-full': activeSource === 'subscription' }"
             :new-count="subscriptionStore.newCount"
             :last-checked-at="subscriptionStore.lastCheckedAt"
             :language="downloaderLanguage"
