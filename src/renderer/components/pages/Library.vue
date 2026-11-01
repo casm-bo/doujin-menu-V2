@@ -81,7 +81,7 @@ const uiStore = useUiStore();
 
 const route = useRoute();
 const router = useRouter();
-const loader = ref(null);
+const loader = ref<HTMLElement | null>(null);
 const searchInputRef = ref<InstanceType<typeof SmartSearchInput> | null>(null);
 
 const showBookDetailDialog = ref(false);
@@ -553,15 +553,18 @@ onActivated(() => {
 const observer = shallowRef<IntersectionObserver>();
 watch(loader, (newLoaderEl) => {
   observer.value?.disconnect();
-  observer.value = new IntersectionObserver((entries) => {
-    if (
-      entries[0].isIntersecting &&
-      hasNextPage.value &&
-      !isFetchingNextPage.value
-    ) {
-      fetchNextPage();
-    }
-  });
+  observer.value = new IntersectionObserver(
+    (entries) => {
+      if (
+        entries[0].isIntersecting &&
+        hasNextPage.value &&
+        !isFetchingNextPage.value
+      ) {
+        fetchNextPage();
+      }
+    },
+    { root: newLoaderEl?.parentElement },
+  );
 
   if (newLoaderEl) {
     observer.value.observe(newLoaderEl);
@@ -759,11 +762,11 @@ const gridStyle = computed(() => ({
 }));
 
 // 스크롤 위치 복원
-useScrollRestoration(".flex-grow.overflow-y-auto");
+useScrollRestoration("[data-result-scroll]");
 </script>
 
 <template>
-  <div class="flex h-full flex-col gap-6">
+  <div class="flex h-full min-h-0 min-w-0 flex-col gap-6">
     <div class="flex flex-col gap-2">
       <!-- 스캔 진행률 표시 -->
       <LibraryScanProgress />
@@ -1182,7 +1185,8 @@ useScrollRestoration(".flex-grow.overflow-y-auto");
       <div
         v-else-if="books.length > 0 && viewMode === 'grid'"
         ref="gridRef"
-        class="grid flex-grow items-start gap-3 overflow-y-auto"
+        data-result-scroll
+        class="grid min-h-0 flex-grow items-start gap-3 overflow-x-hidden overflow-y-auto"
         :style="gridStyle"
         :class="{
           'cursor-crosshair select-none': isDraggingSelection,
@@ -1228,7 +1232,8 @@ useScrollRestoration(".flex-grow.overflow-y-auto");
       <!-- List View -->
       <div
         v-else-if="books.length > 0 && viewMode === 'list'"
-        class="flex flex-grow flex-col overflow-y-auto"
+        data-result-scroll
+        class="flex min-h-0 flex-grow flex-col overflow-x-hidden overflow-y-auto"
         :class="{
           'cursor-crosshair select-none': isDraggingSelection,
         }"

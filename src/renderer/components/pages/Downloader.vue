@@ -226,7 +226,7 @@ const allGalleries = computed(() => {
 });
 
 // Intersection Observer 설정
-const observerTarget = ref(null);
+const observerTarget = ref<HTMLElement | null>(null);
 let observer: IntersectionObserver | null = null;
 
 const handleSelectGallery = (gallery: HitomiGalleryDetails) => {
@@ -341,7 +341,10 @@ onMounted(() => {
         fetchNextPage();
       }
     },
-    { threshold: 0.1 },
+    {
+      threshold: 0.1,
+      root: observerTarget.value?.closest("[data-result-scroll]"),
+    },
   );
   if (observerTarget.value) {
     observer.observe(observerTarget.value);
@@ -463,15 +466,15 @@ const goToSettings = () => {
 };
 
 // 스크롤 위치 복원 (다운로더는 flex-1 사용)
-useScrollRestoration(".flex-1.overflow-y-auto");
+useScrollRestoration("[data-result-scroll]");
 
 // 검색어 저장/복원
 useSearchPersistence(searchQuery, "downloader-search-query");
 </script>
 
 <template>
-  <div class="flex h-full flex-col gap-6">
-    <PageHeader icon="solar:download-square-bold-duotone" title="다운로더">
+  <div class="flex h-full min-h-0 min-w-0 flex-col gap-6">
+    <PageHeader icon="solar:download-square-bold-duotone" title="검색">
       <template #help>
         <HelpDialog
           title="다운로더 도움말"
@@ -552,7 +555,7 @@ useSearchPersistence(searchQuery, "downloader-search-query");
       </template>
     </PageHeader>
 
-    <div class="flex flex-1 flex-col gap-6 overflow-y-auto">
+    <div class="flex min-h-0 flex-1 flex-col gap-6">
       <!-- Left Column: Search & Settings -->
       <div class="flex flex-col gap-6">
         <Card>
@@ -676,7 +679,7 @@ useSearchPersistence(searchQuery, "downloader-search-query");
       </div>
 
       <!-- Right Column: Search Results -->
-      <div class="flex flex-col gap-4">
+      <div class="flex min-h-0 flex-1 flex-col gap-4">
         <div class="flex items-center justify-between">
           <h2 class="text-lg font-semibold">
             {{ activeSource === "search" ? "검색 결과" : "구독 피드" }}
@@ -727,7 +730,8 @@ useSearchPersistence(searchQuery, "downloader-search-query");
         </div>
 
         <div
-          class="relative min-h-[60vh] flex-1 overflow-y-auto rounded-lg border p-2"
+          data-result-scroll
+          class="relative min-h-0 flex-1 overflow-x-hidden overflow-y-auto p-2"
         >
           <div v-if="isLoading" class="flex h-full items-center justify-center">
             <p class="text-muted-foreground">

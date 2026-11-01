@@ -15,7 +15,7 @@ import Sidebar from "./Sidebar.vue";
 const uiStore = useUiStore();
 const subscriptionStore = useSubscriptionStore();
 const route = useRoute();
-const { isSidebarCollapsed, screenRotation } = storeToRefs(uiStore);
+const { screenRotation } = storeToRefs(uiStore);
 const isViewer = computed(() => route.name === "Viewer");
 
 const open = ref(false);
@@ -84,14 +84,11 @@ onUnmounted(() => subscriptionStore.cleanup());
       isViewer
         ? 'bg-background h-screen'
         : cn(
-            'bg-background grid grid-rows-[auto_1fr] transition-[grid-template-columns] duration-300 ease-in-out',
+            'bg-background grid grid-cols-[88px_minmax(0,1fr)] grid-rows-[36px_minmax(0,1fr)] overflow-hidden',
             // 회전된 경우 h-full, 아니면 h-screen 사용
             screenRotation === 90 || screenRotation === 270
               ? 'h-full'
               : 'h-screen',
-            isSidebarCollapsed
-              ? 'grid-cols-[4rem_1fr]'
-              : 'grid-cols-[14rem_1fr]',
           )
     "
     :style="isViewer ? undefined : rotationStyle"
@@ -104,7 +101,12 @@ onUnmounted(() => subscriptionStore.cleanup());
       :class="
         isViewer
           ? 'bg-background h-screen overflow-hidden'
-          : 'bg-background col-start-2 row-start-2 overflow-y-auto p-6'
+          : cn(
+              'bg-background col-start-2 row-start-2 min-h-0 min-w-0 p-4 lg:p-6',
+              ['Library', 'Downloader'].includes(String(route.name))
+                ? 'overflow-hidden'
+                : 'overflow-y-auto',
+            )
       "
     >
       <router-view v-slot="{ Component }">
