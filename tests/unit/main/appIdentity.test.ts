@@ -9,15 +9,15 @@ const app = vi.hoisted(() => ({
 vi.mock("electron", () => ({ app }));
 vi.mock("fs", () => ({ mkdirSync: vi.fn() }));
 
-it("retains the existing data directory before application stores open", async () => {
+it("isolates app data before application stores open", async () => {
   await import("../../../src/main/appIdentity");
   expect(app.getPath).toHaveBeenCalledWith("appData");
   expect(mkdirSync).toHaveBeenCalledWith(
-    path.join("/synthetic/app-data", "doujin-menu"),
+    path.join("/synthetic/app-data", "doujinzip"),
     { recursive: true },
   );
   expect(app.setPath).toHaveBeenCalledWith(
     "userData",
-    path.join("/synthetic/app-data", "doujin-menu"),
+    path.join("/synthetic/app-data", "doujinzip"),
   );
 });
